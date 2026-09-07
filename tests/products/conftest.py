@@ -40,28 +40,16 @@ class FakeProductRepository:
         results = list(self.products.values())
 
         if category_id is not None:
-            results = [
-                p for p in results
-                if p.category_id == category_id
-            ]
+            results = [p for p in results if p.category_id == category_id]
 
         if search:
-            results = [
-                p for p in results
-                if search.lower() in p.name.lower()
-            ]
+            results = [p for p in results if search.lower() in p.name.lower()]
 
         if min_price is not None:
-            results = [
-                p for p in results
-                if p.price_cents >= min_price
-            ]
+            results = [p for p in results if p.price_cents >= min_price]
 
         if max_price is not None:
-            results = [
-                p for p in results
-                if p.price_cents <= max_price
-            ]
+            results = [p for p in results if p.price_cents <= max_price]
 
         is_descending = sort.startswith("-")
         sort_key = sort.lstrip("-")
@@ -103,13 +91,6 @@ class FakeProductRepository:
 
 
 class FakeCategoryRepositoryForProducts:
-    """
-    A second fake, standing in for CategoryRepository -- this is the
-    cross-module dependency ProductService needs. Pre-seeded with a
-    couple of categories so product tests have something valid (and
-    something inactive) to reference.
-    """
-
     def __init__(self) -> None:
         self.categories: dict[int, Category] = {
             1: Category(
@@ -130,6 +111,10 @@ class FakeCategoryRepositoryForProducts:
         return self.categories.get(category_id)
 
 
+class FakeStorageService:
+    pass
+
+
 @pytest.fixture
 def fake_product_repository() -> FakeProductRepository:
     return FakeProductRepository()
@@ -138,3 +123,8 @@ def fake_product_repository() -> FakeProductRepository:
 @pytest.fixture
 def fake_category_repository_for_products() -> FakeCategoryRepositoryForProducts:
     return FakeCategoryRepositoryForProducts()
+
+
+@pytest.fixture
+def fake_storage_service() -> FakeStorageService:
+    return FakeStorageService()

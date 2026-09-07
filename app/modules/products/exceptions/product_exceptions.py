@@ -1,18 +1,16 @@
 from app.core.exceptions import ConflictError, InvalidStateError, NotFoundError
 
 
-class ProductNotFoundError(NotFoundError):
-    def __init__(self) -> None:
-        super().__init__("Product not found")
-
-
 class SkuAlreadyExistsError(ConflictError):
     def __init__(self) -> None:
         super().__init__("A product with this SKU already exists")
 
 
-class InvalidCategoryError(InvalidStateError):
-    def __init__(self) -> None:
-        super().__init__(
-            "category_id does not refer to an existing, active category"
-        )
+class ProductNotFoundError(NotFoundError):
+    def __init__(self, product_id: int) -> None:
+        super().__init__(f"Product with id {product_id} not found")
+
+
+class InvalidCategoryError(ConflictError):
+    def __init__(self, category_id: int) -> None:
+        super().__init__(f"Category with id {category_id} does not exist or is inactive")

@@ -1,22 +1,21 @@
-from datetime import UTC, datetime, timedelta
-
 import pytest
 
 from app.modules.products.exceptions.product_exceptions import (
     InvalidCategoryError,
     ProductNotFoundError,
 )
-from app.modules.products.models.product import Product
 from app.modules.products.services.product_service import ProductService
 from app.shared.enums.product_status import ProductStatus
 
 
 @pytest.fixture
 def product_service(
-    fake_product_repository, fake_category_repository_for_products
+    fake_product_repository, fake_category_repository_for_products, fake_storage_service
 ) -> ProductService:
     return ProductService(
-        fake_product_repository, fake_category_repository_for_products
+        fake_product_repository,
+        fake_category_repository_for_products,
+        fake_storage_service,
     )
 
 
@@ -46,25 +45,8 @@ async def test_create_product_with_nonexistent_category_rejected(product_service
 
 
 async def test_create_product_with_inactive_category_rejected(product_service):
-
     with pytest.raises(InvalidCategoryError):
         await _make_product(product_service, category_id=2, sku="X-002")
-
-
-async def create(self, **fields) -> Product:
-
-    fake_created_at = datetime(2024, 1, 1, tzinfo=UTC) + timedelta(
-        seconds=self._next_id
-    )
-    product = Product(
-        id=self._next_id,
-        created_at=fields.pop("created_at", fake_created_at),
-        updated_at=fields.pop("updated_at", fake_created_at),
-        **fields,
-    )
-    self.products[self._next_id] = product
-    self._next_id += 1
-    return product
 
 
 async def test_get_nonexistent_product_raises_not_found(product_service):
@@ -110,32 +92,3 @@ async def test_archive_product_sets_status_archived(product_service):
     archived = await product_service.archive_product(product.id)
 
     assert archived.status == ProductStatus.ARCHIVED
-
-    async def list_paginated(
-        self,
-        *,
-        offset: int,
-        limit: int,
-        category_id: int | None = None,
-        search: str | None = None,
-        min_price: int | None = None,
-        max_price: int | None = None,
-        sort: str = "-created_at",
-    ) -> tuple[list[Product], int]:
-        results = list(self.products.values())
-
-        if category_id is not None:
-            results = [p for p in results if p.category_id == category_id]
-        if search:
-            results = [p for p in results if search.lower() in p.name.lower()]
-        if min_price is not None:
-            results = [p for p in results if p.price_cents >= min_price]
-        if max_price is not None:
-            results = [p for p in results if p.price_cents <= max_price]
-
-        is_descending = sort.startswith("-")
-        sort_key = sort.lstrip("-")
-        results.sort(key=lambda p: getattr(p, sort_key), reverse=is_descending)
-
-        total = len(results)
-        return results[offset : offset + limit], total

@@ -1,49 +1,44 @@
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
+from sqlalchemy import update
 
-from app.core.database import get_db
-from app.main import app
+from app.modules.auth.models.user import User
+from app.shared.enums.roles import UserRole
 
-TEST_DATABASE_URL = (
-    "postgresql+asyncpg://postgres:postgres@db:5432/test_db"
-)
-
-engine = create_async_engine(
-    TEST_DATABASE_URL,
-    pool_pre_ping=True,
-)
-
-TestingSessionLocal = async_sessionmaker(
-    bind=engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autoflush=False,
-)
+# This file only ADDS a new fixture -- it does NOT redefine `client` or
+# `db_session`. Those are inherited automatically from the root
+# tests/conftest.py. Redefining them here was the exact mistake that
+# broke everything a few messages ago; this file is careful not to
+# repeat it.
 
 
 @pytest_asyncio.fixture
-async def db():
-    async with TestingSessionLocal() as session:
-        yield session
-        await session.rollback()
+async def admin_headers(client, db_session):
+    """
+    Registers a real user through the real API, then promotes them to
+    ADMIN directly via the database -- mirroring the same bootstrapping
+    gap we identified back in Stage 6 (there's no API route that can
+    create the first admin). get_current_user re-fetches the user's
+    role from the database on every request, so this promotion takes
+    effect immediately, on the SAME access token, without needing to
+    log in again.
+    """
+    await client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "admin_test",
+            "email": "admin_test@example.com",
+            "password": "AdminPassword123!",
+        },
+    )
+    login_response = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin_test@example.com", "password": "AdminPassword123!"},
+    )
+    access_token = login_response.json()["access_token"]
 
+    await db_session.execute(
+        update(User).where(User.email == "admin_test@example.com").values(role=UserRole.ADMIN)
+    )
+    await db_session.commit()
 
-@pytest_asyncio.fixture
-async def client(db: AsyncSession):
-    async def override_get_db():
-        yield db
-
-    app.dependency_overrides[get_db] = override_get_db
-
-    async with AsyncClient(
-        transport=ASGITransport(app=app),
-        base_url="http://test",
-    ) as client:
-        yield client
-
-    app.dependency_overrides.clear()
+    return {"Authorization": f"Bearer {access_token}"}

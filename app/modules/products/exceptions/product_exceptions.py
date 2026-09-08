@@ -2,8 +2,8 @@ from app.core.exceptions import ConflictError, InvalidStateError, NotFoundError
 
 
 class SkuAlreadyExistsError(ConflictError):
-    def __init__(self) -> None:
-        super().__init__("A product with this SKU already exists")
+    def __init__(self, sku: str) -> None:
+        super().__init__(f"A product with SKU '{sku}' already exists")
 
 
 class ProductNotFoundError(NotFoundError):

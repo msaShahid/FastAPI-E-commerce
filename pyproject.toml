@@ -26,8 +26,10 @@ dev-dependencies = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
 asyncio_mode = "auto"
+testpaths = ["tests"]
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 
 [tool.ruff]
 line-length = 100
@@ -51,6 +53,3 @@ packages = ["app"]
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-asyncio_default_fixture_loop_scope = "session"
-asyncio_default_test_loop_scope = "session"

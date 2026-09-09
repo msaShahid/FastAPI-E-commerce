@@ -16,6 +16,12 @@ COPY pyproject.toml ./
 # Copy application and tests
 COPY ./app ./app
 COPY ./tests ./tests
+COPY alembic.ini ./alembic.ini
+COPY alembic ./alembic
+COPY scripts ./scripts
+
+RUN mkdir -p /code/media
+
 
 # Install application and development dependencies
 RUN uv pip install --system --no-cache . \

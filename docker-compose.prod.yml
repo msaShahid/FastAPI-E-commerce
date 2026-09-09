@@ -1,0 +1,17 @@
+services:
+  api:
+    build:
+      context: .
+      args:
+        INSTALL_DEV: "false"
+    container_name: fastapi_api_prod
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env.production
+    volumes:
+      - media_prod:/code/media
+    restart: always
+
+volumes:
+  media_prod:

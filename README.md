@@ -1,4 +1,4 @@
-# FastAPI Shop
+# FastAPI E-commerce
 
 A production ready e-commerce backend built incrementally
 with FastAPI, PostgreSQL, SQLAlchemy 2.x, and Alembic.

@@ -12,7 +12,10 @@ Creates (idempotently -- safe to run repeatedly):
 
 Deliberately reuses the SAME services the API itself uses
 (AuthService, CategoryService, ProductService) rather than inserting
-rows directly.
+rows directly. This means seeded data goes through the exact same
+validation, slug generation, and uniqueness rules as data created
+through the real API -- there's no second, drifting code path for
+"how a user/category/product gets created."
 """
 
 import asyncio
@@ -33,15 +36,9 @@ from app.modules.users.repositories.user_repository import UserRepository
 from app.shared.enums.product_status import ProductStatus
 from app.shared.enums.roles import UserRole
 
-# TODO:
-# Import the SAME storage implementation used by CategoryService in the API.
-#
-# Example only -- replace this with your project's actual import:
-#
-# from app.shared.storage import Storage
-
 settings = get_settings()
 
+# run for seed : docker compose exec api python -m scripts.seed
 
 CATEGORIES = [
     ("Electronics", "Phones, laptops, tablets, and electronic accessories."),
@@ -57,7 +54,7 @@ CATEGORIES = [
     ("Toys & Games", "Toys, board games, puzzles, and entertainment products."),
 ]
 
-
+# (name, sku, price_cents, stock, category_name)
 PRODUCTS = [
     # Electronics
     ("Wireless Mouse", "ELEC-MOUSE-001", 1999, 50, "Electronics"),
@@ -68,7 +65,6 @@ PRODUCTS = [
     ("Portable Power Bank", "ELEC-POWERBANK-001", 2999, 40, "Electronics"),
     ("Laptop Stand", "ELEC-STAND-001", 2799, 30, "Electronics"),
     ("USB-C Charging Cable", "ELEC-CABLE-001", 899, 100, "Electronics"),
-
     # Books
     ("Clean Code", "BOOK-CC-001", 3499, 100, "Books"),
     ("Designing Data-Intensive Applications", "BOOK-DDIA-001", 4999, 40, "Books"),
@@ -77,7 +73,6 @@ PRODUCTS = [
     ("Atomic Habits", "BOOK-AH-001", 1599, 90, "Books"),
     ("Deep Work", "BOOK-DW-001", 1399, 65, "Books"),
     ("Refactoring", "BOOK-REFACTOR-001", 3899, 35, "Books"),
-
     # Home & Kitchen
     ("Stainless Steel Kettle", "HOME-KETTLE-001", 2499, 30, "Home & Kitchen"),
     ("Non-Stick Frying Pan", "HOME-PAN-001", 1899, 45, "Home & Kitchen"),
@@ -85,35 +80,30 @@ PRODUCTS = [
     ("Ceramic Dinner Set", "HOME-DINNERSET-001", 5499, 15, "Home & Kitchen"),
     ("Vacuum Storage Containers", "HOME-CONTAINER-001", 1299, 55, "Home & Kitchen"),
     ("Kitchen Knife Set", "HOME-KNIFE-001", 2999, 25, "Home & Kitchen"),
-
     # Office Supplies
     ("A5 Hardcover Notebook", "OFFICE-NOTEBOOK-001", 599, 150, "Office Supplies"),
     ("Gel Pen Set", "OFFICE-PENS-001", 399, 200, "Office Supplies"),
     ("Desk Organizer", "OFFICE-ORGANIZER-001", 899, 70, "Office Supplies"),
     ("Ergonomic Desk Mat", "OFFICE-MAT-001", 1499, 35, "Office Supplies"),
     ("Sticky Notes Pack", "OFFICE-STICKY-001", 299, 180, "Office Supplies"),
-
     # Sports & Fitness
     ("Yoga Mat", "SPORT-YOGA-001", 1299, 50, "Sports & Fitness"),
     ("Adjustable Dumbbell", "SPORT-DUMBBELL-001", 4999, 20, "Sports & Fitness"),
     ("Resistance Band Set", "SPORT-BANDS-001", 999, 65, "Sports & Fitness"),
     ("Insulated Water Bottle", "SPORT-BOTTLE-001", 1799, 80, "Sports & Fitness"),
     ("Jump Rope", "SPORT-JUMPROPE-001", 699, 75, "Sports & Fitness"),
-
     # Clothing
     ("Classic Cotton T-Shirt", "CLOTH-TSHIRT-001", 999, 100, "Clothing"),
     ("Slim Fit Jeans", "CLOTH-JEANS-001", 2499, 45, "Clothing"),
     ("Hooded Sweatshirt", "CLOTH-HOODIE-001", 2199, 35, "Clothing"),
     ("Canvas Backpack", "CLOTH-BACKPACK-001", 1899, 50, "Clothing"),
     ("Casual Polo Shirt", "CLOTH-POLO-001", 1499, 60, "Clothing"),
-
     # Beauty & Personal Care
     ("Daily Face Cleanser", "BEAUTY-CLEANSER-001", 799, 60, "Beauty & Personal Care"),
     ("Moisturizing Hand Cream", "BEAUTY-CREAM-001", 499, 90, "Beauty & Personal Care"),
     ("Bamboo Hair Brush", "BEAUTY-BRUSH-001", 699, 45, "Beauty & Personal Care"),
     ("Body Lotion", "BEAUTY-LOTION-001", 899, 70, "Beauty & Personal Care"),
     ("Lip Balm", "BEAUTY-LIPBALM-001", 299, 120, "Beauty & Personal Care"),
-
     # Toys & Games
     ("Wooden Puzzle Set", "TOY-PUZZLE-001", 899, 40, "Toys & Games"),
     ("Strategy Board Game", "TOY-BOARDGAME-001", 2499, 25, "Toys & Games"),
@@ -124,93 +114,58 @@ PRODUCTS = [
 
 
 async def seed_users(
-    auth_service: AuthService,
-    user_repository: UserRepository,
+    auth_service: AuthService, user_repository: UserRepository
 ) -> None:
-    """Seed admin and regular users."""
-
-    admin = await auth_service.repository.get_user_by_email(
-        settings.seed_admin_email
-    )
-
+    # Admin: register normally (always creates a USER), then promote --
+    # reusing UserRepository.update, the exact mechanism a real admin
+    # would use via PATCH /users/{id}. No special-case "create as admin"
+    # path exists anywhere in the app, on purpose.
+    admin = await auth_service.repository.get_user_by_email(settings.seed_admin_email)
     if admin is None:
         admin = await auth_service.register(
             username="admin",
             email=settings.seed_admin_email,
             password=settings.seed_admin_password,
         )
-
-        await user_repository.update(
-            admin,
-            role=UserRole.ADMIN,
-        )
-
+        await user_repository.update(admin, role=UserRole.ADMIN)
         print(
-            f"  Created admin: "
-            f"{settings.seed_admin_email} / "
-            f"{settings.seed_admin_password}"
+            f"  Created admin: {settings.seed_admin_email} / {settings.seed_admin_password}"
         )
     else:
         print(f"  Admin already exists: {settings.seed_admin_email}")
 
-    regular = await auth_service.repository.get_user_by_email(
-        settings.seed_user_email
-    )
-
+    regular = await auth_service.repository.get_user_by_email(settings.seed_user_email)
     if regular is None:
         await auth_service.register(
             username="testuser",
             email=settings.seed_user_email,
             password=settings.seed_user_password,
         )
-
         print(
-            f"  Created user: "
-            f"{settings.seed_user_email} / "
-            f"{settings.seed_user_password}"
+            f"  Created user: {settings.seed_user_email} / {settings.seed_user_password}"
         )
     else:
         print(f"  User already exists: {settings.seed_user_email}")
 
 
-async def seed_categories(
-    category_service: CategoryService,
-) -> dict[str, int]:
-    """Seed categories and return category-name -> ID mapping."""
-
+async def seed_categories(category_service: CategoryService) -> dict[str, int]:
     name_to_id: dict[str, int] = {}
-
     for name, description in CATEGORIES:
         try:
             category = await category_service.create_category(
-                name=name,
-                description=description,
+                name=name, description=description
             )
-
             print(f"  Created category: {name}")
-
         except CategoryNameAlreadyExistsError:
             category = await category_service.repository.get_by_name(name)
-
-            if category is None:
-                raise RuntimeError(
-                    f"Category '{name}' already exists according to the service, "
-                    "but could not be loaded from the repository."
-                )
-
             print(f"  Category already exists: {name}")
-
         name_to_id[name] = category.id
-
     return name_to_id
 
 
 async def seed_products(
-    product_service: ProductService,
-    category_ids: dict[str, int],
+    product_service: ProductService, category_ids: dict[str, int]
 ) -> None:
-    """Seed products."""
-
     for name, sku, price_cents, stock, category_name in PRODUCTS:
         try:
             await product_service.create_product(
@@ -222,16 +177,12 @@ async def seed_products(
                 category_id=category_ids[category_name],
                 status=ProductStatus.ACTIVE,
             )
-
             print(f"  Created product: {name} ({sku})")
-
         except SkuAlreadyExistsError:
             print(f"  Product already exists: {name} ({sku})")
 
 
 async def main() -> None:
-    """Run the complete database seed."""
-
     # if settings.environment == "production":
     #     raise RuntimeError(
     #         "Refusing to run the seed script with ENVIRONMENT=production. "
@@ -240,58 +191,23 @@ async def main() -> None:
     #     )
 
     async with async_session_factory() as db:
-        # Repositories
         auth_repo = AuthRepository(db)
         user_repo = UserRepository(db)
         category_repo = CategoryRepository(db)
         product_repo = ProductRepository(db)
 
-        # Services
         auth_service = AuthService(auth_repo)
-
-        # IMPORTANT:
-        # CategoryService now requires:
-        #
-        #     CategoryService(category_repo, storage)
-        #
-        # Create the SAME storage implementation used by your API here.
-        #
-        # Example:
-        #
-        # storage = Storage(...)
-        #
-        # category_service = CategoryService(category_repo, storage)
-
-        # TODO: replace this with your actual storage dependency.
-        storage = None
-
-        category_service = CategoryService(
-            category_repo,
-            storage,
-        )
-
-        product_service = ProductService(
-            product_repo,
-            category_repo,
-            storage,
-        )
+        category_service = CategoryService(category_repo)
+        product_service = ProductService(product_repo, category_repo)
 
         print("Seeding users...")
-        await seed_users(
-            auth_service,
-            user_repo,
-        )
+        await seed_users(auth_service, user_repo)
 
         print("Seeding categories...")
-        category_ids = await seed_categories(
-            category_service,
-        )
+        category_ids = await seed_categories(category_service)
 
         print("Seeding products...")
-        await seed_products(
-            product_service,
-            category_ids,
-        )
+        await seed_products(product_service, category_ids)
 
         await db.commit()
 

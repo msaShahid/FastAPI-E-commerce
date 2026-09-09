@@ -1,7 +1,7 @@
 [project]
-name = "fastapi-shop"
+name = "fastapi-e-commerce"
 version = "0.1.0"
-description = "Production-style e-commerce backend built with FastAPI"
+description = "Production e-commerce backend built with FastAPI"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi[standard]>=0.115",
@@ -17,8 +17,8 @@ dependencies = [
     "aioboto3>=10.0",
 ]
 
-[tool.uv]
-dev-dependencies = [
+[project.optional-dependencies]
+dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "httpx>=0.27",

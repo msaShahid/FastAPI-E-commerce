@@ -1,4 +1,5 @@
-from fastapi import APIRouter, status
+from app.core.rate_limit import limiter
+from fastapi import APIRouter, Request, status
 
 from app.modules.auth.dependencies.auth import AuthServiceDep, CurrentUser
 from app.modules.auth.schemas.auth import (
@@ -12,8 +13,13 @@ from app.modules.auth.schemas.auth import (
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@auth_router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
-async def register(payload: RegisterRequest, service: AuthServiceDep) -> UserRead:
+@auth_router.post(
+    "/register", response_model=UserRead, status_code=status.HTTP_201_CREATED
+)
+@limiter.limit("5/minute")
+async def register(
+    request: Request, payload: RegisterRequest, service: AuthServiceDep
+) -> UserRead:
     user = await service.register(
         username=payload.username,
         email=payload.email,
@@ -23,7 +29,10 @@ async def register(payload: RegisterRequest, service: AuthServiceDep) -> UserRea
 
 
 @auth_router.post("/login", response_model=TokenPair)
-async def login(payload: LoginRequest, service: AuthServiceDep) -> TokenPair:
+@limiter.limit("10/minute")
+async def login(
+    request: Request, payload: LoginRequest, service: AuthServiceDep
+) -> TokenPair:
     return await service.login(email=payload.email, password=payload.password)
 
 
@@ -33,7 +42,10 @@ async def get_me(current_user: CurrentUser) -> UserRead:
 
 
 @auth_router.post("/refresh", response_model=TokenPair)
-async def refresh(payload: RefreshRequest, service: AuthServiceDep) -> TokenPair:
+@limiter.limit("20/minute")
+async def refresh(
+    request: Request, payload: RefreshRequest, service: AuthServiceDep
+) -> TokenPair:
     return await service.refresh(refresh_token=payload.refresh_token)
 
 

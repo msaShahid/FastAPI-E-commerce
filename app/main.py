@@ -3,12 +3,15 @@ from typing import Annotated
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.exception_handlers import register_exception_handlers
+from app.core.rate_limit import limiter
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.modules.auth.api.router import auth_router
 from app.modules.categories.api.router import category_router
@@ -24,6 +27,8 @@ app = FastAPI(
     description="A learning project: production-style e-commerce backend.",
 )
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(

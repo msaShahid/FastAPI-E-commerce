@@ -29,3 +29,11 @@ class UserType:
             role=role,
             is_active=user.is_active,
         )
+
+@strawberry.type
+class UserPage:
+    items: list[UserType]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int

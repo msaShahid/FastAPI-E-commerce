@@ -14,13 +14,13 @@ class Settings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_file=".env.production",
+        env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
     # --- App ---
-    environment: str = "production"  # development | testing | staging | production
+    environment: str = "development"  # development | testing | staging | production
     api_v1_prefix: str = "/api/v1"
 
     # --- Database ---

@@ -24,7 +24,7 @@ services:
 
   db:
     image: postgres:16-alpine
-    container_name: fastapi_shop_db
+    container_name: fastapi_ecommerce_db
     environment:
       POSTGRES_USER: root
       POSTGRES_PASSWORD: "Passw0rd11"
@@ -42,7 +42,7 @@ services:
 
   test_db:
     image: postgres:16-alpine
-    container_name: fastapi_shop_test_db
+    container_name: fastapi_ecommerce_test_db
     environment:
       POSTGRES_USER: test_user
       POSTGRES_PASSWORD: test_password
@@ -60,7 +60,7 @@ services:
 
   adminer:
     image: adminer
-    container_name: fastapi_shop_adminer
+    container_name: fastapi_ecommerce_adminer
     ports:
       - "8081:8080"
     depends_on:

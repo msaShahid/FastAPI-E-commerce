@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.exception_handlers import register_exception_handlers
+from app.core.security_headers import SecurityHeadersMiddleware
 from app.modules.auth.api.router import auth_router
 from app.modules.categories.api.router import category_router
 from app.modules.playground.api.router import playground_router
@@ -21,6 +23,17 @@ app = FastAPI(
     version="0.1.0",
     description="A learning project: production-style e-commerce backend.",
 )
+
+
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 app.mount("/media", StaticFiles(directory="media"), name="media")
 

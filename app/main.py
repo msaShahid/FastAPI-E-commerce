@@ -13,6 +13,7 @@ from app.core.database import get_db
 from app.core.exception_handlers import register_exception_handlers
 from app.core.rate_limit import limiter
 from app.core.security_headers import SecurityHeadersMiddleware
+from app.graphql.schema import graphql_router
 from app.modules.auth.api.router import auth_router
 from app.modules.categories.api.router import category_router
 from app.modules.playground.api.router import playground_router
@@ -22,9 +23,9 @@ from app.modules.users.api.router import users_router
 settings = get_settings()
 
 app = FastAPI(
-    title="FastAPI Shop",
+    title="FastAPI E-Commerce",
     version="0.1.0",
-    description="A learning project: production-style e-commerce backend.",
+    description="Production ready e-commerce backend.",
 )
 
 app.state.limiter = limiter
@@ -50,6 +51,8 @@ app.include_router(users_router, prefix=settings.api_v1_prefix)
 app.include_router(category_router, prefix=settings.api_v1_prefix)
 app.include_router(product_router, prefix=settings.api_v1_prefix)
 
+
+app.include_router(graphql_router, prefix="/graphql")
 
 @app.get("/health", tags=["health"])
 def health_check() -> dict:

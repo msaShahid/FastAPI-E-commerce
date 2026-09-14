@@ -65,11 +65,10 @@ async def db_session(test_session_factory, _clean_database):
 
 @pytest_asyncio.fixture
 async def client(test_session_factory, _clean_database):
-    """
-    override_get_db mirrors core/database.py's real get_db (commit on
-    success, rollback on failure, always close). Every request gets a
-    fresh, independent session, same as production.
-    """
+
+    from app.core.rate_limit import limiter
+
+    limiter.reset()
 
     async def override_get_db():
         async with test_session_factory() as session:

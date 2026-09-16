@@ -17,6 +17,7 @@ from app.graphql.schema import graphql_router
 from app.modules.auth.api.router import auth_router
 from app.modules.cart.api.router import cart_router
 from app.modules.categories.api.router import category_router
+from app.modules.orders.api.router import order_router
 from app.modules.playground.api.router import playground_router
 from app.modules.products.api.router import product_router
 from app.modules.users.api.router import users_router
@@ -52,6 +53,7 @@ app.include_router(users_router, prefix=settings.api_v1_prefix)
 app.include_router(category_router, prefix=settings.api_v1_prefix)
 app.include_router(product_router, prefix=settings.api_v1_prefix)
 app.include_router(cart_router, prefix=settings.api_v1_prefix)
+app.include_router(order_router, prefix=settings.api_v1_prefix)
 
 
 app.include_router(graphql_router, prefix="/graphql")

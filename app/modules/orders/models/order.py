@@ -23,7 +23,11 @@ class Order(Base, TimestampMixin):
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
 
     status: Mapped[OrderStatus] = mapped_column(
-        Enum(OrderStatus, name="order_status"),
+        Enum(
+            OrderStatus,
+            name="order_status",
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+        ),
         default=OrderStatus.PENDING,
         server_default=OrderStatus.PENDING.value,
     )

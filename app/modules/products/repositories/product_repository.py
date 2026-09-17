@@ -76,7 +76,7 @@ class ProductRepository:
 
         is_descending = sort.startswith("-")
         sort_key = sort.lstrip("-")
-        sort_column = self._SORT_COLUMNS[sort_key] 
+        sort_column = self._SORT_COLUMNS[sort_key]
 
         items_query = (
             select(Product)
@@ -101,5 +101,17 @@ class ProductRepository:
     async def update(self, product: Product, **fields) -> Product:
         for key, value in fields.items():
             setattr(product, key, value)
+        await self.db.flush()
+        return product
+
+    async def get_by_id_for_update(self, product_id: int) -> Product | None:
+
+        result = await self.db.execute(
+            select(Product).where(Product.id == product_id).with_for_update()
+        )
+        return result.scalar_one_or_none()
+
+    async def decrement_stock(self, product: Product, quantity: int) -> Product:
+        product.stock -= quantity
         await self.db.flush()
         return product

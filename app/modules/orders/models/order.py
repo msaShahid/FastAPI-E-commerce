@@ -26,7 +26,7 @@ class Order(Base, TimestampMixin):
         Enum(
             OrderStatus,
             name="order_status",
-            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
         ),
         default=OrderStatus.PENDING,
         server_default=OrderStatus.PENDING.value,

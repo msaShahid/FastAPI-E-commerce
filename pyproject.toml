@@ -17,6 +17,7 @@ dependencies = [
     "aioboto3>=10.0",
     "slowapi>=0.1.9",
     "strawberry-graphql[fastapi]",
+    "stripe>=10.0",
 ]
 
 [project.optional-dependencies]

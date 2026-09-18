@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     seed_user_email: str = "user@example.com"
     seed_user_password: str = "UserPassword123!"
 
+     # --- Payments (Stripe) ---
+    stripe_secret_key: str
+    stripe_webhook_secret: str
+
 
 @lru_cache
 def get_settings() -> Settings:

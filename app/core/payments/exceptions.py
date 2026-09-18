@@ -1,0 +1,2 @@
+class InvalidWebhookSignatureError(Exception):
+    pass

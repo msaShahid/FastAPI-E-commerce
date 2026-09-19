@@ -18,6 +18,8 @@ from app.modules.categories.models.category import Category  # noqa: F401
 from app.modules.orders.models.order import Order  # noqa: F401
 from app.modules.orders.models.order_item import OrderItem  # noqa: F401
 from app.modules.orders.models.order_status_history import OrderStatusHistory  # noqa: F401
+from app.modules.payments.models.payment import Payment  # noqa: F401
+from app.modules.payments.models.webhook_event import ProcessedWebhookEvent  # noqa: F401
 from app.modules.products.models.product import Product  # noqa: F401
 
 # this is the Alembic Config object, which provides

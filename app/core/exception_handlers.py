@@ -5,12 +5,14 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 
 from app.core.exceptions import (
+    BadRequestError,
     ConflictError,
     ErrorResponse,
     ForbiddenError,
     InvalidStateError,
     NotFoundError,
     UnauthorizedError,
+    UpstreamServiceError,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,6 +47,23 @@ def register_exception_handlers(app: FastAPI) -> None:
             status_code=status.HTTP_401_UNAUTHORIZED,
             content=ErrorResponse(detail=exc.message).model_dump(),
             headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    @app.exception_handler(BadRequestError)
+    async def handle_bad_request(request: Request, exc: BadRequestError) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content=ErrorResponse(detail=exc.message).model_dump(),
+        )
+
+    @app.exception_handler(UpstreamServiceError)
+    async def handle_upstream_service_error(
+        request: Request, exc: UpstreamServiceError
+    ) -> JSONResponse:
+        logger.warning("Upstream service error on %s %s: %s", request.method, request.url.path, exc)
+        return JSONResponse(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            content=ErrorResponse(detail=exc.message).model_dump(),
         )
 
     @app.exception_handler(InvalidStateError)

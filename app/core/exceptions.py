@@ -42,6 +42,16 @@ class InvalidStateError(AppError):
     def __init__(self, message: str = "Invalid request") -> None:
         super().__init__(message)
 
+class BadRequestError(AppError):
+
+    def __init__(self, message: str = "Bad request") -> None:
+        super().__init__(message)
+
+class UpstreamServiceError(AppError):
+
+    def __init__(self, message: str = "An upstream service failed") -> None:
+        super().__init__(message)
+
 class InvalidImageError(InvalidStateError):
 
     def __init__(self, message: str) -> None:

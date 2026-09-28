@@ -22,6 +22,18 @@ class FakeOrderRepository:
     async def get_by_id(self, order_id: UUID) -> Order | None:
         return self.orders.get(order_id)
 
+    async def get_by_id_for_update(self, order_id: UUID) -> Order | None:
+        return self.orders.get(order_id)
+
+    async def list_stale_pending_order_ids(self, *, older_than: datetime) -> list[UUID]:
+        return [
+            o.id
+            for o in self.orders.values()
+            if o.status == OrderStatus.PENDING
+            and o.created_at is not None
+            and o.created_at < older_than
+        ]
+
     async def list_for_user(self, user_id: UUID, *, offset: int, limit: int):
         matching = [o for o in self.orders.values() if o.user_id == user_id]
         return matching[offset : offset + limit], len(matching)
@@ -111,6 +123,10 @@ class FakeProductRepositoryForOrders:
 
     async def decrement_stock(self, product: Product, quantity: int) -> Product:
         product.stock -= quantity
+        return product
+
+    async def increment_stock(self, product: Product, quantity: int) -> Product:
+        product.stock += quantity
         return product
 
     async def create(self, **fields) -> Product:

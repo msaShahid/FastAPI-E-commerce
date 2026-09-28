@@ -21,6 +21,7 @@ class CategoryRead(BaseModel):
     slug: str
     description: str | None
     image_path: str | None
+    image_url: str | None = None
     is_active: bool
     created_at: datetime
 

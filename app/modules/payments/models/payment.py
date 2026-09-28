@@ -18,10 +18,16 @@ class Payment(Base, TimestampMixin):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
 
-    order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id", ondelete="RESTRICT"), index=True)
+    order_id: Mapped[UUID] = mapped_column(
+        ForeignKey("orders.id", ondelete="RESTRICT"), index=True
+    )
 
-    provider: Mapped[str] = mapped_column(String(50), default="stripe", server_default="stripe")
-    provider_payment_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    provider: Mapped[str] = mapped_column(
+        String(50), default="stripe", server_default="stripe"
+    )
+    provider_payment_id: Mapped[str] = mapped_column(
+        String(255), unique=True, index=True
+    )
 
     status: Mapped[PaymentStatus] = mapped_column(
         Enum(
@@ -34,4 +40,9 @@ class Payment(Base, TimestampMixin):
     )
 
     amount_cents: Mapped[int] = mapped_column(Integer)
-    currency: Mapped[str] = mapped_column(String(3), default="usd", server_default="usd")
+    currency: Mapped[str] = mapped_column(
+        String(3), default="usd", server_default="usd"
+    )
+
+    provider_refund_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    refunded_amount_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)

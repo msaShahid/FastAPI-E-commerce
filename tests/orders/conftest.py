@@ -16,8 +16,15 @@ class FakeOrderRepository:
         self.orders: dict[UUID, Order] = {}
         self.status_changes: list[tuple] = []
 
-    async def get_by_idempotency_key(self, key: str) -> Order | None:
-        return next((o for o in self.orders.values() if o.idempotency_key == key), None)
+    async def get_by_idempotency_key(self, key: str, *, user_id: UUID) -> Order | None:
+        return next(
+            (
+                o
+                for o in self.orders.values()
+                if o.idempotency_key == key and o.user_id == user_id
+            ),
+            None,
+        )
 
     async def get_by_id(self, order_id: UUID) -> Order | None:
         return self.orders.get(order_id)
@@ -38,9 +45,7 @@ class FakeOrderRepository:
         matching = [o for o in self.orders.values() if o.user_id == user_id]
         return matching[offset : offset + limit], len(matching)
 
-    async def list_all(
-        self, *, offset: int, limit: int, status: OrderStatus | None = None
-    ):
+    async def list_all(self, *, offset: int, limit: int, status: OrderStatus | None = None):
         matching = [
             o for o in self.orders.values() if status is None or o.status == status
         ]
@@ -77,9 +82,7 @@ class FakeOrderRepository:
         self.orders[order_id] = order
         return order
 
-    async def update_status(
-        self, order: Order, new_status: OrderStatus, changed_by_user_id
-    ) -> Order:
+    async def update_status(self, order: Order, new_status: OrderStatus, changed_by_user_id) -> Order:
         self.status_changes.append((order.status, new_status, changed_by_user_id))
         order.status = new_status
         return order
@@ -103,9 +106,7 @@ class FakeCartRepositoryForOrders:
     async def clear(self, cart: Cart) -> None:
         cart.items.clear()
 
-    def add_item_directly(
-        self, cart: Cart, product_id: int, quantity: int, price_cents: int
-    ):
+    def add_item_directly(self, cart: Cart, product_id: int, quantity: int, price_cents: int):
         """Test helper -- seeds a cart without going through CartService."""
         item = CartItem(
             id=self._next_item_id,
@@ -141,9 +142,7 @@ class FakeProductRepositoryForOrders:
         return product
 
     async def create(self, **fields) -> Product:
-        fake_created_at = datetime(2024, 1, 1, tzinfo=UTC) + timedelta(
-            seconds=self._next_id
-        )
+        fake_created_at = datetime(2024, 1, 1, tzinfo=UTC) + timedelta(seconds=self._next_id)
         product = Product(
             id=self._next_id,
             created_at=fields.pop("created_at", fake_created_at),

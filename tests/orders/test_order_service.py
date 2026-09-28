@@ -210,6 +210,48 @@ async def test_checkout_is_idempotent(
     assert product.stock == stock_after_first  # no double decrement
 
 
+async def test_checkout_idempotency_key_is_scoped_per_user(
+    order_service, fake_cart_repository_for_orders, fake_product_repository_for_orders
+):
+    """
+    Two different users sending the identical Idempotency-Key value must
+    each get their OWN order -- a shared/colliding key value must never
+    return one user's order to a different user. (Previously this was a
+    global unique key: a collision returned the wrong user's order.)
+    """
+    user_a = uuid4()
+    user_b = uuid4()
+    product = await _make_product(fake_product_repository_for_orders, stock=10)
+    await _seed_cart(fake_cart_repository_for_orders, user_a, product, quantity=1)
+    await _seed_cart(fake_cart_repository_for_orders, user_b, product, quantity=1)
+
+    order_a = await order_service.checkout(user_id=user_a, idempotency_key="shared-key")
+    order_b = await order_service.checkout(user_id=user_b, idempotency_key="shared-key")
+
+    assert order_a.id != order_b.id
+    assert order_a.user_id == user_a
+    assert order_b.user_id == user_b
+    assert product.stock == 8  # both checkouts actually went through
+
+
+async def test_checkout_retry_still_returns_same_order_after_per_user_scoping(
+    order_service, fake_cart_repository_for_orders, fake_product_repository_for_orders
+):
+    """Same user, same key, called via two different users' unrelated
+    checkouts in between -- must not affect this user's own retry."""
+    user_id = uuid4()
+    other_user = uuid4()
+    product = await _make_product(fake_product_repository_for_orders, stock=10)
+    await _seed_cart(fake_cart_repository_for_orders, user_id, product, quantity=1)
+    await _seed_cart(fake_cart_repository_for_orders, other_user, product, quantity=1)
+
+    first = await order_service.checkout(user_id=user_id, idempotency_key="dup-key")
+    await order_service.checkout(user_id=other_user, idempotency_key="dup-key")
+    second = await order_service.checkout(user_id=user_id, idempotency_key="dup-key")
+
+    assert first.id == second.id
+
+
 # --- authorization ---
 
 

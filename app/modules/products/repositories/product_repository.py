@@ -115,3 +115,9 @@ class ProductRepository:
         product.stock -= quantity
         await self.db.flush()
         return product
+
+    async def increment_stock(self, product: Product, quantity: int) -> Product:
+        """Restocks -- e.g. releasing stock held by an abandoned, never-paid order."""
+        product.stock += quantity
+        await self.db.flush()
+        return product

@@ -38,6 +38,15 @@ class FakeOrderRepository:
         matching = [o for o in self.orders.values() if o.user_id == user_id]
         return matching[offset : offset + limit], len(matching)
 
+    async def list_all(
+        self, *, offset: int, limit: int, status: OrderStatus | None = None
+    ):
+        matching = [
+            o for o in self.orders.values() if status is None or o.status == status
+        ]
+        matching.sort(key=lambda o: o.created_at or datetime.min, reverse=True)
+        return matching[offset : offset + limit], len(matching)
+
     async def create_order(
         self,
         *,
@@ -60,9 +69,7 @@ class FakeOrderRepository:
             tax_cents=tax_cents,
             total_cents=total_cents,
         )
-        # Build OrderItem objects WITHOUT setting order_id then also
-        # appending -- assigning .order triggers back_populates to
-        # append automatically (the exact bug from Stage 15's fake).
+
         order.items = []
         for i, data in enumerate(items, start=1):
             item = OrderItem(id=i, order_id=order_id, **data)
@@ -70,7 +77,9 @@ class FakeOrderRepository:
         self.orders[order_id] = order
         return order
 
-    async def update_status(self, order: Order, new_status: OrderStatus, changed_by_user_id) -> Order:
+    async def update_status(
+        self, order: Order, new_status: OrderStatus, changed_by_user_id
+    ) -> Order:
         self.status_changes.append((order.status, new_status, changed_by_user_id))
         order.status = new_status
         return order
@@ -94,7 +103,9 @@ class FakeCartRepositoryForOrders:
     async def clear(self, cart: Cart) -> None:
         cart.items.clear()
 
-    def add_item_directly(self, cart: Cart, product_id: int, quantity: int, price_cents: int):
+    def add_item_directly(
+        self, cart: Cart, product_id: int, quantity: int, price_cents: int
+    ):
         """Test helper -- seeds a cart without going through CartService."""
         item = CartItem(
             id=self._next_item_id,
@@ -130,7 +141,9 @@ class FakeProductRepositoryForOrders:
         return product
 
     async def create(self, **fields) -> Product:
-        fake_created_at = datetime(2024, 1, 1, tzinfo=UTC) + timedelta(seconds=self._next_id)
+        fake_created_at = datetime(2024, 1, 1, tzinfo=UTC) + timedelta(
+            seconds=self._next_id
+        )
         product = Product(
             id=self._next_id,
             created_at=fields.pop("created_at", fake_created_at),

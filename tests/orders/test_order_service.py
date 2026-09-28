@@ -310,7 +310,9 @@ async def test_cancel_stale_pending_orders_restocks_and_cancels(
     order_service, fake_order_repository, fake_product_repository_for_orders
 ):
     product = await _make_product(fake_product_repository_for_orders, stock=5)
-    order = _make_stale_order(fake_order_repository, product, quantity=2, age_minutes=60)
+    order = _make_stale_order(
+        fake_order_repository, product, quantity=2, age_minutes=60
+    )
     cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=30)
 
     cancelled_ids = await order_service.cancel_stale_pending_orders(older_than=cutoff)
@@ -338,7 +340,9 @@ async def test_cancel_stale_pending_orders_ignores_non_pending_orders(
     order_service, fake_order_repository, fake_product_repository_for_orders
 ):
     product = await _make_product(fake_product_repository_for_orders, stock=5)
-    order = _make_stale_order(fake_order_repository, product, quantity=2, age_minutes=60)
+    order = _make_stale_order(
+        fake_order_repository, product, quantity=2, age_minutes=60
+    )
     order.status = OrderStatus.CANCELLED  # e.g. an admin already cancelled it
     cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=30)
 
@@ -370,12 +374,20 @@ async def test_cancel_stale_pending_orders_locks_products_in_ascending_id_order(
     # Items deliberately built in DESCENDING product-id order.
     order.items = [
         OrderItem(
-            id=1, order_id=order_id, product_id=p2.id,
-            product_name_snapshot=p2.name, price_cents_snapshot=p2.price_cents, quantity=1,
+            id=1,
+            order_id=order_id,
+            product_id=p2.id,
+            product_name_snapshot=p2.name,
+            price_cents_snapshot=p2.price_cents,
+            quantity=1,
         ),
         OrderItem(
-            id=2, order_id=order_id, product_id=p1.id,
-            product_name_snapshot=p1.name, price_cents_snapshot=p1.price_cents, quantity=1,
+            id=2,
+            order_id=order_id,
+            product_id=p1.id,
+            product_name_snapshot=p1.name,
+            price_cents_snapshot=p1.price_cents,
+            quantity=1,
         ),
     ]
     fake_order_repository.orders[order_id] = order
@@ -417,3 +429,53 @@ async def test_cancel_stale_pending_orders_skips_order_that_became_paid_before_l
     assert cancelled_ids == []
     assert order.status == OrderStatus.PAID  # untouched by the reaper
     assert product.stock == 5  # NOT restocked
+
+
+# --- list_all_orders (admin) ---
+
+
+async def test_list_all_orders_returns_every_users_orders(
+    order_service, fake_order_repository, fake_product_repository_for_orders
+):
+    product = await _make_product(fake_product_repository_for_orders, stock=10)
+    order_a = _make_stale_order(fake_order_repository, product, age_minutes=5)
+    order_b = _make_stale_order(fake_order_repository, product, age_minutes=1)
+    assert order_a.user_id != order_b.user_id  # different users, both should show up
+
+    orders, total = await order_service.list_all_orders(offset=0, limit=20)
+
+    assert total == 2
+    assert {o.id for o in orders} == {order_a.id, order_b.id}
+
+
+async def test_list_all_orders_filters_by_status(
+    order_service, fake_order_repository, fake_product_repository_for_orders
+):
+    product = await _make_product(fake_product_repository_for_orders, stock=10)
+    pending_order = _make_stale_order(fake_order_repository, product, age_minutes=5)
+    paid_order = _make_stale_order(fake_order_repository, product, age_minutes=1)
+    paid_order.status = OrderStatus.PAID
+
+    orders, total = await order_service.list_all_orders(
+        offset=0, limit=20, status=OrderStatus.PAID
+    )
+
+    assert total == 1
+    assert orders[0].id == paid_order.id
+    assert pending_order.id not in {o.id for o in orders}
+
+
+async def test_list_all_orders_paginates(
+    order_service, fake_order_repository, fake_product_repository_for_orders
+):
+    product = await _make_product(fake_product_repository_for_orders, stock=10)
+    for i in range(5):
+        _make_stale_order(fake_order_repository, product, age_minutes=i)
+
+    page_1, total = await order_service.list_all_orders(offset=0, limit=2)
+    page_2, _ = await order_service.list_all_orders(offset=2, limit=2)
+
+    assert total == 5
+    assert len(page_1) == 2
+    assert len(page_2) == 2
+    assert {o.id for o in page_1}.isdisjoint({o.id for o in page_2})

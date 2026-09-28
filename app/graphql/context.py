@@ -2,7 +2,7 @@ from fastapi import Request
 from fastapi.security import HTTPAuthorizationCredentials
 from strawberry.fastapi import BaseContext
 
-from app.core.database import async_session_factory
+from app.core.database import DbSession
 from app.modules.auth.dependencies.auth import get_current_user
 from app.modules.auth.models.user import User
 from app.modules.auth.repositories.auth_repository import AuthRepository
@@ -48,36 +48,26 @@ def get_bearer_credentials(
 
 async def get_graphql_context(
     request: Request,
+    db: DbSession,
 ) -> GraphQLContext:
     """
-     Uses the same JWT authentication and service layer as the REST API.
+    Uses the same JWT authentication, database session lifecycle, and
+    service layer as the REST API. FastAPI injects `get_db`, so the
+    session is committed or rolled back and closed after the operation.
     """
 
-    db = async_session_factory()
+    credentials = get_bearer_credentials(request)
+    auth_repository = AuthRepository(db)
+    current_user = await get_current_user(
+        credentials=credentials,
+        repository=auth_repository,
+    )
+    user_repository = UserRepository(db)
+    user_service = UserService(user_repository)
 
-    try:
-        credentials = get_bearer_credentials(request)
-
-        # Authenticate using the existing REST authentication logic.
-        auth_repository = AuthRepository(db)
-
-        current_user = await get_current_user(
-            credentials=credentials,
-            repository=auth_repository,
-        )
-
-        # Build the same UserService used by REST.
-        user_repository = UserRepository(db)
-        user_service = UserService(user_repository)
-
-        return GraphQLContext(
-            request=request,
-            db=db,
-            current_user=current_user,
-            user_service=user_service,
-        )
-
-    except Exception:
-        await db.rollback()
-        await db.close()
-        raise
+    return GraphQLContext(
+        request=request,
+        db=db,
+        current_user=current_user,
+        user_service=user_service,
+    )

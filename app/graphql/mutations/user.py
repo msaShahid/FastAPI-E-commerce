@@ -31,8 +31,6 @@ class UserMutation:
             role=input.role,
         )
 
-        await info.context.db.commit()
-
         return UserType.from_model(user)
 
     @strawberry.mutation
@@ -53,7 +51,5 @@ class UserMutation:
             target_user_id=user_id,
             current_user=current_user,
         )
-
-        await info.context.db.commit()
 
         return not user.is_active

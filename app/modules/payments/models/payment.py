@@ -1,7 +1,7 @@
 import uuid
 from uuid import UUID
 
-from sqlalchemy import Enum, ForeignKey, Integer, String
+from sqlalchemy import CheckConstraint, Enum, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -11,8 +11,10 @@ from app.shared.mixins import TimestampMixin
 
 class Payment(Base, TimestampMixin):
 
-
     __tablename__ = "payments"
+    __table_args__ = (
+        CheckConstraint("amount_cents > 0", name="ck_payments_amount_positive"),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
 
@@ -32,3 +34,4 @@ class Payment(Base, TimestampMixin):
     )
 
     amount_cents: Mapped[int] = mapped_column(Integer)
+    currency: Mapped[str] = mapped_column(String(3), default="usd", server_default="usd")

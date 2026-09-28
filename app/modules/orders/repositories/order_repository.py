@@ -80,6 +80,31 @@ class OrderRepository:
         )
         return list(items_result.scalars().all()), total
 
+    async def list_all(
+        self, *, offset: int, limit: int, status: OrderStatus | None = None
+    ) -> tuple[list[Order], int]:
+        """
+        Admin view across every user's orders. Access control (admin-only)
+        """
+        conditions = []
+        if status is not None:
+            conditions.append(Order.status == status)
+
+        total_result = await self.db.execute(
+            select(func.count()).select_from(Order).where(*conditions)
+        )
+        total = total_result.scalar_one()
+
+        items_result = await self.db.execute(
+            select(Order)
+            .where(*conditions)
+            .options(selectinload(Order.items))
+            .order_by(Order.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return list(items_result.scalars().all()), total
+
     async def create_order(
         self,
         *,
@@ -100,7 +125,7 @@ class OrderRepository:
             total_cents=total_cents,
         )
         self.db.add(order)
-        await self.db.flush() 
+        await self.db.flush()
 
         for item_data in items:
             self.db.add(OrderItem(order_id=order.id, **item_data))

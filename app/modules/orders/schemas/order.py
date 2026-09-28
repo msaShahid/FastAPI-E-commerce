@@ -19,6 +19,7 @@ class OrderItemRead(BaseModel):
 
 class OrderRead(BaseModel):
     id: UUID
+    user_id: UUID
     status: OrderStatus
     subtotal_cents: int
     shipping_cents: int

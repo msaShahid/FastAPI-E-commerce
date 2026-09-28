@@ -1,10 +1,11 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, status
+from fastapi import APIRouter, Depends, Header, Query, status
 
 from app.modules.auth.dependencies.auth import AdminUser, CurrentUser
 from app.modules.orders.dependencies.order_deps import OrderServiceDep
 from app.modules.orders.schemas.order import OrderRead, OrderStatusUpdate
+from app.shared.enums.order_status import OrderStatus
 from app.shared.enums.roles import UserRole
 from app.shared.pagination.schemas import PageParams, PaginatedResponse
 
@@ -34,6 +35,27 @@ async def list_my_orders(
 ) -> PaginatedResponse[OrderRead]:
     orders, total = await service.list_my_orders(
         current_user.id, offset=params.offset, limit=params.page_size
+    )
+    return PaginatedResponse[OrderRead](
+        items=[OrderRead.model_validate(o) for o in orders],
+        total=total,
+        page=params.page,
+        page_size=params.page_size,
+    )
+
+
+@order_router.get("/admin", response_model=PaginatedResponse[OrderRead])
+async def list_all_orders(
+    admin: AdminUser,
+    service: OrderServiceDep,
+    params: PageParams = Depends(),
+    status_filter: OrderStatus | None = Query(default=None, alias="status"),
+) -> PaginatedResponse[OrderRead]:
+    """
+    Admin-only. Every order across every user
+    """
+    orders, total = await service.list_all_orders(
+        offset=params.offset, limit=params.page_size, status=status_filter
     )
     return PaginatedResponse[OrderRead](
         items=[OrderRead.model_validate(o) for o in orders],

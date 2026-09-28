@@ -123,8 +123,18 @@ class OrderService:
     ) -> tuple[list[Order], int]:
         return await self.repository.list_for_user(user_id, offset=offset, limit=limit)
 
+    async def list_all_orders(
+        self, *, offset: int, limit: int, status: OrderStatus | None = None
+    ) -> tuple[list[Order], int]:
+
+        return await self.repository.list_all(offset=offset, limit=limit, status=status)
+
     async def update_status(
-        self, *, order_id: UUID, new_status: OrderStatus, changed_by_user_id: UUID | None
+        self,
+        *,
+        order_id: UUID,
+        new_status: OrderStatus,
+        changed_by_user_id: UUID | None,
     ) -> Order:
         order = await self.repository.get_by_id(order_id)
         if order is None:
@@ -176,7 +186,9 @@ class OrderService:
                     item.product_id
                 )
                 if product is not None:
-                    await self.product_repository.increment_stock(product, item.quantity)
+                    await self.product_repository.increment_stock(
+                        product, item.quantity
+                    )
 
             await self.repository.update_status(order, OrderStatus.CANCELLED, None)
             cancelled_order_ids.append(order.id)

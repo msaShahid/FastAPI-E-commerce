@@ -8,7 +8,6 @@ from app.modules.cart.exceptions.cart_exceptions import (
 from app.modules.cart.repositories.cart_repository import CartRepository
 from app.modules.orders.exceptions.order_exceptions import (
     EmptyCartError,
-    IdempotencyKeyConflictError,
     InvalidStatusTransitionError,
     OrderAccessForbiddenError,
     OrderNotFoundError,
@@ -33,11 +32,14 @@ class OrderService:
         self.product_repository = product_repository
 
     async def checkout(self, *, user_id: UUID, idempotency_key: str) -> Order:
-
-        existing = await self.repository.get_by_idempotency_key(idempotency_key)
+        """
+        Idempotency is scoped per-user (see the composite unique
+        constraint on Order)
+        """
+        existing = await self.repository.get_by_idempotency_key(
+            idempotency_key, user_id=user_id
+        )
         if existing is not None:
-            if existing.user_id != user_id:
-                raise IdempotencyKeyConflictError()
             return existing
 
         cart = await self.cart_repository.get_or_create_cart(user_id)
@@ -148,27 +150,7 @@ class OrderService:
         )
 
     async def cancel_stale_pending_orders(self, *, older_than: datetime) -> list[UUID]:
-        """
-        Checkout decrements stock immediately (see checkout() above), so
-        a PENDING order that never gets paid holds that stock forever
-        unless something releases it. This cancels every order that has
-        been PENDING since before `older_than` and restocks its items.
-        Intended to be called periodically by an outside scheduler (see
-        scripts/cancel_stale_orders.py), never from a request.
 
-        `older_than` must be naive (no tzinfo) -- orders.created_at is a
-        naive DateTime column (by convention, UTC), unlike e.g.
-        refresh_tokens.expires_at which is timezone-aware.
-
-        Each order is looked up, locked, and re-checked individually --
-        the initial listing is not itself locked, so by the time this
-        gets to a given order, the customer may have just paid, or
-        another reaper run may have already handled it. Re-checking
-        status and age AFTER acquiring the row lock (the same guard
-        create_payment_for_order relies on) is what makes that safe:
-        the loser of that race just skips the order instead of
-        double-cancelling or cancelling a now-paid order.
-        """
         stale_order_ids = await self.repository.list_stale_pending_order_ids(
             older_than=older_than
         )

@@ -1,4 +1,4 @@
-from app.core.exceptions import ForbiddenError, InvalidStateError, NotFoundError
+from app.core.exceptions import ConflictError, ForbiddenError, InvalidStateError, NotFoundError
 
 
 class EmptyCartError(InvalidStateError):
@@ -19,3 +19,8 @@ class InvalidStatusTransitionError(InvalidStateError):
 class OrderAccessForbiddenError(ForbiddenError):
     def __init__(self) -> None:
         super().__init__("You do not have access to this order")
+
+
+class IdempotencyKeyConflictError(ConflictError):
+    def __init__(self) -> None:
+        super().__init__("This idempotency key was already used")

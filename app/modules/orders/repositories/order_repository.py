@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -27,6 +28,39 @@ class OrderRepository:
             select(Order).where(Order.id == order_id).options(selectinload(Order.items))
         )
         return result.scalar_one_or_none()
+
+    async def get_by_id_for_update(self, order_id) -> Order | None:
+        """
+        Locks the order row so two concurrent callers (e.g. a payment
+        being created while the stale-order reaper is looking at the
+        same order) serialize instead of racing. Mirrors the
+        product-locking pattern used by checkout. Items are eager-loaded
+        the same way get_by_id does -- selectinload runs as its own
+        follow-up query, so it doesn't interfere with the FOR UPDATE
+        lock on the orders row itself.
+        """
+        result = await self.db.execute(
+            select(Order)
+            .where(Order.id == order_id)
+            .options(selectinload(Order.items))
+            .with_for_update()
+        )
+        return result.scalar_one_or_none()
+
+    async def list_stale_pending_order_ids(self, *, older_than: datetime) -> list[UUID]:
+        """
+        Order ids still PENDING after `older_than` -- candidates for the
+        stale-order reaper. Deliberately just ids: the reaper re-fetches
+        and locks each one individually rather than holding a lock on
+        every stale order for the whole batch.
+        """
+        result = await self.db.execute(
+            select(Order.id).where(
+                Order.status == OrderStatus.PENDING,
+                Order.created_at < older_than,
+            )
+        )
+        return list(result.scalars().all())
 
     async def list_for_user(
         self, user_id: UUID, *, offset: int, limit: int

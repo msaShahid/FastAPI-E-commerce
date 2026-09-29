@@ -1,4 +1,9 @@
-from app.core.exceptions import ConflictError, ForbiddenError, InvalidStateError, NotFoundError
+from app.core.exceptions import (
+    ConflictError,
+    ForbiddenError,
+    InvalidStateError,
+    NotFoundError,
+)
 
 
 class EmptyCartError(InvalidStateError):
@@ -24,3 +29,16 @@ class OrderAccessForbiddenError(ForbiddenError):
 class IdempotencyKeyConflictError(ConflictError):
     def __init__(self) -> None:
         super().__init__("This idempotency key was already used")
+
+
+class ShippingAddressRequiredError(InvalidStateError):
+    def __init__(self) -> None:
+        super().__init__(
+            "A shipping address is required to check out -- pass either "
+            "address_id (a saved address) or shipping_address"
+        )
+
+
+class GuestEmailRequiredError(InvalidStateError):
+    def __init__(self) -> None:
+        super().__init__("An email address is required for guest checkout")

@@ -15,16 +15,33 @@ class OrderRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def get_by_idempotency_key(self, key: str, *, user_id: UUID) -> Order | None:
+    async def get_by_idempotency_key(
+        self, key: str, *, user_id: UUID | None = None, guest_token: str | None = None
+    ) -> Order | None:
+
+        identity_condition = (
+            Order.user_id == user_id
+            if user_id is not None
+            else Order.guest_token == guest_token
+        )
+        result = await self.db.execute(
+            select(Order)
+            .where(Order.idempotency_key == key, identity_condition)
+            .options(selectinload(Order.items))
+        )
+        return result.scalar_one_or_none()
+
+    async def get_by_guest_token(self, order_id, *, guest_token: str) -> Order | None:
         """
-        Scoped to (user_id, key) -- matches the composite unique
-        constraint on the Order model. Never looked up by key alone:
-        that would let one user's retry match a different user's order
-        if their key values happened to collide.
+        A guest's own order lookup -- matched by guest_token instead of
+        a user_id ownership check, since a guest order has no user_id
+        at all. Never exposed to a caller who doesn't already have the
+        exact token from their own checkout (see the guest_cart_token
+        cookie / CartOwner).
         """
         result = await self.db.execute(
             select(Order)
-            .where(Order.idempotency_key == key, Order.user_id == user_id)
+            .where(Order.id == order_id, Order.guest_token == guest_token)
             .options(selectinload(Order.items))
         )
         return result.scalar_one_or_none()
@@ -46,7 +63,12 @@ class OrderRepository:
         return result.scalar_one_or_none()
 
     async def list_stale_pending_order_ids(self, *, older_than: datetime) -> list[UUID]:
-
+        """
+        Order ids still PENDING after `older_than` -- candidates for the
+        stale-order reaper. Deliberately just ids: the reaper re-fetches
+        and locks each one individually rather than holding a lock on
+        every stale order for the whole batch.
+        """
         result = await self.db.execute(
             select(Order.id).where(
                 Order.status == OrderStatus.PENDING,
@@ -99,21 +121,39 @@ class OrderRepository:
     async def create_order(
         self,
         *,
-        user_id: UUID,
+        user_id: UUID | None,
         idempotency_key: str,
         items: list[dict],
         subtotal_cents: int,
         shipping_cents: int,
         tax_cents: int,
         total_cents: int,
+        guest_token: str | None = None,
+        guest_email: str | None = None,
+        shipping_recipient_name: str | None = None,
+        shipping_line1: str | None = None,
+        shipping_line2: str | None = None,
+        shipping_city: str | None = None,
+        shipping_state: str | None = None,
+        shipping_postal_code: str | None = None,
+        shipping_country: str | None = None,
     ) -> Order:
         order = Order(
             user_id=user_id,
+            guest_token=guest_token,
+            guest_email=guest_email,
             idempotency_key=idempotency_key,
             subtotal_cents=subtotal_cents,
             shipping_cents=shipping_cents,
             tax_cents=tax_cents,
             total_cents=total_cents,
+            shipping_recipient_name=shipping_recipient_name,
+            shipping_line1=shipping_line1,
+            shipping_line2=shipping_line2,
+            shipping_city=shipping_city,
+            shipping_state=shipping_state,
+            shipping_postal_code=shipping_postal_code,
+            shipping_country=shipping_country,
         )
         self.db.add(order)
         await self.db.flush()

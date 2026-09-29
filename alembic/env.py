@@ -10,6 +10,7 @@ from app.core.config import get_settings
 from app.core.database import Base
 
 # Import every model module here so Base.metadata knows about its table.
+from app.modules.addresses.models.address import Address  # noqa: F401
 from app.modules.auth.models.refresh_token import RefreshToken  # noqa: F401
 from app.modules.auth.models.user import User  # noqa: F401
 from app.modules.cart.models.cart import Cart  # noqa: F401

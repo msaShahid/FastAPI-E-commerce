@@ -99,8 +99,11 @@ class AuthService:
 
         return TokenPair(access_token=new_access_token, refresh_token=new_refresh_token)
 
-    async def logout(self, *, refresh_token: str) -> None:
+    async def get_user_by_email(self, email: str) -> User | None:
+        return await self.repository.get_user_by_email(email)
 
+    async def logout(self, *, refresh_token: str) -> None:
+    
         try:
             payload = decode_token(refresh_token)
         except JWTError:

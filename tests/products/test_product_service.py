@@ -92,3 +92,61 @@ async def test_archive_product_sets_status_archived(product_service):
     archived = await product_service.archive_product(product.id)
 
     assert archived.status == ProductStatus.ARCHIVED
+
+
+async def test_get_draft_product_404s_for_non_admin(product_service):
+    product = await _make_product(
+        product_service, sku="DRAFT-001", status=ProductStatus.DRAFT
+    )
+
+    with pytest.raises(ProductNotFoundError):
+        await product_service.get_product(product.id)
+
+    with pytest.raises(ProductNotFoundError):
+        await product_service.get_product(product.id, is_admin=False)
+
+
+async def test_get_draft_product_visible_to_admin(product_service):
+    product = await _make_product(
+        product_service, sku="DRAFT-002", status=ProductStatus.DRAFT
+    )
+
+    fetched = await product_service.get_product(product.id, is_admin=True)
+
+    assert fetched.id == product.id
+
+
+async def test_get_archived_product_404s_for_non_admin(product_service):
+    product = await _make_product(product_service, sku="ARCH-001")
+    await product_service.archive_product(product.id)
+
+    with pytest.raises(ProductNotFoundError):
+        await product_service.get_product(product.id)
+
+
+async def test_list_products_excludes_draft_and_archived_for_non_admin(product_service):
+    active = await _make_product(product_service, sku="ACTIVE-001")
+    await _make_product(product_service, sku="DRAFT-003", status=ProductStatus.DRAFT)
+    archived = await _make_product(product_service, sku="ARCH-002")
+    await product_service.archive_product(archived.id)
+
+    results, total = await product_service.list_products(offset=0, limit=20)
+
+    assert total == 1
+    assert [p.id for p in results] == [active.id]
+
+
+async def test_list_products_includes_draft_and_archived_for_admin(product_service):
+    active = await _make_product(product_service, sku="ACTIVE-002")
+    draft = await _make_product(
+        product_service, sku="DRAFT-004", status=ProductStatus.DRAFT
+    )
+    archived = await _make_product(product_service, sku="ARCH-003")
+    await product_service.archive_product(archived.id)
+
+    results, total = await product_service.list_products(
+        offset=0, limit=20, is_admin=True
+    )
+
+    assert total == 3
+    assert {p.id for p in results} == {active.id, draft.id, archived.id}

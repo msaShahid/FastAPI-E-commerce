@@ -4,6 +4,7 @@ import pytest
 
 from app.modules.categories.models.category import Category
 from app.modules.products.models.product import Product
+from app.shared.enums.product_status import ProductStatus
 
 
 class FakeProductRepository:
@@ -36,8 +37,12 @@ class FakeProductRepository:
         min_price: int | None = None,
         max_price: int | None = None,
         sort: str = "-created_at",
+        include_inactive: bool = False,
     ) -> tuple[list[Product], int]:
         results = list(self.products.values())
+
+        if not include_inactive:
+            results = [p for p in results if p.status == ProductStatus.ACTIVE]
 
         if category_id is not None:
             results = [p for p in results if p.category_id == category_id]

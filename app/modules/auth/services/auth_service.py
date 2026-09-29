@@ -46,6 +46,9 @@ class AuthService:
         if user is None or not verify_password(password, user.password_hash):
             raise InvalidCredentialsError()
 
+        if not user.is_active:
+            raise InvalidCredentialsError()
+
         access_token = create_access_token(subject=str(user.id))
         refresh_token = create_refresh_token(subject=str(user.id))
 
@@ -76,6 +79,10 @@ class AuthService:
         if stored is None or stored.revoked or stored.expires_at < datetime.now(UTC):
             raise InvalidRefreshTokenError()
 
+        user = await self.repository.get_user_by_id(stored.user_id)
+        if user is None or not user.is_active:
+            raise InvalidRefreshTokenError()
+
         # Rotation: revoke the one just used BEFORE issuing a new one.
         await self.repository.revoke_refresh_token(stored)
 
@@ -93,7 +100,7 @@ class AuthService:
         return TokenPair(access_token=new_access_token, refresh_token=new_refresh_token)
 
     async def logout(self, *, refresh_token: str) -> None:
-    
+
         try:
             payload = decode_token(refresh_token)
         except JWTError:

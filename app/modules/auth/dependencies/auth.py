@@ -13,6 +13,7 @@ from app.modules.auth.services.auth_service import AuthService
 from app.shared.enums.roles import UserRole
 
 bearer_scheme = HTTPBearer()
+optional_bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def get_auth_repository(db: DbSession) -> AuthRepository:
@@ -60,6 +61,24 @@ async def get_current_user(
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+async def get_optional_current_user(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(optional_bearer_scheme)
+    ],
+    repository: Annotated[AuthRepository, Depends(get_auth_repository)],
+) -> User | None:
+
+    if credentials is None:
+        return None
+    try:
+        return await get_current_user(credentials=credentials, repository=repository)
+    except HTTPException:
+        return None
+
+
+OptionalUser = Annotated[User | None, Depends(get_optional_current_user)]
 
 
 async def require_admin(current_user: CurrentUser) -> User:

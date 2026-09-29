@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, File, UploadFile, status
 
-from app.modules.auth.dependencies.auth import AdminUser
+from app.modules.auth.dependencies.auth import AdminUser, OptionalUser
 from app.modules.products.dependencies.product_deps import ProductServiceDep
 from app.modules.products.models.product import Product
 from app.modules.products.schemas.product import (
@@ -10,7 +10,12 @@ from app.modules.products.schemas.product import (
     ProductUpdate,
 )
 from app.modules.products.services.product_service import ProductService
+from app.shared.enums.roles import UserRole
 from app.shared.pagination.schemas import PaginatedResponse
+
+
+def _is_admin(current_user) -> bool:
+    return current_user is not None and current_user.role == UserRole.ADMIN
 
 product_router = APIRouter(prefix="/products", tags=["products"])
 
@@ -41,7 +46,9 @@ async def create_product(
 
 @product_router.get("", response_model=PaginatedResponse[ProductRead])
 async def list_products(
-    service: ProductServiceDep, params: ProductQueryParams = Depends()
+    service: ProductServiceDep,
+    current_user: OptionalUser,
+    params: ProductQueryParams = Depends(),
 ) -> PaginatedResponse[ProductRead]:
     products, total = await service.list_products(
         offset=params.offset,
@@ -51,6 +58,7 @@ async def list_products(
         min_price=params.min_price,
         max_price=params.max_price,
         sort=params.sort,
+        is_admin=_is_admin(current_user),
     )
     return PaginatedResponse(
         items=[_to_product_read(p, service) for p in products],
@@ -61,8 +69,10 @@ async def list_products(
 
 
 @product_router.get("/{product_id}", response_model=ProductRead)
-async def get_product(product_id: int, service: ProductServiceDep) -> ProductRead:
-    product = await service.get_product(product_id)
+async def get_product(
+    product_id: int, service: ProductServiceDep, current_user: OptionalUser
+) -> ProductRead:
+    product = await service.get_product(product_id, is_admin=_is_admin(current_user))
     return _to_product_read(product, service)
 
 

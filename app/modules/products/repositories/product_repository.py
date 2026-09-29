@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.modules.products.models.product import Product
+from app.shared.enums.product_status import ProductStatus
 
 
 class ProductRepository:
@@ -25,22 +26,6 @@ class ProductRepository:
         result = await self.db.execute(select(Product).where(Product.slug == slug))
         return result.scalar_one_or_none()
 
-    # async def list_paginated(self, *, offset: int, limit: int) -> tuple[list[Product], int]:
-
-    #     total_result = await self.db.execute(select(func.count()).select_from(Product))
-    #     total = total_result.scalar_one()
-
-    #     items_result = await self.db.execute(
-    #         select(Product)
-    #         .options(selectinload(Product.category))
-    #         .order_by(Product.created_at.desc())
-    #         .offset(offset)
-    #         .limit(limit)
-    #     )
-    #     items = list(items_result.scalars().all())
-
-    #     return items, total
-
     _SORT_COLUMNS = {
         "created_at": Product.created_at,
         "price_cents": Product.price_cents,
@@ -57,6 +42,7 @@ class ProductRepository:
         min_price: int | None = None,
         max_price: int | None = None,
         sort: str = "-created_at",
+        include_inactive: bool = False,
     ) -> tuple[list[Product], int]:
 
         conditions = []
@@ -68,6 +54,8 @@ class ProductRepository:
             conditions.append(Product.price_cents >= min_price)
         if max_price is not None:
             conditions.append(Product.price_cents <= max_price)
+        if not include_inactive:
+            conditions.append(Product.status == ProductStatus.ACTIVE)
 
         count_query = select(func.count()).select_from(Product)
         for condition in conditions:

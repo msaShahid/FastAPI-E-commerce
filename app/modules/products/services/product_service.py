@@ -71,10 +71,15 @@ class ProductService:
             status=status,
         )
 
-    async def get_product(self, product_id: int) -> Product:
+    async def get_product(self, product_id: int, *, is_admin: bool = False) -> Product:
         product = await self.repository.get_by_id(product_id)
         if product is None:
             raise ProductNotFoundError(product_id)
+
+        # A draft/archived product doesn't exist as far as an anonymous or non-admin caller 
+        if product.status != ProductStatus.ACTIVE and not is_admin:
+            raise ProductNotFoundError(product_id)
+
         return product
 
     async def list_products(
@@ -87,6 +92,7 @@ class ProductService:
         min_price: int | None = None,
         max_price: int | None = None,
         sort: str = "-created_at",
+        is_admin: bool = False,
     ) -> tuple[list[Product], int]:
         return await self.repository.list_paginated(
             offset=offset,
@@ -96,6 +102,7 @@ class ProductService:
             min_price=min_price,
             max_price=max_price,
             sort=sort,
+            include_inactive=is_admin,
         )
 
     async def update_product(

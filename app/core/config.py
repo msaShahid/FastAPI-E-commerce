@@ -42,12 +42,21 @@ class Settings(BaseSettings):
     seed_user_email: str = "user@example.com"
     seed_user_password: str = "UserPassword123!"
 
-     # --- Payments (Stripe) ---
+    # --- Payments (Stripe) ---
     stripe_secret_key: str
     stripe_webhook_secret: str
 
     # --- Orders ---
     pending_order_timeout_minutes: int = 30
+
+    # --- Shipping & tax (flat-rate; no carrier/tax-service integration) ---
+    flat_shipping_cents: int = 500
+    free_shipping_threshold_cents: int = 5000
+    tax_rate_percent: float = 8.0
+
+    # --- Guest cart ---
+    # How long an anonymous shopper's cart cookie lives before it expires.
+    guest_cart_cookie_max_age_days: int = 30
 
 
 @lru_cache

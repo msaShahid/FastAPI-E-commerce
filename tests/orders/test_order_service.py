@@ -3,16 +3,20 @@ from uuid import uuid4
 
 import pytest
 
+from app.modules.addresses.exceptions.address_exceptions import AddressNotFoundError
 from app.modules.cart.exceptions.cart_exceptions import InsufficientStockError
 from app.modules.orders.exceptions.order_exceptions import (
     EmptyCartError,
+    GuestEmailRequiredError,
     InvalidStatusTransitionError,
     OrderAccessForbiddenError,
     OrderNotFoundError,
+    ShippingAddressRequiredError,
 )
 from app.modules.orders.models.order import Order
 from app.modules.orders.models.order_item import OrderItem
 from app.modules.orders.services.order_service import OrderService
+from app.modules.orders.services.shipping import ShippingAddressInput
 from app.shared.enums.order_status import OrderStatus
 from app.shared.enums.product_status import ProductStatus
 
@@ -62,6 +66,30 @@ def order_service(
         fake_cart_repository_for_orders,
         fake_product_repository_for_orders,
     )
+
+
+@pytest.fixture
+def order_service_with_address(
+    fake_order_repository,
+    fake_cart_repository_for_orders,
+    fake_product_repository_for_orders,
+    fake_address_repository,
+) -> OrderService:
+    """Zero shipping/tax rates -- for tests about WHICH address gets
+    snapshotted, not about the shipping/tax math (see the dedicated
+    shipping & tax tests, which construct their own rates)."""
+    return OrderService(
+        fake_order_repository,
+        fake_cart_repository_for_orders,
+        fake_product_repository_for_orders,
+        fake_address_repository,
+    )
+
+
+async def _seed_guest_cart(cart_repo, guest_token, product, quantity=1):
+    cart = await cart_repo.get_or_create_cart(guest_token=guest_token)
+    cart_repo.add_item_directly(cart, product.id, quantity, product.price_cents)
+    return cart
 
 
 async def _make_product(repo, **overrides):
@@ -521,3 +549,361 @@ async def test_list_all_orders_paginates(
     assert len(page_1) == 2
     assert len(page_2) == 2
     assert {o.id for o in page_1}.isdisjoint({o.id for o in page_2})
+
+
+# --- shipping & tax calculation ---
+
+
+async def test_checkout_computes_flat_shipping_and_tax(
+    fake_order_repository,
+    fake_cart_repository_for_orders,
+    fake_product_repository_for_orders,
+    fake_address_repository,
+):
+    service = OrderService(
+        fake_order_repository,
+        fake_cart_repository_for_orders,
+        fake_product_repository_for_orders,
+        fake_address_repository,
+        flat_shipping_cents=500,
+        free_shipping_threshold_cents=5000,
+        tax_rate_percent=10.0,
+    )
+    user_id = uuid4()
+    product = await _make_product(
+        fake_product_repository_for_orders, price_cents=1000, stock=10
+    )
+    await _seed_cart(fake_cart_repository_for_orders, user_id, product, quantity=2)
+    await fake_address_repository.create(
+        user_id=user_id,
+        recipient_name="Jane Doe",
+        line1="123 Main St",
+        line2=None,
+        city="Springfield",
+        state="IL",
+        postal_code="62701",
+        country="US",
+        is_default=True,
+    )
+
+    order = await service.checkout(user_id=user_id, idempotency_key="ship-1")
+
+    assert order.subtotal_cents == 2000
+    assert order.shipping_cents == 500  # under the $50 free-shipping threshold
+    assert order.tax_cents == 200  # 10% of 2000
+    assert order.total_cents == 2700
+
+
+async def test_checkout_waives_shipping_above_free_threshold(
+    fake_order_repository,
+    fake_cart_repository_for_orders,
+    fake_product_repository_for_orders,
+    fake_address_repository,
+):
+    service = OrderService(
+        fake_order_repository,
+        fake_cart_repository_for_orders,
+        fake_product_repository_for_orders,
+        fake_address_repository,
+        flat_shipping_cents=500,
+        free_shipping_threshold_cents=5000,
+        tax_rate_percent=0.0,
+    )
+    user_id = uuid4()
+    product = await _make_product(
+        fake_product_repository_for_orders, price_cents=6000, stock=10
+    )
+    await _seed_cart(fake_cart_repository_for_orders, user_id, product, quantity=1)
+    await fake_address_repository.create(
+        user_id=user_id,
+        recipient_name="Jane Doe",
+        line1="123 Main St",
+        line2=None,
+        city="Springfield",
+        state="IL",
+        postal_code="62701",
+        country="US",
+        is_default=True,
+    )
+
+    order = await service.checkout(user_id=user_id, idempotency_key="ship-2")
+
+    assert order.shipping_cents == 0
+    assert order.total_cents == 6000
+
+
+# --- shipping address resolution ---
+
+
+async def test_checkout_uses_default_saved_address_when_none_specified(
+    order_service_with_address,
+    fake_cart_repository_for_orders,
+    fake_product_repository_for_orders,
+    fake_address_repository,
+):
+    user_id = uuid4()
+    product = await _make_product(fake_product_repository_for_orders, stock=10)
+    await _seed_cart(fake_cart_repository_for_orders, user_id, product, quantity=1)
+    await fake_address_repository.create(
+        user_id=user_id,
+        recipient_name="Jane Doe",
+        line1="123 Main St",
+        line2=None,
+        city="Springfield",
+        state="IL",
+        postal_code="62701",
+        country="US",
+        is_default=True,
+    )
+
+    order = await order_service_with_address.checkout(
+        user_id=user_id, idempotency_key="addr-1"
+    )
+
+    assert order.shipping_recipient_name == "Jane Doe"
+    assert order.shipping_city == "Springfield"
+
+
+async def test_checkout_with_address_id_uses_that_specific_address(
+    order_service_with_address,
+    fake_cart_repository_for_orders,
+    fake_product_repository_for_orders,
+    fake_address_repository,
+):
+    user_id = uuid4()
+    product = await _make_product(fake_product_repository_for_orders, stock=10)
+    await _seed_cart(fake_cart_repository_for_orders, user_id, product, quantity=1)
+    await fake_address_repository.create(
+        user_id=user_id,
+        recipient_name="Default Addr",
+        line1="1 Default Way",
+        line2=None,
+        city="Default City",
+        state="IL",
+        postal_code="60000",
+        country="US",
+        is_default=True,
+    )
+    second = await fake_address_repository.create(
+        user_id=user_id,
+        recipient_name="Work Address",
+        line1="2 Work Blvd",
+        line2=None,
+        city="Worktown",
+        state="IL",
+        postal_code="60001",
+        country="US",
+        is_default=False,
+    )
+
+    order = await order_service_with_address.checkout(
+        user_id=user_id, idempotency_key="addr-2", address_id=second.id
+    )
+
+    assert order.shipping_recipient_name == "Work Address"
+    assert order.shipping_city == "Worktown"
+
+
+async def test_checkout_with_someone_elses_address_id_raises_not_found(
+    order_service_with_address,
+    fake_cart_repository_for_orders,
+    fake_product_repository_for_orders,
+    fake_address_repository,
+):
+    owner = uuid4()
+    other = uuid4()
+    product = await _make_product(fake_product_repository_for_orders, stock=10)
+    await _seed_cart(fake_cart_repository_for_orders, other, product, quantity=1)
+    owners_address = await fake_address_repository.create(
+        user_id=owner,
+        recipient_name="Jane Doe",
+        line1="123 Main St",
+        line2=None,
+        city="Springfield",
+        state="IL",
+        postal_code="62701",
+        country="US",
+        is_default=True,
+    )
+
+    with pytest.raises(AddressNotFoundError):
+        await order_service_with_address.checkout(
+            user_id=other, idempotency_key="addr-3", address_id=owners_address.id
+        )
+
+
+async def test_checkout_with_inline_shipping_address_snapshots_it(
+    order_service_with_address,
+    fake_cart_repository_for_orders,
+    fake_product_repository_for_orders,
+):
+    user_id = uuid4()
+    product = await _make_product(fake_product_repository_for_orders, stock=10)
+    await _seed_cart(fake_cart_repository_for_orders, user_id, product, quantity=1)
+
+    order = await order_service_with_address.checkout(
+        user_id=user_id,
+        idempotency_key="addr-4",
+        shipping_address=ShippingAddressInput(
+            recipient_name="One-off Ship-To",
+            line1="9 Temporary Ln",
+            line2=None,
+            city="Nowhere",
+            state="TX",
+            postal_code="77000",
+            country="US",
+        ),
+    )
+
+    assert order.shipping_recipient_name == "One-off Ship-To"
+    assert order.shipping_city == "Nowhere"
+
+
+# --- guest checkout ---
+
+
+async def test_guest_checkout_requires_email(
+    order_service_with_address,
+    fake_cart_repository_for_orders,
+    fake_product_repository_for_orders,
+):
+    product = await _make_product(fake_product_repository_for_orders, stock=10)
+    await _seed_guest_cart(
+        fake_cart_repository_for_orders, "guest-a", product, quantity=1
+    )
+
+    with pytest.raises(GuestEmailRequiredError):
+        await order_service_with_address.checkout(
+            guest_token="guest-a",
+            idempotency_key="guest-1",
+            shipping_address=ShippingAddressInput(
+                recipient_name="Guest Buyer",
+                line1="1 Guest St",
+                line2=None,
+                city="Guestville",
+                state="TX",
+                postal_code="77001",
+                country="US",
+            ),
+        )
+
+
+async def test_guest_checkout_requires_shipping_address(
+    order_service_with_address,
+    fake_cart_repository_for_orders,
+    fake_product_repository_for_orders,
+):
+    product = await _make_product(fake_product_repository_for_orders, stock=10)
+    await _seed_guest_cart(
+        fake_cart_repository_for_orders, "guest-b", product, quantity=1
+    )
+
+    with pytest.raises(ShippingAddressRequiredError):
+        await order_service_with_address.checkout(
+            guest_token="guest-b",
+            guest_email="guest@example.com",
+            idempotency_key="guest-2",
+        )
+
+
+async def test_guest_checkout_creates_order_without_a_user_id(
+    order_service_with_address,
+    fake_cart_repository_for_orders,
+    fake_product_repository_for_orders,
+):
+    product = await _make_product(
+        fake_product_repository_for_orders, price_cents=2500, stock=10
+    )
+    await _seed_guest_cart(
+        fake_cart_repository_for_orders, "guest-c", product, quantity=1
+    )
+
+    order = await order_service_with_address.checkout(
+        guest_token="guest-c",
+        guest_email="guest@example.com",
+        idempotency_key="guest-3",
+        shipping_address=ShippingAddressInput(
+            recipient_name="Guest Buyer",
+            line1="1 Guest St",
+            line2=None,
+            city="Guestville",
+            state="TX",
+            postal_code="77001",
+            country="US",
+        ),
+    )
+
+    assert order.user_id is None
+    assert order.guest_token == "guest-c"
+    assert order.guest_email == "guest@example.com"
+    assert order.shipping_recipient_name == "Guest Buyer"
+
+
+async def test_guest_checkout_is_idempotent_per_guest_token(
+    order_service_with_address,
+    fake_cart_repository_for_orders,
+    fake_product_repository_for_orders,
+):
+    product = await _make_product(fake_product_repository_for_orders, stock=10)
+    await _seed_guest_cart(
+        fake_cart_repository_for_orders, "guest-d", product, quantity=1
+    )
+    shipping_address = ShippingAddressInput(
+        recipient_name="Guest Buyer",
+        line1="1 Guest St",
+        line2=None,
+        city="Guestville",
+        state="TX",
+        postal_code="77001",
+        country="US",
+    )
+
+    first = await order_service_with_address.checkout(
+        guest_token="guest-d",
+        guest_email="guest@example.com",
+        idempotency_key="guest-same-key",
+        shipping_address=shipping_address,
+    )
+    second = await order_service_with_address.checkout(
+        guest_token="guest-d",
+        guest_email="guest@example.com",
+        idempotency_key="guest-same-key",
+        shipping_address=shipping_address,
+    )
+
+    assert first.id == second.id
+
+
+async def test_get_guest_order_requires_matching_token(
+    order_service_with_address,
+    fake_cart_repository_for_orders,
+    fake_product_repository_for_orders,
+):
+    product = await _make_product(fake_product_repository_for_orders, stock=10)
+    await _seed_guest_cart(
+        fake_cart_repository_for_orders, "guest-e", product, quantity=1
+    )
+    order = await order_service_with_address.checkout(
+        guest_token="guest-e",
+        guest_email="guest@example.com",
+        idempotency_key="guest-lookup",
+        shipping_address=ShippingAddressInput(
+            recipient_name="Guest Buyer",
+            line1="1 Guest St",
+            line2=None,
+            city="Guestville",
+            state="TX",
+            postal_code="77001",
+            country="US",
+        ),
+    )
+
+    found = await order_service_with_address.get_guest_order(
+        order_id=order.id, guest_token="guest-e"
+    )
+    assert found.id == order.id
+
+    with pytest.raises(OrderNotFoundError):
+        await order_service_with_address.get_guest_order(
+            order_id=order.id, guest_token="wrong-token"
+        )

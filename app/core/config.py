@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -36,6 +37,19 @@ class Settings(BaseSettings):
     # --- CORS (kept minimal for now, revisited later) ---
     cors_origins: list[str] = ["http://localhost:3000"]
 
+    @field_validator("cors_origins")
+    @classmethod
+    def _no_wildcard_origin(cls, value: list[str]) -> list[str]:
+        if "*" in value:
+            raise ValueError(
+                "cors_origins must not contain '*' -- CORSMiddleware is configured "
+                "with allow_credentials=True, and browsers refuse to honor a "
+                "wildcard origin on a credentialed request anyway. List the exact "
+                "origin(s) that should be allowed instead, e.g. "
+                '["https://shop.example.com"].'
+            )
+        return value
+
     # --- Dev seeding (see scripts/seed.py) ---
     seed_admin_email: str = "admin@example.com"
     seed_admin_password: str = "AdminPassword123!"
@@ -57,6 +71,9 @@ class Settings(BaseSettings):
     # --- Guest cart ---
     # How long an anonymous shopper's cart cookie lives before it expires.
     guest_cart_cookie_max_age_days: int = 30
+
+    # --- Rate limiting ---
+    redis_url: str = "redis://redis:6379/0"
 
 
 @lru_cache

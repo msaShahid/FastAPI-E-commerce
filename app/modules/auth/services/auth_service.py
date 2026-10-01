@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime
 
 from jose import JWTError, jwt
@@ -20,6 +21,7 @@ from app.modules.auth.models.user import User
 from app.modules.auth.repositories.auth_repository import AuthRepository
 from app.modules.auth.schemas.auth import TokenPair
 
+logger = logging.getLogger(__name__)
 
 class AuthService:
     def __init__(self, repository: AuthRepository) -> None:
@@ -76,8 +78,24 @@ class AuthService:
         jti = payload.get("jti")
         stored = await self.repository.get_refresh_token_by_jti(jti)
 
-        if stored is None or stored.revoked or stored.expires_at < datetime.now(UTC):
+        if stored is None:
             raise InvalidRefreshTokenError()
+
+        if stored.revoked:
+
+            logger.warning(
+                "Refresh token reuse detected for jti=%s (family_id=%s, user_id=%s); "
+                "revoking entire token family.",
+                jti,
+                stored.family_id,
+                stored.user_id,
+            )
+            await self.repository.revoke_family(stored.family_id)
+            raise InvalidRefreshTokenError()
+
+        if stored.expires_at < datetime.now(UTC):
+            raise InvalidRefreshTokenError()
+
 
         user = await self.repository.get_user_by_id(stored.user_id)
         if user is None or not user.is_active:
@@ -95,6 +113,7 @@ class AuthService:
             user_id=stored.user_id,
             jti=new_payload["jti"],
             expires_at=datetime.fromtimestamp(new_payload["exp"], tz=UTC),
+            family_id=stored.family_id,
         )
 
         return TokenPair(access_token=new_access_token, refresh_token=new_refresh_token)
@@ -103,7 +122,7 @@ class AuthService:
         return await self.repository.get_user_by_email(email)
 
     async def logout(self, *, refresh_token: str) -> None:
-    
+
         try:
             payload = decode_token(refresh_token)
         except JWTError:

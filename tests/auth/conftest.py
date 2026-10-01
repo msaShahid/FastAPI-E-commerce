@@ -1,5 +1,5 @@
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 import pytest
@@ -10,26 +10,15 @@ from app.shared.enums.roles import UserRole
 
 @dataclass
 class FakeRefreshToken:
-    """
-    Mirrors the real RefreshToken model's shape closely enough for
-    AuthService's logic to operate on identically -- it reads
-    .revoked, .expires_at, .user_id, exactly like the real ORM object.
-    """
 
     jti: str
     user_id: uuid.UUID
     expires_at: datetime
+    family_id: uuid.UUID = field(default_factory=uuid.uuid4)
     revoked: bool = False
 
 
 class FakeAuthRepository:
-    """
-    Implements the same interface as AuthRepository, backed by plain
-    dicts instead of Postgres. This is the direct payoff of the
-    repository/service split from our architecture: AuthService never
-    imports SQLAlchemy, so it can be tested against this fake with zero
-    database connection, running in milliseconds.
-    """
 
     def __init__(self) -> None:
         self.users_by_id: dict[uuid.UUID, User] = {}
@@ -46,7 +35,9 @@ class FakeAuthRepository:
     async def get_user_by_username(self, username: str) -> User | None:
         return self.users_by_username.get(username)
 
-    async def create_user(self, *, username: str, email: str, password_hash: str) -> User:
+    async def create_user(
+        self, *, username: str, email: str, password_hash: str
+    ) -> User:
         user = User(
             id=uuid.uuid4(),
             username=username,
@@ -61,9 +52,19 @@ class FakeAuthRepository:
         return user
 
     async def store_refresh_token(
-        self, *, user_id: uuid.UUID, jti: str, expires_at: datetime
+        self,
+        *,
+        user_id: uuid.UUID,
+        jti: str,
+        expires_at: datetime,
+        family_id: uuid.UUID | None = None,
     ) -> FakeRefreshToken:
-        token = FakeRefreshToken(jti=jti, user_id=user_id, expires_at=expires_at)
+        token = FakeRefreshToken(
+            jti=jti,
+            user_id=user_id,
+            expires_at=expires_at,
+            family_id=family_id or uuid.uuid4(),
+        )
         self.refresh_tokens[jti] = token
         return token
 
@@ -72,6 +73,11 @@ class FakeAuthRepository:
 
     async def revoke_refresh_token(self, token: FakeRefreshToken) -> None:
         token.revoked = True
+
+    async def revoke_family(self, family_id: uuid.UUID) -> None:
+        for token in self.refresh_tokens.values():
+            if token.family_id == family_id:
+                token.revoked = True
 
 
 @pytest.fixture
@@ -82,11 +88,6 @@ def fake_repository() -> FakeAuthRepository:
 
 @pytest.fixture
 def make_user():
-    """
-    Factory fixture: call make_user() inside a test to get a User object
-    with sensible defaults, overridable via kwargs -- e.g.
-    make_user(role=UserRole.ADMIN, is_active=False).
-    """
 
     def _make_user(**overrides) -> User:
         defaults = dict(

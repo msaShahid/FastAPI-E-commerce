@@ -20,6 +20,8 @@ class RefreshToken(Base, TimestampMixin):
         index=True,
     )
 
+    family_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
     revoked: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")

@@ -41,3 +41,53 @@ If you update `.env` or change API environment variables, recreate the API conta
 ```bash
 docker compose up -d --force-recreate api
 ```
+
+## Creating the first admin user
+
+Registration (`POST /api/v1/auth/register`) always creates a regular user, and
+promoting someone to admin (`PATCH /api/v1/users/{id}`) requires you to
+already be logged in as an admin. On a brand-new database there is no admin
+yet, so nothing can grant the first one through the API itself.
+
+`scripts/bootstrap_admin.py` is the escape hatch for exactly that. Unlike
+`scripts/seed.py` (which refuses to run when `ENVIRONMENT=production`,
+because it creates fixed, publicly-known test credentials), this script is
+meant to be run against a real production database.
+
+```bash
+docker compose exec api python -m scripts.bootstrap_admin --email admin@yourcompany.com
+```
+
+- If that email doesn't exist yet, you'll be prompted (input hidden) for a
+  password, then the account is created and promoted to admin in one step.
+- If that email already belongs to an existing user, it's promoted to admin
+  in place -- no password needed.
+- It always asks for a y/n confirmation before writing anything; pass
+  `--yes` to skip that for non-interactive use (e.g. a deploy step), and set
+  the password via the `ADMIN_BOOTSTRAP_PASSWORD` environment variable
+  instead of the interactive prompt in that case.
+- Safe to run more than once against the same email -- it just reports the
+  current state instead of erroring.
+
+See the top of `scripts/bootstrap_admin.py` for full usage details.
+
+## CORS
+
+Allowed cross-origin callers are controlled by `CORS_ORIGINS`, an explicit
+list of origins -- never a wildcard. This matters here specifically because
+the API is called with credentials (cookies, `Authorization` headers), and
+`CORSMiddleware` is configured with `allow_credentials=True`; pairing that
+with a wildcard origin doesn't work anyway (browsers refuse to expose a
+credentialed response to page JS when the allowed origin is `*`), so
+`Settings` rejects `"*"` in `CORS_ORIGINS` outright at startup instead of
+leaving that failure mode to be discovered later against a real browser.
+
+Set it as a JSON array in your `.env` (or `.env.production`):
+
+```bash
+CORS_ORIGINS=["https://shop.yourcompany.com","https://admin.yourcompany.com"]
+```
+
+A comma-separated string is **not** accepted -- pydantic-settings parses a
+list-typed setting from its environment variable as JSON, so anything else
+fails validation at startup rather than silently allowing the wrong origins.

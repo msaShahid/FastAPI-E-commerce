@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, File, UploadFile, status
 
+from app.modules.audit.dependencies.audit_deps import AuditServiceDep
 from app.modules.auth.dependencies.auth import AdminUser, OptionalUser
 from app.modules.products.dependencies.product_deps import ProductServiceDep
 from app.modules.products.models.product import Product
@@ -30,7 +31,10 @@ def _to_product_read(product: Product, service: ProductService) -> ProductRead:
 
 @product_router.post("", response_model=ProductRead, status_code=status.HTTP_201_CREATED)
 async def create_product(
-    payload: ProductCreate, service: ProductServiceDep, _admin: AdminUser
+    payload: ProductCreate,
+    service: ProductServiceDep,
+    admin: AdminUser,
+    audit_service: AuditServiceDep,
 ) -> ProductRead:
     product = await service.create_product(
         name=payload.name,
@@ -41,6 +45,15 @@ async def create_product(
         category_id=payload.category_id,
         status=payload.status,
     )
+
+    await audit_service.log(
+        actor_user_id=admin.id,
+        action="product.created",
+        target_type="product",
+        target_id=product.id,
+        details={"name": product.name, "sku": product.sku},
+    )
+
     return _to_product_read(product, service)
 
 
@@ -81,7 +94,8 @@ async def update_product(
     product_id: int,
     payload: ProductUpdate,
     service: ProductServiceDep,
-    _admin: AdminUser,
+    admin: AdminUser,
+    audit_service: AuditServiceDep,
 ) -> ProductRead:
     product = await service.update_product(
         product_id=product_id,
@@ -92,14 +106,33 @@ async def update_product(
         category_id=payload.category_id,
         status=payload.status,
     )
+
+    await audit_service.log(
+        actor_user_id=admin.id,
+        action="product.updated",
+        target_type="product",
+        target_id=product.id,
+        details=payload.model_dump(exclude_unset=True, exclude_none=True),
+    )
+
     return _to_product_read(product, service)
 
 
 @product_router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def archive_product(
-    product_id: int, service: ProductServiceDep, _admin: AdminUser
+    product_id: int,
+    service: ProductServiceDep,
+    admin: AdminUser,
+    audit_service: AuditServiceDep,
 ) -> None:
     await service.archive_product(product_id)
+
+    await audit_service.log(
+        actor_user_id=admin.id,
+        action="product.archived",
+        target_type="product",
+        target_id=product_id,
+    )
 
 
 @product_router.post("/{product_id}/image", response_model=ProductRead)

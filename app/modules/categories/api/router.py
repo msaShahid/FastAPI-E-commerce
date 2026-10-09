@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, File, UploadFile, status
 
+from app.modules.audit.dependencies.audit_deps import AuditServiceDep
 from app.modules.auth.dependencies.auth import AdminUser
 from app.modules.categories.dependencies.category_deps import CategoryServiceDep
 from app.modules.categories.models.category import Category
@@ -29,11 +30,23 @@ def _to_category_read(category: Category, service: CategoryService) -> CategoryR
     "", response_model=CategoryRead, status_code=status.HTTP_201_CREATED
 )
 async def create_category(
-    payload: CategoryCreate, service: CategoryServiceDep, _admin: AdminUser
+    payload: CategoryCreate,
+    service: CategoryServiceDep,
+    admin: AdminUser,
+    audit_service: AuditServiceDep,
 ) -> CategoryRead:
     category = await service.create_category(
         name=payload.name, description=payload.description
     )
+
+    await audit_service.log(
+        actor_user_id=admin.id,
+        action="category.created",
+        target_type="category",
+        target_id=category.id,
+        details={"name": category.name},
+    )
+
     return _to_category_read(category, service)
 
 
@@ -63,7 +76,8 @@ async def update_category(
     category_id: int,
     payload: CategoryUpdate,
     service: CategoryServiceDep,
-    _admin: AdminUser,
+    admin: AdminUser,
+    audit_service: AuditServiceDep,
 ) -> CategoryRead:
     category = await service.update_category(
         category_id=category_id,
@@ -71,14 +85,33 @@ async def update_category(
         description=payload.description,
         is_active=payload.is_active,
     )
+
+    await audit_service.log(
+        actor_user_id=admin.id,
+        action="category.updated",
+        target_type="category",
+        target_id=category.id,
+        details=payload.model_dump(exclude_unset=True, exclude_none=True),
+    )
+
     return _to_category_read(category, service)
 
 
 @category_router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def deactivate_category(
-    category_id: int, service: CategoryServiceDep, _admin: AdminUser
+    category_id: int,
+    service: CategoryServiceDep,
+    admin: AdminUser,
+    audit_service: AuditServiceDep,
 ) -> None:
     await service.deactivate_category(category_id)
+
+    await audit_service.log(
+        actor_user_id=admin.id,
+        action="category.deactivated",
+        target_type="category",
+        target_id=category_id,
+    )
 
 
 @category_router.post("/{category_id}/image", response_model=CategoryRead)

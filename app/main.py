@@ -15,6 +15,7 @@ from app.core.rate_limit import limiter
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.graphql.schema import graphql_router
 from app.modules.addresses.api.router import address_router
+from app.modules.audit.api.router import audit_router
 from app.modules.auth.api.router import auth_router
 from app.modules.cart.api.router import cart_router
 from app.modules.categories.api.router import category_router
@@ -58,6 +59,7 @@ app.include_router(product_router, prefix=settings.api_v1_prefix)
 app.include_router(cart_router, prefix=settings.api_v1_prefix)
 app.include_router(order_router, prefix=settings.api_v1_prefix)
 app.include_router(payment_router, prefix=settings.api_v1_prefix)
+app.include_router(audit_router, prefix=settings.api_v1_prefix)
 
 
 app.include_router(graphql_router, prefix="/graphql")

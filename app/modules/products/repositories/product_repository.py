@@ -84,6 +84,11 @@ class ProductRepository:
         product = Product(**fields)
         self.db.add(product)
         await self.db.flush()
+        # ProductRead requires `category`. A freshly-flushed instance has not
+        # loaded it, and lazy-loading inside async serialization raises
+        # MissingGreenlet (HTTP 500), so load it eagerly here -- same as
+        # get_by_id does with selectinload.
+        await self.db.refresh(product, attribute_names=["category"])
         return product
 
     async def update(self, product: Product, **fields) -> Product:

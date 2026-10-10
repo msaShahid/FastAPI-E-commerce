@@ -1,0 +1,40 @@
+# Runs automatically on `git commit` once installed (see README: "Pre-commit hooks").
+# Only staged files are checked, so a hook never rewrites files you didn't touch.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.0
+    hooks:
+      # Lint, and auto-fix what's safely fixable (import order, etc.).
+      - id: ruff-check
+        args: [--fix]
+      # Format. Applied to staged files only, so the codebase converges on
+      # one style gradually as files are touched.
+      - id: ruff-format
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      # Blocks a commit that adds a new API key / token / password-looking
+      # string. Known, reviewed findings live in .secrets.baseline.
+      - id: detect-secrets
+        args: ["--baseline", ".secrets.baseline"]
+        exclude: ^(\.secrets\.baseline|alembic/versions/.*|tests/.*)$
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+      - id: check-merge-conflict
+      - id: check-yaml
+
+  - repo: local
+    hooks:
+      # .env / .env.production hold real credentials and are git-ignored.
+      # This stops `git add -f` from sneaking them in. .env.example is fine.
+      - id: forbid-env-files
+        name: forbid committing real .env files
+        language: fail
+        entry: "Real .env files must never be committed (use .env.example)."
+        files: (^|/)\.env(\.(production|local|staging))?$

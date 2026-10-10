@@ -1,4 +1,4 @@
-from fastapi import Request
+from fastapi import HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials
 from strawberry.fastapi import BaseContext
 
@@ -30,15 +30,24 @@ class GraphQLContext(BaseContext):
 def get_bearer_credentials(
     request: Request,
 ) -> HTTPAuthorizationCredentials:
+    # A missing or malformed header is an authentication failure, so it must
+    # surface as a 401 -- same as the REST API's bearer dependency. A bare
+    # ValueError here would escape as an unhandled exception (HTTP 500).
+    unauthorized = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Not authenticated",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
     authorization = request.headers.get("Authorization")
 
     if not authorization:
-        raise ValueError("Missing Authorization header")
+        raise unauthorized
 
     scheme, _, token = authorization.partition(" ")
 
     if scheme.lower() != "bearer" or not token:
-        raise ValueError("Invalid Authorization header")
+        raise unauthorized
 
     return HTTPAuthorizationCredentials(
         scheme=scheme,

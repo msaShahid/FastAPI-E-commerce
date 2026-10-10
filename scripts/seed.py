@@ -13,8 +13,6 @@ Creates (idempotently -- safe to run repeatedly):
 Deliberately reuses the SAME services the API itself uses
 (AuthService, CategoryService, ProductService) rather than inserting
 rows directly.
-
-ENVIRONMENT=production python -m scripts.seed.
 """
 
 import asyncio
@@ -70,6 +68,7 @@ PRODUCTS = [
     ("Portable Power Bank", "ELEC-POWERBANK-001", 2999, 40, "Electronics"),
     ("Laptop Stand", "ELEC-STAND-001", 2799, 30, "Electronics"),
     ("USB-C Charging Cable", "ELEC-CABLE-001", 899, 100, "Electronics"),
+
     # Books
     ("Clean Code", "BOOK-CC-001", 3499, 100, "Books"),
     ("Designing Data-Intensive Applications", "BOOK-DDIA-001", 4999, 40, "Books"),
@@ -78,6 +77,7 @@ PRODUCTS = [
     ("Atomic Habits", "BOOK-AH-001", 1599, 90, "Books"),
     ("Deep Work", "BOOK-DW-001", 1399, 65, "Books"),
     ("Refactoring", "BOOK-REFACTOR-001", 3899, 35, "Books"),
+
     # Home & Kitchen
     ("Stainless Steel Kettle", "HOME-KETTLE-001", 2499, 30, "Home & Kitchen"),
     ("Non-Stick Frying Pan", "HOME-PAN-001", 1899, 45, "Home & Kitchen"),
@@ -85,30 +85,35 @@ PRODUCTS = [
     ("Ceramic Dinner Set", "HOME-DINNERSET-001", 5499, 15, "Home & Kitchen"),
     ("Vacuum Storage Containers", "HOME-CONTAINER-001", 1299, 55, "Home & Kitchen"),
     ("Kitchen Knife Set", "HOME-KNIFE-001", 2999, 25, "Home & Kitchen"),
+
     # Office Supplies
     ("A5 Hardcover Notebook", "OFFICE-NOTEBOOK-001", 599, 150, "Office Supplies"),
     ("Gel Pen Set", "OFFICE-PENS-001", 399, 200, "Office Supplies"),
     ("Desk Organizer", "OFFICE-ORGANIZER-001", 899, 70, "Office Supplies"),
     ("Ergonomic Desk Mat", "OFFICE-MAT-001", 1499, 35, "Office Supplies"),
     ("Sticky Notes Pack", "OFFICE-STICKY-001", 299, 180, "Office Supplies"),
+
     # Sports & Fitness
     ("Yoga Mat", "SPORT-YOGA-001", 1299, 50, "Sports & Fitness"),
     ("Adjustable Dumbbell", "SPORT-DUMBBELL-001", 4999, 20, "Sports & Fitness"),
     ("Resistance Band Set", "SPORT-BANDS-001", 999, 65, "Sports & Fitness"),
     ("Insulated Water Bottle", "SPORT-BOTTLE-001", 1799, 80, "Sports & Fitness"),
     ("Jump Rope", "SPORT-JUMPROPE-001", 699, 75, "Sports & Fitness"),
+
     # Clothing
     ("Classic Cotton T-Shirt", "CLOTH-TSHIRT-001", 999, 100, "Clothing"),
     ("Slim Fit Jeans", "CLOTH-JEANS-001", 2499, 45, "Clothing"),
     ("Hooded Sweatshirt", "CLOTH-HOODIE-001", 2199, 35, "Clothing"),
     ("Canvas Backpack", "CLOTH-BACKPACK-001", 1899, 50, "Clothing"),
     ("Casual Polo Shirt", "CLOTH-POLO-001", 1499, 60, "Clothing"),
+
     # Beauty & Personal Care
     ("Daily Face Cleanser", "BEAUTY-CLEANSER-001", 799, 60, "Beauty & Personal Care"),
     ("Moisturizing Hand Cream", "BEAUTY-CREAM-001", 499, 90, "Beauty & Personal Care"),
     ("Bamboo Hair Brush", "BEAUTY-BRUSH-001", 699, 45, "Beauty & Personal Care"),
     ("Body Lotion", "BEAUTY-LOTION-001", 899, 70, "Beauty & Personal Care"),
     ("Lip Balm", "BEAUTY-LIPBALM-001", 299, 120, "Beauty & Personal Care"),
+
     # Toys & Games
     ("Wooden Puzzle Set", "TOY-PUZZLE-001", 899, 40, "Toys & Games"),
     ("Strategy Board Game", "TOY-BOARDGAME-001", 2499, 25, "Toys & Games"),
@@ -124,7 +129,9 @@ async def seed_users(
 ) -> None:
     """Seed admin and regular users."""
 
-    admin = await auth_service.repository.get_user_by_email(settings.seed_admin_email)
+    admin = await auth_service.repository.get_user_by_email(
+        settings.seed_admin_email
+    )
 
     if admin is None:
         admin = await auth_service.register(
@@ -146,7 +153,9 @@ async def seed_users(
     else:
         print(f"  Admin already exists: {settings.seed_admin_email}")
 
-    regular = await auth_service.repository.get_user_by_email(settings.seed_user_email)
+    regular = await auth_service.repository.get_user_by_email(
+        settings.seed_user_email
+    )
 
     if regular is None:
         await auth_service.register(
@@ -180,14 +189,14 @@ async def seed_categories(
 
             print(f"  Created category: {name}")
 
-        except CategoryNameAlreadyExistsError:
+        except CategoryNameAlreadyExistsError as exc:
             category = await category_service.repository.get_by_name(name)
 
             if category is None:
                 raise RuntimeError(
                     f"Category '{name}' already exists according to the service, "
                     "but could not be loaded from the repository."
-                )
+                ) from exc
 
             print(f"  Category already exists: {name}")
 

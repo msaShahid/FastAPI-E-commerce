@@ -91,3 +91,35 @@ CORS_ORIGINS=["https://shop.yourcompany.com","https://admin.yourcompany.com"]
 A comma-separated string is **not** accepted -- pydantic-settings parses a
 list-typed setting from its environment variable as JSON, so anything else
 fails validation at startup rather than silently allowing the wrong origins.
+
+## Pre-commit hooks
+
+Hooks run automatically on `git commit` and block it if something is wrong,
+so problems are caught on your machine before they ever reach CI. They check
+**staged files only**, so they never rewrite files you didn't touch.
+
+What runs: `ruff` (lint, with safe auto-fixes), `ruff format`, a secrets
+scanner (`detect-secrets`), private-key detection, a 500 KB file-size limit,
+a merge-conflict-marker check, a YAML syntax check, and a guard that refuses
+real `.env` / `.env.production` files.
+
+One-time setup, from the project root (on your own machine, not inside Docker):
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+Notes:
+
+- If `ruff format` reformats a file, the commit is stopped on purpose. Run
+  `git add` on the changed files and commit again.
+- `detect-secrets` compares against `.secrets.baseline` (known, reviewed
+  findings such as the demo key in the playground router and the throwaway
+  CI values). Test files are not scanned. If it flags something that is
+  genuinely harmless, add `# pragma: allowlist secret` to that line, or
+  accept it into the baseline with
+  `detect-secrets scan --baseline .secrets.baseline`.
+- To run every hook against the whole repo at any time: `pre-commit run --all-files`.
+  The first run will reformat many existing files; commit that as its own
+  "apply ruff format" change.

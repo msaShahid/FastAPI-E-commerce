@@ -1,4 +1,4 @@
-from app.core.exceptions import ConflictError, InvalidStateError, NotFoundError
+from app.core.exceptions import ConflictError, NotFoundError
 
 
 class SkuAlreadyExistsError(ConflictError):

@@ -6,7 +6,6 @@ The test that actually proves checkout is concurrency-safe.
 import asyncio
 import uuid
 
-import pytest
 from sqlalchemy import select
 
 from app.modules.auth.models.user import User

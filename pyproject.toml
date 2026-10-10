@@ -39,9 +39,21 @@ asyncio_default_test_loop_scope = "session"
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# Alembic migrations are machine-generated (Union[...] annotations, import
+# order, etc.) and are never hand-edited for style -- linting them only
+# produces noise.
+extend-exclude = ["alembic/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = [
+    # Line length is a formatting concern, not a correctness one; a few
+    # long docstrings/signatures exist and are fine.
+    "E501",
+    # Pydantic generic models (PaginatedResponse) intentionally keep the
+    # classic Generic[T] style; converting is a refactor, not a lint fix.
+    "UP046",
+]
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = [
@@ -50,6 +62,7 @@ extend-immutable-calls = [
     "fastapi.Path",
     "fastapi.Header",
     "fastapi.Cookie",
+    "fastapi.File",
 ]
 
 [tool.hatch.build.targets.wheel]

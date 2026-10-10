@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch/PR makes the older run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - run: pip install ruff
+
+      - run: ruff check .
+
+  test:
+    name: Tests (pytest)
+    runs-on: ubuntu-latest
+
+    # Same two backing services docker-compose.yml runs locally.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: shop_test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test_user -d shop_test_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    # Throwaway values: CI never touches real credentials. Settings
+    # requires all of these to exist, even though tests override the DB
+    # session and mock Stripe.
+    env:
+      ENVIRONMENT: testing
+      DATABASE_URL: postgresql+asyncpg://test_user:test_password@localhost:5432/shop_test_db
+      TEST_DATABASE_URL: postgresql+asyncpg://test_user:test_password@localhost:5432/shop_test_db
+      REDIS_URL: redis://localhost:6379/0
+      JWT_SECRET: ci-only-secret-not-used-anywhere-else
+      STRIPE_SECRET_KEY: sk_test_ci
+      STRIPE_WEBHOOK_SECRET: whsec_ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - run: pip install -e ".[dev]"
+
+      - run: pytest -q
+
+  dependency-audit:
+    name: Dependency audit (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - run: pip install pip-audit
+
+      # Fails the build on any known CVE in the project's dependencies,
+      # EXCEPT the two reviewed below. Both come from python-jose and its
+      # ecdsa dependency, neither has a fixed release, and neither is
+      # reachable here:
+      #   CVE-2026-85394  needs a decoder that does not pin `algorithms`;
+      #                   app/core/security.py always passes
+      #                   algorithms=[settings.jwt_algorithm].
+      #   PYSEC-2026-1325 is a timing attack on ECDSA *signing*; the app
+      #                   only signs with HS256 and never uses ecdsa.
+      # Remove these ignores once python-jose is replaced (e.g. by PyJWT).
+      - run: >-
+          pip-audit .
+          --ignore-vuln CVE-2026-85394
+          --ignore-vuln PYSEC-2026-1325

@@ -85,6 +85,61 @@ jobs:
 
       - run: pytest -q
 
+  migrations:
+    name: Migrations (alembic)
+    runs-on: ubuntu-latest
+
+    # A dedicated, empty database. The pytest job builds its schema with
+    # Base.metadata.create_all and never runs a migration, so without this
+    # job a broken or missing migration would only be discovered at deploy.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci_user
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: shop_migrations
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_user -d shop_migrations"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    # Throwaway values, same idea as the test job. Alembic's env.py reads
+    # DATABASE_URL through the app Settings, which also require the rest.
+    env:
+      ENVIRONMENT: testing
+      DATABASE_URL: postgresql+asyncpg://ci_user:ci_password@localhost:5432/shop_migrations
+      REDIS_URL: redis://localhost:6379/0
+      JWT_SECRET: ci-only-secret-not-used-anywhere-else
+      STRIPE_SECRET_KEY: sk_test_ci
+      STRIPE_WEBHOOK_SECRET: whsec_ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - run: pip install -e ".[dev]"
+
+      # Replays every migration from an empty database. Fails on a broken
+      # migration, a wrong down_revision, or multiple heads (two branches
+      # merged without an `alembic merge`).
+      - name: Apply all migrations
+        run: alembic upgrade head
+
+      # Fails if the models and the migrated schema disagree: a column,
+      # index or constraint changed in a model without a new migration
+      # (or the reverse). The fix is `alembic revision --autogenerate`.
+      - name: Check models match migrations
+        run: alembic check
+
   dependency-audit:
     name: Dependency audit (pip-audit)
     runs-on: ubuntu-latest

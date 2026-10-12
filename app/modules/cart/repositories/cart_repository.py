@@ -15,30 +15,39 @@ class CartRepository:
     async def get_or_create_cart(
         self, user_id: UUID | None = None, *, guest_token: str | None = None
     ) -> Cart:
-
+        """
+        Exactly one of user_id/guest_token identifies the cart -- see the
+        Cart model's check constraint. user_id stays the first positional
+        parameter (rather than keyword-only) so every existing call site
+        that does get_or_create_cart(user_id) keeps working unchanged.
+        """
         if user_id is None and guest_token is None:
             raise ValueError("get_or_create_cart requires user_id or guest_token")
 
-        condition = (
-            Cart.user_id == user_id
-            if user_id is not None
-            else Cart.guest_token == guest_token
-        )
+        condition = Cart.user_id == user_id if user_id is not None else Cart.guest_token == guest_token
 
+        # populate_existing: this is called again at the end of add/update/
+        # remove to build the response. The Cart is already in the session's
+        # identity map by then, and without it SQLAlchemy would hand back the
+        # stale `items` collection loaded before the write (e.g. an empty
+        # cart straight after the first item was added).
         result = await self.db.execute(
             select(Cart)
             .where(condition)
             .options(selectinload(Cart.items).selectinload(CartItem.product))
+            .execution_options(populate_existing=True)
         )
         cart = result.scalar_one_or_none()
         if cart is not None:
             return cart
 
-        cart = Cart(user_id=user_id, guest_token=guest_token)
+        # Pass items=[] at construction. Assigning `cart.items = []` after the
+        # flush makes SQLAlchemy lazy-load the old collection first, which
+        # raises MissingGreenlet under asyncio (HTTP 500 on the first
+        # add-to-cart of every new cart).
+        cart = Cart(user_id=user_id, guest_token=guest_token, items=[])
         self.db.add(cart)
         await self.db.flush()
-
-        cart.items = []
         return cart
 
     async def get_cart_by_user_id(self, user_id: UUID) -> Cart | None:

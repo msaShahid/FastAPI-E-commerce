@@ -99,8 +99,17 @@ class ProductRepository:
 
     async def get_by_id_for_update(self, product_id: int) -> Product | None:
 
+        # populate_existing is essential here. Checkout loads the cart (and
+        # each item's Product) BEFORE it takes this lock, so the Product is
+        # already in the session's identity map with the stock value from
+        # that earlier read. Without populate_existing, SQLAlchemy keeps that
+        # stale value even though the locked row now holds a newer one, and
+        # the "enough stock?" check passes for stock that was already sold.
         result = await self.db.execute(
-            select(Product).where(Product.id == product_id).with_for_update()
+            select(Product)
+            .where(Product.id == product_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return result.scalar_one_or_none()
 

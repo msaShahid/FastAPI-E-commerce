@@ -18,11 +18,15 @@ class OrderRepository:
     async def get_by_idempotency_key(
         self, key: str, *, user_id: UUID | None = None, guest_token: str | None = None
     ) -> Order | None:
-
+        """
+        Scoped to (user_id, key) or (guest_token, key) -- matches
+        whichever composite unique constraint applies to this kind of
+        order. Never looked up by key alone: that would let one
+        caller's retry match a different caller's order if their key
+        values happened to collide.
+        """
         identity_condition = (
-            Order.user_id == user_id
-            if user_id is not None
-            else Order.guest_token == guest_token
+            Order.user_id == user_id if user_id is not None else Order.guest_token == guest_token
         )
         result = await self.db.execute(
             select(Order)
@@ -53,12 +57,24 @@ class OrderRepository:
         return result.scalar_one_or_none()
 
     async def get_by_id_for_update(self, order_id) -> Order | None:
-
+        """
+        Locks the order row so two concurrent callers (e.g. a payment
+        being created while the stale-order reaper is looking at the
+        same order) serialize instead of racing. Mirrors the
+        product-locking pattern used by checkout. Items are eager-loaded
+        the same way get_by_id does -- selectinload runs as its own
+        follow-up query, so it doesn't interfere with the FOR UPDATE
+        lock on the orders row itself.
+        """
         result = await self.db.execute(
             select(Order)
             .where(Order.id == order_id)
             .options(selectinload(Order.items))
             .with_for_update()
+            # Callers load the order (for the access check) before locking
+            # it, so refresh the already-loaded instance from the locked row;
+            # otherwise a status changed while waiting for the lock is missed.
+            .execution_options(populate_existing=True)
         )
         return result.scalar_one_or_none()
 
@@ -98,7 +114,12 @@ class OrderRepository:
     async def list_all(
         self, *, offset: int, limit: int, status: OrderStatus | None = None
     ) -> tuple[list[Order], int]:
-
+        """
+        Admin view across every user's orders. Access control (admin-only)
+        is enforced by the caller (OrderService.list_all_orders /
+        the router's AdminUser dependency) -- this method itself has no
+        ownership concept, unlike list_for_user.
+        """
         conditions = []
         if status is not None:
             conditions.append(Order.status == status)
@@ -156,7 +177,7 @@ class OrderRepository:
             shipping_country=shipping_country,
         )
         self.db.add(order)
-        await self.db.flush()
+        await self.db.flush() 
 
         for item_data in items:
             self.db.add(OrderItem(order_id=order.id, **item_data))

@@ -1,7 +1,7 @@
 import uuid
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, Enum, ForeignKey, Integer, String
+from sqlalchemy import CheckConstraint, Enum, ForeignKey, Index, Integer, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -14,20 +14,24 @@ class Payment(Base, TimestampMixin):
     __tablename__ = "payments"
     __table_args__ = (
         CheckConstraint("amount_cents > 0", name="ck_payments_amount_positive"),
+        # Mirrors the partial unique index created in migration c0cc58801d7a:
+        # at most one *pending* payment per order. It must be declared here
+        # too, otherwise `alembic check` reports it as drift and tests built
+        # with Base.metadata.create_all would not enforce it.
+        Index(
+            "ux_payments_order_id_pending",
+            "order_id",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
 
-    order_id: Mapped[UUID] = mapped_column(
-        ForeignKey("orders.id", ondelete="RESTRICT"), index=True
-    )
+    order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id", ondelete="RESTRICT"), index=True)
 
-    provider: Mapped[str] = mapped_column(
-        String(50), default="stripe", server_default="stripe"
-    )
-    provider_payment_id: Mapped[str] = mapped_column(
-        String(255), unique=True, index=True
-    )
+    provider: Mapped[str] = mapped_column(String(50), default="stripe", server_default="stripe")
+    provider_payment_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
 
     status: Mapped[PaymentStatus] = mapped_column(
         Enum(
@@ -40,9 +44,7 @@ class Payment(Base, TimestampMixin):
     )
 
     amount_cents: Mapped[int] = mapped_column(Integer)
-    currency: Mapped[str] = mapped_column(
-        String(3), default="usd", server_default="usd"
-    )
+    currency: Mapped[str] = mapped_column(String(3), default="usd", server_default="usd")
 
     provider_refund_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     refunded_amount_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -1,0 +1,26 @@
+# Extra compose file: adds a `loadtest` service next to your existing stack
+# WITHOUT touching docker-compose.yml. Use it by passing both files:
+#
+#   docker compose -f docker-compose.yml -f loadtest/docker-compose.loadtest.yml \
+#       run --rm loadtest
+#
+# See loadtest/README.md.
+services:
+  loadtest:
+    build:
+      context: ./loadtest
+    depends_on:
+      - api
+    environment:
+      LOADTEST_ADMIN_EMAIL: ${LOADTEST_ADMIN_EMAIL:-}
+      LOADTEST_ADMIN_PASSWORD: ${LOADTEST_ADMIN_PASSWORD:-}
+      LOADTEST_STOCK: ${LOADTEST_STOCK:-10}
+      LOADTEST_MAX_P95_MS: ${LOADTEST_MAX_P95_MS:-2000}
+    volumes:
+      - ./loadtest:/loadtest
+    ports:
+      - "8089:8089"   # Locust web UI, only used when you run it without --headless
+    # Default: headless, 50 users, 25 new users/second, 30 seconds.
+    command: >-
+      -f locustfile.py --headless --host http://api:8000
+      -u 50 -r 25 -t 30s

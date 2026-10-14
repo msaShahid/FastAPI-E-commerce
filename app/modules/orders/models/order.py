@@ -2,7 +2,7 @@ import uuid
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, Enum, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, Enum, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -18,7 +18,6 @@ class Order(Base, TimestampMixin):
 
     __tablename__ = "orders"
     __table_args__ = (
-
         UniqueConstraint(
             "user_id", "idempotency_key", name="uq_orders_user_id_idempotency_key"
         ),
@@ -30,12 +29,20 @@ class Order(Base, TimestampMixin):
             "(user_id IS NULL AND guest_token IS NOT NULL AND guest_email IS NOT NULL)",
             name="ck_orders_user_xor_guest",
         ),
+        # "My orders": WHERE user_id = ? ORDER BY created_at DESC. Starts with
+        # user_id, so it replaces the old single-column user_id index.
+        Index("ix_orders_user_id_created_at", "user_id", "created_at"),
+        # Admin "all orders", newest first.
+        Index("ix_orders_created_at", "created_at"),
+        # Admin filtered by status, and the stale-pending-order reaper
+        # (status = 'pending' AND created_at < cutoff).
+        Index("ix_orders_status_created_at", "status", "created_at"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
 
     user_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="RESTRICT"), index=True, default=None
+        ForeignKey("users.id", ondelete="RESTRICT"), default=None
     )
 
     guest_token: Mapped[str | None] = mapped_column(String(64), index=True, default=None)

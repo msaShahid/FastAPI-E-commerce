@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import DDL, CheckConstraint, Enum, ForeignKey, Index, Integer, String, Text, event
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -37,7 +37,6 @@ class Product(Base, TimestampMixin):
 
     category_id: Mapped[int] = mapped_column(
         ForeignKey("categories.id", ondelete="RESTRICT"),
-        index=True,
     )
     # category is the parent of the product
     category: Mapped["Category"] = relationship(back_populates="products")
@@ -45,4 +44,28 @@ class Product(Base, TimestampMixin):
     __table_args__ = (
         CheckConstraint("price_cents > 0", name="ck_products_price_positive"),
         CheckConstraint("stock >= 0", name="ck_products_stock_non_negative"),
+        # Default storefront listing: WHERE status = 'active' ORDER BY created_at DESC.
+        Index("ix_products_status_created_at", "status", "created_at"),
+        # Admin listing (all statuses), newest first: no status filter, so the
+        # (status, created_at) index above cannot serve it.
+        Index("ix_products_created_at", "created_at"),
+        # Same listing filtered by category.
+        Index(
+            "ix_products_category_status_created",
+            "category_id",
+            "status",
+            "created_at",
+        ),
+        Index(
+            "ix_products_name_trgm",
+            "name",
+            postgresql_using="gin",
+            postgresql_ops={"name": "gin_trgm_ops"},
+        ),
     )
+
+event.listen(
+    Base.metadata,
+    "before_create",
+    DDL("CREATE EXTENSION IF NOT EXISTS pg_trgm"),
+)

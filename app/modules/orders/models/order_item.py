@@ -18,7 +18,9 @@ class OrderItem(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
 
-    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="RESTRICT"))
+    product_id: Mapped[int] = mapped_column(
+        ForeignKey("products.id", ondelete="RESTRICT"), index=True
+    )
 
     product_name_snapshot: Mapped[str] = mapped_column(String(200))
     price_cents_snapshot: Mapped[int] = mapped_column(Integer)

@@ -1,6 +1,6 @@
 # FastAPI E-commerce
 
-A production-ready e-commerce backend built FastAPI,
+A production-ready e-commerce backend built incrementally with FastAPI,
 PostgreSQL, SQLAlchemy 2.x (async) and Alembic.
 
 ## What's in it
@@ -105,6 +105,14 @@ request, as four separate jobs:
 | Dependency audit (pip-audit) | known vulnerabilities in dependencies; two reviewed `python-jose` advisories are ignored, with the reasoning documented in the workflow |
 
 CI uses throwaway credentials and never touches real data.
+
+## Performance
+
+Every hot query was checked with `EXPLAIN ANALYZE` against a ~2.5 million row
+database, and the indexes needed to avoid full-table scans were added. The
+method, results and remaining limits are in
+[`docs/index-audit.md`](docs/index-audit.md); `scripts/index_audit.py --check`
+repeats the audit (it only runs against a database named `*_audit`).
 
 ## Load testing
 

@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Boolean, Enum, String
+from sqlalchemy import Boolean, Enum, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -10,6 +10,8 @@ from app.shared.mixins import TimestampMixin
 
 class User(Base, TimestampMixin):
     __tablename__ = "users"
+    # Admin user list is newest-first.
+    __table_args__ = (Index("ix_users_created_at", "created_at"),)
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
 

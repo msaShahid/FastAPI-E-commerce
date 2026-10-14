@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 from app.core.config import get_settings
-from app.core.database import Base
+from app.core.database import Base, asyncpg_connect_args
 
 # Import every model module here so Base.metadata knows about its table.
 from app.modules.addresses.models.address import Address  # noqa: F401
@@ -85,6 +85,7 @@ async def run_async_migrations() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=asyncpg_connect_args(settings),
     )
 
     async with connectable.connect() as connection:

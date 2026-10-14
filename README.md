@@ -114,6 +114,15 @@ method, results and remaining limits are in
 [`docs/index-audit.md`](docs/index-audit.md); `scripts/index_audit.py --check`
 repeats the audit (it only runs against a database named `*_audit`).
 
+## Connection pool
+
+The database connection pool is configured with `DB_POOL_*` environment
+variables, and the total number of connections it can open is
+`processes x (DB_POOL_SIZE + DB_MAX_OVERFLOW)`. Running out of connections
+returns HTTP 503 with `Retry-After`. How to size it, measured results, and the
+notes for PgBouncer-style poolers are in
+[`docs/connection-pool.md`](docs/connection-pool.md).
+
 ## Load testing
 
 `loadtest/` contains a Locust script that simulates browsing shoppers plus

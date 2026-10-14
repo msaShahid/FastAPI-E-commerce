@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,6 +27,14 @@ class Settings(BaseSettings):
     # --- Database ---
     database_url: str
 
+    db_pool_size: int = Field(default=5, ge=1)          # connections kept open
+    db_max_overflow: int = Field(default=10, ge=0)      # extra, closed again when idle
+    db_pool_timeout: int = Field(default=10, ge=1)      # seconds to wait for a free connection
+    db_pool_recycle: int = Field(default=1800, ge=-1)   # replace connections older than this (s); -1 = never
+    db_pool_pre_ping: bool = True                       # test a connection before using it
+
+    db_disable_prepared_statements: bool = False
+
     # --- JWT / Auth --- python -c "import secrets; print(secrets.token_hex(32))"
 
     jwt_secret: str
@@ -34,7 +42,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
 
-    # --- CORS (kept minimal for now, revisited later) ---
+    # --- CORS ---
     cors_origins: list[str] = ["http://localhost:3000"]
 
     @field_validator("cors_origins")
@@ -56,7 +64,7 @@ class Settings(BaseSettings):
     seed_user_email: str = "user@example.com"
     seed_user_password: str = "UserPassword123!"
 
-    # --- Payments (Stripe) ---
+     # --- Payments (Stripe) ---
     stripe_secret_key: str
     stripe_webhook_secret: str
 
@@ -69,7 +77,6 @@ class Settings(BaseSettings):
     tax_rate_percent: float = 8.0
 
     # --- Guest cart ---
-    # How long an anonymous shopper's cart cookie lives before it expires.
     guest_cart_cookie_max_age_days: int = 30
 
     # --- Rate limiting ---

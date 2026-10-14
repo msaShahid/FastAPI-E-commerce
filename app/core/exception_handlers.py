@@ -3,6 +3,7 @@ import logging
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 
 from app.core.exceptions import (
     BadRequestError,
@@ -82,6 +83,26 @@ def register_exception_handlers(app: FastAPI) -> None:
             content=ErrorResponse(
                 detail="This request conflicts with existing data"
             ).model_dump(),
+        )
+
+    @app.exception_handler(PoolTimeoutError)
+    async def handle_pool_exhausted(request: Request, exc: PoolTimeoutError) -> JSONResponse:
+        # SQLAlchemy raises this when no database connection became free within
+        # db_pool_timeout seconds ("QueuePool limit ... reached"). That is
+        # overload, not a bug: tell the client to retry instead of reporting a
+        # 500, and log it loudly so it shows up in monitoring.
+        logger.error(
+            "Database connection pool exhausted on %s %s: %s",
+            request.method,
+            request.url.path,
+            exc,
+        )
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content=ErrorResponse(
+                detail="The service is busy. Please retry in a moment."
+            ).model_dump(),
+            headers={"Retry-After": "1"},
         )
 
     @app.exception_handler(Exception)

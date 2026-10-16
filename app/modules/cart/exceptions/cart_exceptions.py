@@ -1,4 +1,4 @@
-from app.core.exceptions import InvalidStateError, NotFoundError
+from app.core.exceptions import ConflictError, InvalidStateError, NotFoundError
 
 
 class CartItemNotFoundError(NotFoundError):
@@ -14,3 +14,11 @@ class InsufficientStockError(InvalidStateError):
 class ProductUnavailableError(InvalidStateError):
     def __init__(self) -> None:
         super().__init__("This product is no longer available")
+
+
+class CartFullError(ConflictError):
+    def __init__(self, limit: int) -> None:
+        super().__init__(
+            f"A cart can hold at most {limit} different products. "
+            "Remove one, or check out, before adding another."
+        )

@@ -3,13 +3,15 @@ from typing import Generic, TypeVar
 from fastapi import Query
 from pydantic import BaseModel
 
+from app.shared.limits import MAX_PAGE, MAX_PAGE_SIZE
+
 T = TypeVar("T")
 
 
 class PageParams(BaseModel):
 
-    page: int = Query(default=1, ge=1)
-    page_size: int = Query(default=20, ge=1, le=100)
+    page: int = Query(default=1, ge=1, le=MAX_PAGE)
+    page_size: int = Query(default=20, ge=1, le=MAX_PAGE_SIZE)
 
     @property
     def offset(self) -> int:

@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from app.modules.cart.exceptions.cart_exceptions import (
+    CartFullError,
     CartItemNotFoundError,
     InsufficientStockError,
     ProductUnavailableError,
@@ -9,6 +10,7 @@ from app.modules.cart.models.cart import Cart
 from app.modules.cart.repositories.cart_repository import CartRepository
 from app.modules.products.repositories.product_repository import ProductRepository
 from app.shared.enums.product_status import ProductStatus
+from app.shared.limits import MAX_CART_LINES
 
 
 def _owns(cart: Cart, *, user_id: UUID | None, guest_token: str | None) -> bool:
@@ -58,6 +60,10 @@ class CartService:
             await self._validate_product_available(product_id, new_quantity)
             await self.repository.update_quantity(existing, new_quantity)
         else:
+            # A new line (more of a product already in the cart is fine). A
+            # guest can fill a cart without logging in, so this is a real bound.
+            if len(cart.items) >= MAX_CART_LINES:
+                raise CartFullError(MAX_CART_LINES)
             await self.repository.add_item(
                 cart_id=cart.id,
                 product_id=product_id,

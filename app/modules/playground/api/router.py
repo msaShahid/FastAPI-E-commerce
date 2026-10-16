@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 
 from app.modules.playground.schemas import ItemCreate, ItemPatch, ItemRead
+from app.shared.limits import MAX_PAGE, MAX_PAGE_SIZE
 
 playground_router = APIRouter(prefix="/playground", tags=["playground"])
 
@@ -23,8 +24,8 @@ def get_item(item_id: int) -> ItemRead:
 @playground_router.get("/items", response_model=list[ItemRead])
 def list_items(
     search: str | None = Query(default=None, max_length=50),
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=10, ge=1, le=100),
+    page: int = Query(default=1, ge=1, le=MAX_PAGE),
+    page_size: int = Query(default=10, ge=1, le=MAX_PAGE_SIZE),
 ) -> list[ItemRead]:
 
     results = list(_fake_items_db.values())

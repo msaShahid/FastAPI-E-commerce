@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.modules.audit.dependencies.audit_deps import AuditServiceDep
 from app.modules.audit.schemas.audit import AuditLogRead
@@ -15,8 +15,8 @@ async def list_audit_logs(
     _admin: AdminUser,
     service: AuditServiceDep,
     params: PageParams = Depends(),
-    action: str | None = None,
-    target_type: str | None = None,
+    action: str | None = Query(default=None, max_length=100),
+    target_type: str | None = Query(default=None, max_length=50),
     actor_user_id: uuid.UUID | None = None,
 ) -> PaginatedResponse[AuditLogRead]:
     logs, total = await service.list_logs(

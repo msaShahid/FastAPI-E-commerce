@@ -4,6 +4,7 @@ import uuid
 import strawberry
 
 from app.graphql.types.user import UserPage, UserType
+from app.shared.limits import MAX_PAGE, MAX_PAGE_SIZE
 
 
 @strawberry.type
@@ -59,11 +60,14 @@ class UserQuery:
         if page < 1:
             raise ValueError("page must be greater than or equal to 1")
 
+        if page > MAX_PAGE:
+            raise ValueError(f"page cannot exceed {MAX_PAGE}")
+
         if page_size < 1:
             raise ValueError("page_size must be greater than or equal to 1")
 
-        if page_size > 100:
-            raise ValueError("page_size cannot exceed 100")
+        if page_size > MAX_PAGE_SIZE:
+            raise ValueError(f"page_size cannot exceed {MAX_PAGE_SIZE}")
 
         current_user = info.context.current_user
         service = info.context.user_service

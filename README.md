@@ -142,6 +142,15 @@ the same number of queries). The audit, the two N+1s it found in checkout and
 guest-cart merge, and the rules for new code are in
 [`docs/query-audit.md`](docs/query-audit.md).
 
+## Pagination limits
+
+No list endpoint accepts an unbounded size: `page_size` is at most 100 and
+`page` at most 10 000 (out-of-range values return 422), GraphQL requests are
+limited in aliases and depth, and the lists that are not paginated (addresses,
+cart lines) have a hard cap. All the numbers are in `app/shared/limits.py`;
+reasons, trade-offs and how to add a new list are in
+[`docs/pagination.md`](docs/pagination.md).
+
 ## Background jobs
 
 Slow work does not run inside a request. It is saved as a job in the same

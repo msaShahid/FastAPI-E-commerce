@@ -1,8 +1,12 @@
 from uuid import UUID
 
-from app.modules.addresses.exceptions.address_exceptions import AddressNotFoundError
+from app.modules.addresses.exceptions.address_exceptions import (
+    AddressLimitReachedError,
+    AddressNotFoundError,
+)
 from app.modules.addresses.models.address import Address
 from app.modules.addresses.repositories.address_repository import AddressRepository
+from app.shared.limits import MAX_ADDRESSES_PER_USER
 
 
 class AddressService:
@@ -10,7 +14,12 @@ class AddressService:
         self.repository = repository
 
     async def _get_owned(self, *, address_id: int, user_id: UUID) -> Address:
-
+        """
+        Looked up by id, then ownership-checked -- a 404, not a 403, for
+        an address that exists but belongs to someone else, so this
+        never confirms another user's address id exists (same pattern
+        as OrderService.get_order's ownership check).
+        """
         address = await self.repository.get_by_id(address_id)
         if address is None or address.user_id != user_id:
             raise AddressNotFoundError(address_id)
@@ -37,6 +46,15 @@ class AddressService:
     ) -> Address:
         existing = await self.repository.list_for_user(user_id)
 
+        # The list endpoint is not paginated, so the collection is capped
+        # instead. (Two simultaneous creates can overshoot by one or two; the
+        # point is to keep it bounded, not to count exactly.)
+        if len(existing) >= MAX_ADDRESSES_PER_USER:
+            raise AddressLimitReachedError(MAX_ADDRESSES_PER_USER)
+
+        # The user's very first address is always the default, whatever
+        # they passed in -- there's never a moment with a saved address
+        # but no default to fall back to at checkout.
         make_default = is_default or not existing
 
         if make_default and existing:
@@ -90,11 +108,12 @@ class AddressService:
             await self.repository.clear_default_for_user(user_id)
             updates["is_default"] = True
         elif is_default is False:
-
-            if (
-                address.is_default
-                and len(await self.repository.list_for_user(user_id)) > 1
-            ):
+            # Refuse to leave the user with zero default addresses --
+            # unsetting the only default has no replacement to fall back
+            # to, so checkout's "use my default address" would silently
+            # stop working. Turning another address on is how you
+            # actually change the default (that path clears this one).
+            if address.is_default and len(await self.repository.list_for_user(user_id)) > 1:
                 updates["is_default"] = False
 
         return await self.repository.update(address, **updates)

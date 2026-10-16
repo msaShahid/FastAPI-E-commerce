@@ -123,6 +123,16 @@ returns HTTP 503 with `Retry-After`. How to size it, measured results, and the
 notes for PgBouncer-style poolers are in
 [`docs/connection-pool.md`](docs/connection-pool.md).
 
+## Caching
+
+The public category and product lists are cached in Redis, and every write
+(admin edits, checkout stock changes, the stale-order job) invalidates them
+right after it commits, so shoppers never see stale prices or stock. The
+`X-Cache` response header shows `HIT`, `MISS` or `BYPASS`. If Redis is down the
+API simply answers from the database. Settings (`CACHE_*`), the invalidation
+design, measured results (about 5x the throughput on the product list) and how
+to cache another endpoint are in [`docs/caching.md`](docs/caching.md).
+
 ## Load testing
 
 `loadtest/` contains a Locust script that simulates browsing shoppers plus

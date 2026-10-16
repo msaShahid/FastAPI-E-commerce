@@ -17,6 +17,7 @@ rows directly.
 
 import asyncio
 
+from app.core.cache import close_cache, flush_pending
 from app.core.config import get_settings
 from app.core.database import async_session_factory
 from app.modules.auth.repositories.auth_repository import AuthRepository
@@ -294,7 +295,10 @@ async def main() -> None:
         )
 
         await db.commit()
+        # Running the seed against a live API: drop any cached lists.
+        await flush_pending(db)
 
+    await close_cache()
     print("Done.")
 
 

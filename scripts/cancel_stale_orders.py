@@ -29,6 +29,7 @@ Run manually with:
 import asyncio
 from datetime import UTC, datetime, timedelta
 
+from app.core.cache import close_cache, flush_pending
 from app.core.config import get_settings
 from app.core.database import async_session_factory
 from app.modules.cart.repositories.cart_repository import CartRepository
@@ -61,6 +62,10 @@ async def main() -> None:
             older_than=cutoff
         )
         await db.commit()
+        # Restocking changes product stock, which the cached product lists show.
+        await flush_pending(db)
+
+    await close_cache()
 
     if cancelled_order_ids:
         print(f"Cancelled {len(cancelled_order_ids)} stale order(s):")

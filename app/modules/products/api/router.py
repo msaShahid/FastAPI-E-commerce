@@ -1,5 +1,7 @@
-from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi import APIRouter, Depends, File, Response, UploadFile, status
 
+from app.core.cache import PRODUCTS, cache_headers, get_cache
+from app.core.config import get_settings
 from app.modules.audit.dependencies.audit_deps import AuditServiceDep
 from app.modules.auth.dependencies.auth import AdminUser, OptionalUser
 from app.modules.products.dependencies.product_deps import ProductServiceDep
@@ -62,22 +64,49 @@ async def list_products(
     service: ProductServiceDep,
     current_user: OptionalUser,
     params: ProductQueryParams = Depends(),
-) -> PaginatedResponse[ProductRead]:
-    products, total = await service.list_products(
-        offset=params.offset,
-        limit=params.page_size,
-        category_id=params.category_id,
-        search=params.search,
-        min_price=params.min_price,
-        max_price=params.max_price,
-        sort=params.sort,
-        is_admin=_is_admin(current_user),
+) -> Response:
+    is_admin = _is_admin(current_user)
+
+    async def load() -> str:
+        products, total = await service.list_products(
+            offset=params.offset,
+            limit=params.page_size,
+            category_id=params.category_id,
+            search=params.search,
+            min_price=params.min_price,
+            max_price=params.max_price,
+            sort=params.sort,
+            is_admin=is_admin,
+        )
+        return PaginatedResponse(
+            items=[_to_product_read(p, service) for p in products],
+            total=total,
+            page=params.page,
+            page_size=params.page_size,
+        ).model_dump_json()
+
+    # Cached only for the public view. Admins also see draft/archived
+    # products, so they always query the database. Free-text searches are
+    # not cached either: nearly every one is different, so they would fill
+    # Redis with entries that are never read again.
+    payload, cache_status = await get_cache().get_or_set(
+        PRODUCTS,
+        {
+            "page": params.page,
+            "page_size": params.page_size,
+            "category_id": params.category_id,
+            "min_price": params.min_price,
+            "max_price": params.max_price,
+            "sort": params.sort,
+        },
+        get_settings().cache_ttl_products_seconds,
+        load,
+        cacheable=not is_admin and not params.search,
     )
-    return PaginatedResponse(
-        items=[_to_product_read(p, service) for p in products],
-        total=total,
-        page=params.page,
-        page_size=params.page_size,
+    return Response(
+        content=payload,
+        media_type="application/json",
+        headers=cache_headers(cache_status),
     )
 
 

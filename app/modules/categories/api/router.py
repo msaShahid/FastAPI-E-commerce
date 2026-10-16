@@ -1,5 +1,7 @@
-from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi import APIRouter, Depends, File, Response, UploadFile, status
 
+from app.core.cache import CATEGORIES, cache_headers, get_cache
+from app.core.config import get_settings
 from app.modules.audit.dependencies.audit_deps import AuditServiceDep
 from app.modules.auth.dependencies.auth import AdminUser
 from app.modules.categories.dependencies.category_deps import CategoryServiceDep
@@ -53,15 +55,29 @@ async def create_category(
 @category_router.get("", response_model=PaginatedResponse[CategoryRead])
 async def list_categories(
     service: CategoryServiceDep, params: PageParams = Depends()
-) -> PaginatedResponse[CategoryRead]:
-    categories, total = await service.list_categories(
-        offset=params.offset, limit=params.page_size
+) -> Response:
+    async def load() -> str:
+        categories, total = await service.list_categories(
+            offset=params.offset, limit=params.page_size
+        )
+        return PaginatedResponse(
+            items=[_to_category_read(c, service) for c in categories],
+            total=total,
+            page=params.page,
+            page_size=params.page_size,
+        ).model_dump_json()
+
+    # The list is identical for every caller, so it is cached per page.
+    payload, cache_status = await get_cache().get_or_set(
+        CATEGORIES,
+        {"page": params.page, "page_size": params.page_size},
+        get_settings().cache_ttl_categories_seconds,
+        load,
     )
-    return PaginatedResponse(
-        items=[_to_category_read(c, service) for c in categories],
-        total=total,
-        page=params.page,
-        page_size=params.page_size,
+    return Response(
+        content=payload,
+        media_type="application/json",
+        headers=cache_headers(cache_status),
     )
 
 

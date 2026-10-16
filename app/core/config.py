@@ -82,6 +82,17 @@ class Settings(BaseSettings):
     # --- Rate limiting ---
     redis_url: str = "redis://redis:6379/0"
 
+    # --- Response cache (Redis) ---
+    cache_enabled: bool = True
+    cache_key_prefix: str = "shop"  # lets several environments share one Redis
+    cache_ttl_categories_seconds: int = Field(default=300, ge=1)
+    cache_ttl_products_seconds: int = Field(default=60, ge=1)
+    # Per-command Redis timeout. Kept short on purpose: a cache that is slower
+    # than the query it replaces is worse than no cache.
+    cache_redis_timeout_seconds: float = Field(default=0.25, gt=0)
+    # After a Redis failure, skip Redis entirely for this long.
+    cache_failure_cooldown_seconds: float = Field(default=5.0, ge=0)
+
 
 @lru_cache
 def get_settings() -> Settings:

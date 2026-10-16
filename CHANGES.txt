@@ -1,0 +1,19 @@
+Stage 4, item 4.3 - Redis caching for the category and product lists
+
+NEW
+  app/core/cache.py                          cache + post-commit invalidation
+  tests/integration/test_cache_integration.py  27 tests (real Redis + Postgres)
+  docs/caching.md                            design, settings, measurements
+
+CHANGED
+  app/core/config.py          CACHE_* settings
+  app/core/database.py        get_db calls flush_pending() after commit
+  app/main.py                 lifespan: close the cache's Redis pool on shutdown
+  app/modules/categories/api/router.py   GET /categories cached
+  app/modules/products/api/router.py     GET /products cached (not for admins / search)
+  scripts/cancel_stale_orders.py, scripts/seed.py   invalidate after their commit
+  tests/conftest.py           cache OFF by default in tests; get_db override calls flush_pending
+  README.md, .env.example     docs / commented settings
+
+No migration. No new dependency (redis is already required).
+Copy these files over the same paths in your project root.

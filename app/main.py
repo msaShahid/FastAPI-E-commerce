@@ -1,3 +1,5 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI
@@ -8,6 +10,7 @@ from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.cache import close_cache
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.exception_handlers import register_exception_handlers
@@ -27,7 +30,15 @@ from app.modules.users.api.router import users_router
 
 settings = get_settings()
 
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    yield
+    # Close the cache's Redis connection pool on shutdown.
+    await close_cache()
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="FastAPI E-Commerce",
     version="0.1.0",
     description="Production ready e-commerce backend.",

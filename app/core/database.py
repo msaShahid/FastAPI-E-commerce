@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase
 
+from app.core.cache import flush_pending
 from app.core.config import Settings, get_settings
 
 settings = get_settings()
@@ -18,9 +19,17 @@ settings = get_settings()
 
 
 def asyncpg_connect_args(config: Settings) -> dict:
+    """
+    Extra asyncpg arguments. Empty unless DB_DISABLE_PREPARED_STATEMENTS is set.
 
+    Used by both the application engine and Alembic's engine, so migrations
+    and `alembic check` behave the same way as the app behind a pooler.
+    """
     if not config.db_disable_prepared_statements:
         return {}
+    # SQLAlchemy's documented setup for asyncpg behind a transaction-mode
+    # PgBouncer: no statement caches, and unique statement names so two
+    # clients sharing one server connection can never collide.
     return {
         "statement_cache_size": 0,
         "prepared_statement_cache_size": 0,
@@ -66,6 +75,9 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
             await session.commit()
+            # Only after the commit: invalidating earlier would let a reader
+            # re-fill the cache from the old, still-committed data.
+            await flush_pending(session)
         except Exception:
             await session.rollback()
             raise

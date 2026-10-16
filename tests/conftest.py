@@ -5,6 +5,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.core.cache import Cache, flush_pending, set_cache
 from app.core.database import Base, get_db
 from app.core.storage.interface import StorageService
 from app.main import app
@@ -56,6 +57,19 @@ async def _clean_database(test_engine):
 
 
 
+@pytest.fixture(autouse=True)
+def _cache_disabled_by_default():
+    """
+    Every test starts with caching OFF, so a response cached by one test can
+    never leak into another and the existing tests keep exercising the
+    database. Tests that are about the cache build their own enabled Cache
+    (see tests/integration/test_cache_integration.py).
+    """
+    set_cache(Cache.disabled())
+    yield
+    set_cache(None)
+
+
 @pytest_asyncio.fixture
 async def db_session(test_session_factory, _clean_database):
     """For tests that want to query the database directly, not just through HTTP."""
@@ -75,6 +89,7 @@ async def client(test_session_factory, _clean_database):
             try:
                 yield session
                 await session.commit()
+                await flush_pending(session)  # same as get_db
             except Exception:
                 await session.rollback()
                 raise

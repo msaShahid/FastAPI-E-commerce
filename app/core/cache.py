@@ -300,6 +300,18 @@ def _collect_changed_namespaces(session: Session, flush_context) -> None:
             pending.update(namespaces)
 
 
+@event.listens_for(Session, "do_orm_execute")
+def _collect_bulk_writes(state) -> None:
+    # A bulk `update(Product)...` / `delete(...)` / `insert(...)` statement never
+    # goes through flush, so the hook above cannot see it. Without this, a bulk
+    # stock update would leave stale product lists in the cache.
+    if state.is_update or state.is_delete or state.is_insert:
+        table = getattr(state.statement, "table", None)
+        namespaces = _TABLE_NAMESPACES.get(getattr(table, "name", ""))
+        if namespaces:
+            state.session.info.setdefault(_PENDING_KEY, set()).update(namespaces)
+
+
 @event.listens_for(Session, "after_soft_rollback")
 def _forget_on_rollback(session: Session, previous_transaction) -> None:
     # Only a rollback of the OUTERMOST transaction discards the writes. A

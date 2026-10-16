@@ -288,6 +288,50 @@ async def test_a_stock_change_invalidates_the_list(client, db_session, test_sess
     assert after.json()["items"][0]["stock"] == 3
 
 
+async def test_a_real_checkout_invalidates_the_list(client, db_session, cache):
+    """Checkout updates stock with one bulk UPDATE, which never goes through flush."""
+    from app.core.security import create_access_token
+    from app.modules.cart.models.cart import Cart
+    from app.modules.cart.models.cart_item import CartItem
+
+    category = await _make_category(db_session)
+    product = await _make_product(db_session, category, stock=5)
+    user = User(
+        id=uuid.uuid4(), username="shopper", email="shopper@example.com",
+        password_hash="irrelevant", role=UserRole.USER, is_active=True,
+    )  # fmt: skip
+    db_session.add(user)
+    await db_session.flush()
+    cart = Cart(user_id=user.id, items=[])
+    db_session.add(cart)
+    await db_session.flush()
+    db_session.add(
+        CartItem(cart_id=cart.id, product_id=product.id, quantity=2, price_cents_snapshot=1000)
+    )
+    await db_session.commit()
+    assert (await client.get(PRODUCTS_URL)).json()["items"][0]["stock"] == 5
+    assert (await client.get(PRODUCTS_URL)).headers["X-Cache"] == HIT
+
+    response = await client.post(
+        "/api/v1/orders/checkout",
+        headers={
+            "Authorization": f"Bearer {create_access_token(str(user.id))}",
+            "Idempotency-Key": "k-1",
+        },
+        json={
+            "shipping_address": {
+                "recipient_name": "R", "line1": "1 Street", "city": "C",
+                "state": "S", "postal_code": "1", "country": "US",
+            }  # fmt: skip
+        },
+    )
+    assert response.status_code == 201
+
+    after = await client.get(PRODUCTS_URL)
+    assert after.headers["X-Cache"] == MISS
+    assert after.json()["items"][0]["stock"] == 3
+
+
 async def test_stale_order_cancellation_invalidates_the_list(
     client, db_session, test_session_factory, cache
 ):

@@ -133,6 +133,15 @@ API simply answers from the database. Settings (`CACHE_*`), the invalidation
 design, measured results (about 5x the throughput on the product list) and how
 to cache another endpoint are in [`docs/caching.md`](docs/caching.md).
 
+## Query counts (N+1)
+
+The number of SQL statements an endpoint sends must not grow with the number of
+rows it returns. `tests/integration/test_query_counts.py` measures this for the
+list endpoints, cart, checkout, login and GraphQL (2 rows vs 25 rows must send
+the same number of queries). The audit, the two N+1s it found in checkout and
+guest-cart merge, and the rules for new code are in
+[`docs/query-audit.md`](docs/query-audit.md).
+
 ## Background jobs
 
 Slow work does not run inside a request. It is saved as a job in the same

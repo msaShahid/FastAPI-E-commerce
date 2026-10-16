@@ -60,15 +60,9 @@ class FakeCartRepository:
     async def get_item_by_id(self, item_id: int) -> CartItem | None:
         return self.items.get(item_id)
 
-    async def get_item_by_product(
-        self, cart_id: int, product_id: int
-    ) -> CartItem | None:
+    async def get_item_by_product(self, cart_id: int, product_id: int) -> CartItem | None:
         return next(
-            (
-                i
-                for i in self.items.values()
-                if i.cart_id == cart_id and i.product_id == product_id
-            ),
+            (i for i in self.items.values() if i.cart_id == cart_id and i.product_id == product_id),
             None,
         )
 
@@ -88,6 +82,19 @@ class FakeCartRepository:
         self.items[self._next_item_id] = item
         self._next_item_id += 1
         return item
+
+    async def merge_items_into_cart(self, cart: Cart, incoming: list[CartItem]) -> None:
+        for source in incoming:
+            existing = await self.get_item_by_product(cart.id, source.product_id)
+            if existing is not None:
+                existing.quantity += source.quantity
+            else:
+                await self.add_item(
+                    cart_id=cart.id,
+                    product_id=source.product_id,
+                    quantity=source.quantity,
+                    price_cents=source.price_cents_snapshot,
+                )
 
     async def update_quantity(self, item: CartItem, quantity: int) -> CartItem:
         item.quantity = quantity
@@ -120,9 +127,7 @@ class FakeProductRepository:
         return next((p for p in self.products.values() if p.slug == slug), None)
 
     async def create(self, **fields) -> Product:
-        fake_created_at = datetime(2024, 1, 1, tzinfo=UTC) + timedelta(
-            seconds=self._next_id
-        )
+        fake_created_at = datetime(2024, 1, 1, tzinfo=UTC) + timedelta(seconds=self._next_id)
         product = Product(
             id=self._next_id,
             created_at=fields.pop("created_at", fake_created_at),

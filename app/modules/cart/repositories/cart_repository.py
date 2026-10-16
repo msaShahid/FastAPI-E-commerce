@@ -122,6 +122,31 @@ class CartRepository:
         await self.db.refresh(item, attribute_names=["product"])
         return item
 
+    async def merge_items_into_cart(self, cart: Cart, incoming: list[CartItem]) -> None:
+        """
+        Adds `incoming` lines (from another cart) to `cart`: a product already in
+        `cart` gets its quantity increased, any other product becomes a new line.
+
+        Works from `cart.items` (which the caller loaded) instead of looking each
+        product up with its own query, and flushes once, so merging N lines costs
+        the same number of queries as merging one.
+        """
+        by_product = {item.product_id: item for item in cart.items}
+        for source in incoming:
+            existing = by_product.get(source.product_id)
+            if existing is not None:
+                existing.quantity += source.quantity
+            else:
+                created = CartItem(
+                    cart_id=cart.id,
+                    product_id=source.product_id,
+                    quantity=source.quantity,
+                    price_cents_snapshot=source.price_cents_snapshot,
+                )
+                self.db.add(created)
+                by_product[source.product_id] = created
+        await self.db.flush()
+
     async def update_quantity(self, item: CartItem, quantity: int) -> CartItem:
         item.quantity = quantity
         await self.db.flush()

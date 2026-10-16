@@ -18,10 +18,7 @@ from app.modules.orders.exceptions.order_exceptions import (
 )
 from app.modules.orders.models.order import Order
 from app.modules.orders.repositories.order_repository import OrderRepository
-from app.modules.orders.services.shipping import (
-    ShippingAddressInput,
-    address_as_order_columns,
-)
+from app.modules.orders.services.shipping import ShippingAddressInput, address_as_order_columns
 from app.modules.products.repositories.product_repository import ProductRepository
 from app.shared.enums.order_status import ALLOWED_TRANSITIONS, OrderStatus
 from app.shared.enums.product_status import ProductStatus
@@ -69,7 +66,15 @@ class OrderService:
         address_id: int | None,
         shipping_address: ShippingAddressInput | None,
     ) -> dict:
-
+        """
+        Exactly one of address_id/shipping_address wins, in that order
+        of precedence: an inline address is honored even for a logged-in
+        user (shipping somewhere other than a saved address), otherwise
+        a saved address is looked up and ownership-checked, otherwise
+        (logged-in only) the user's default saved address is used. A
+        guest has no saved addresses at all, so for a guest this only
+        ever resolves shipping_address or raises.
+        """
         if shipping_address is not None:
             return shipping_address.as_order_columns()
 
@@ -85,12 +90,18 @@ class OrderService:
             return address_as_order_columns(address)
 
         if self.address_repository is not None:
-            default_address = await self.address_repository.get_default_for_user(
-                user_id
-            )
+            default_address = await self.address_repository.get_default_for_user(user_id)
             if default_address is not None:
                 return address_as_order_columns(default_address)
 
+        # No address_repository wired in at all (e.g. a unit test
+        # constructing OrderService with just the first three
+        # positional args) and nothing supplied inline -- fall back to
+        # no shipping snapshot rather than forcing every existing
+        # caller to pass one. A real HTTP checkout always has an
+        # address_repository (see order_deps.get_order_service) and the
+        # API schema requires address_id or shipping_address, so this
+        # branch is unreachable in production.
         return {}
 
     async def checkout(
@@ -103,7 +114,20 @@ class OrderService:
         address_id: int | None = None,
         shipping_address: ShippingAddressInput | None = None,
     ) -> Order:
+        """
+        Idempotency is scoped per-identity (see the composite unique
+        constraints on Order): a retry from this same user, or this
+        same guest session, with this same key returns the existing
+        order. Two different callers can use the identical key value
+        without any collision or cross-identity leak -- the lookup
+        itself is scoped to (user_id, key) or (guest_token, key), so
+        there is no cross-identity case left to reject here.
 
+        Exactly one of user_id/guest_token identifies who's checking
+        out (mirrors CartOwner). A guest (user_id is None) must supply
+        guest_email and a shipping_address -- there's no saved address
+        or account to fall back to.
+        """
         is_guest = user_id is None
 
         if is_guest and not guest_email:
@@ -127,9 +151,7 @@ class OrderService:
             shipping_address=shipping_address,
         )
 
-        cart = await self.cart_repository.get_or_create_cart(
-            user_id, guest_token=guest_token
-        )
+        cart = await self.cart_repository.get_or_create_cart(user_id, guest_token=guest_token)
         if not cart.items:
             raise EmptyCartError()
 
@@ -138,17 +160,25 @@ class OrderService:
         order_items_data = []
         subtotal_cents = 0
 
+        # One query locks every product in the cart (in ascending id order, so
+        # concurrent checkouts cannot deadlock) instead of one query per line.
+        locked_products = await self.product_repository.get_many_for_update(
+            [cart_item.product_id for cart_item in sorted_items]
+        )
+
+        remaining_stock = {pid: p.stock for pid, p in locked_products.items()}
+        stock_deltas: dict[int, int] = {}
+
         for cart_item in sorted_items:
-            product = await self.product_repository.get_by_id_for_update(
-                cart_item.product_id
-            )
+            product = locked_products.get(cart_item.product_id)
 
             if product is None or product.status != ProductStatus.ACTIVE:
                 raise ProductUnavailableError()
-            if product.stock < cart_item.quantity:
-                raise InsufficientStockError(available=product.stock)
+            if remaining_stock[product.id] < cart_item.quantity:
+                raise InsufficientStockError(available=remaining_stock[product.id])
 
-            await self.product_repository.decrement_stock(product, cart_item.quantity)
+            remaining_stock[product.id] -= cart_item.quantity
+            stock_deltas[product.id] = stock_deltas.get(product.id, 0) - cart_item.quantity
 
             subtotal_cents += cart_item.price_cents_snapshot * cart_item.quantity
             order_items_data.append(
@@ -159,6 +189,9 @@ class OrderService:
                     "quantity": cart_item.quantity,
                 }
             )
+
+        # One UPDATE for every product's stock, not one per cart line.
+        await self.product_repository.adjust_stock_many(locked_products, stock_deltas)
 
         shipping_cents, tax_cents = self._calculate_shipping_and_tax(subtotal_cents)
         total_cents = subtotal_cents + shipping_cents + tax_cents
@@ -180,9 +213,7 @@ class OrderService:
         return order
 
     async def get_guest_order(self, *, order_id: UUID, guest_token: str) -> Order:
-        order = await self.repository.get_by_guest_token(
-            order_id, guest_token=guest_token
-        )
+        order = await self.repository.get_by_guest_token(order_id, guest_token=guest_token)
         if order is None:
             raise OrderNotFoundError(order_id)
         return order
@@ -225,15 +256,16 @@ class OrderService:
     async def list_all_orders(
         self, *, offset: int, limit: int, status: OrderStatus | None = None
     ) -> tuple[list[Order], int]:
-
+        """
+        Admin-only -- there is no is_admin parameter here because the
+        access check happens at the router via the AdminUser dependency,
+        the same way update_status relies on the router's AdminUser
+        rather than re-checking a role here.
+        """
         return await self.repository.list_all(offset=offset, limit=limit, status=status)
 
     async def update_status(
-        self,
-        *,
-        order_id: UUID,
-        new_status: OrderStatus,
-        changed_by_user_id: UUID | None,
+        self, *, order_id: UUID, new_status: OrderStatus, changed_by_user_id: UUID | None
     ) -> Order:
         order = await self.repository.get_by_id(order_id)
         if order is None:
@@ -247,7 +279,27 @@ class OrderService:
         )
 
     async def cancel_stale_pending_orders(self, *, older_than: datetime) -> list[UUID]:
+        """
+        Checkout decrements stock immediately (see checkout() above), so
+        a PENDING order that never gets paid holds that stock forever
+        unless something releases it. This cancels every order that has
+        been PENDING since before `older_than` and restocks its items.
+        Intended to be called periodically by an outside scheduler (see
+        scripts/cancel_stale_orders.py), never from a request.
 
+        `older_than` must be naive (no tzinfo) -- orders.created_at is a
+        naive DateTime column (by convention, UTC), unlike e.g.
+        refresh_tokens.expires_at which is timezone-aware.
+
+        Each order is looked up, locked, and re-checked individually --
+        the initial listing is not itself locked, so by the time this
+        gets to a given order, the customer may have just paid, or
+        another reaper run may have already handled it. Re-checking
+        status and age AFTER acquiring the row lock (the same guard
+        create_payment_for_order relies on) is what makes that safe:
+        the loser of that race just skips the order instead of
+        double-cancelling or cancelling a now-paid order.
+        """
         stale_order_ids = await self.repository.list_stale_pending_order_ids(
             older_than=older_than
         )
@@ -260,14 +312,14 @@ class OrderService:
             if order.status != OrderStatus.PENDING or order.created_at >= older_than:
                 continue  # paid, already cancelled, or no longer stale since we listed it
 
-            for item in sorted(order.items, key=lambda i: i.product_id):
-                product = await self.product_repository.get_by_id_for_update(
-                    item.product_id
-                )
-                if product is not None:
-                    await self.product_repository.increment_stock(
-                        product, item.quantity
-                    )
+            locked_products = await self.product_repository.get_many_for_update(
+                [item.product_id for item in order.items]
+            )
+            restock: dict[int, int] = {}
+            for item in order.items:
+                if item.product_id in locked_products:  # a deleted product has nothing to restock
+                    restock[item.product_id] = restock.get(item.product_id, 0) + item.quantity
+            await self.product_repository.adjust_stock_many(locked_products, restock)
 
             await self.repository.update_status(order, OrderStatus.CANCELLED, None)
             cancelled_order_ids.append(order.id)

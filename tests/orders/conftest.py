@@ -169,6 +169,15 @@ class FakeProductRepositoryForOrders:
         self.lock_calls.append(product_id)
         return self.products.get(product_id)
 
+    async def get_many_for_update(self, product_ids) -> dict[int, Product]:
+        ids = sorted(set(product_ids))
+        self.lock_calls.extend(ids)  # the repository locks in ascending id order
+        return {i: self.products[i] for i in ids if i in self.products}
+
+    async def adjust_stock_many(self, products: dict[int, Product], deltas: dict[int, int]) -> None:
+        for product_id, delta in deltas.items():
+            products[product_id].stock += delta
+
     async def decrement_stock(self, product: Product, quantity: int) -> Product:
         product.stock -= quantity
         return product

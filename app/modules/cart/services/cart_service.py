@@ -38,9 +38,7 @@ class CartService:
     async def get_cart(
         self, user_id: UUID | None = None, *, guest_token: str | None = None
     ) -> Cart:
-        return await self.repository.get_or_create_cart(
-            user_id, guest_token=guest_token
-        )
+        return await self.repository.get_or_create_cart(user_id, guest_token=guest_token)
 
     async def add_item(
         self,
@@ -50,9 +48,7 @@ class CartService:
         product_id: int,
         quantity: int,
     ) -> Cart:
-        cart = await self.repository.get_or_create_cart(
-            user_id, guest_token=guest_token
-        )
+        cart = await self.repository.get_or_create_cart(user_id, guest_token=guest_token)
         product = await self._validate_product_available(product_id, quantity)
 
         existing = await self.repository.get_item_by_product(cart.id, product_id)
@@ -69,9 +65,7 @@ class CartService:
                 price_cents=product.price_cents,
             )
 
-        return await self.repository.get_or_create_cart(
-            user_id, guest_token=guest_token
-        )
+        return await self.repository.get_or_create_cart(user_id, guest_token=guest_token)
 
     async def update_item_quantity(
         self,
@@ -83,17 +77,13 @@ class CartService:
     ) -> Cart:
         item = await self.repository.get_item_by_id(item_id)
 
-        if item is None or not _owns(
-            item.cart, user_id=user_id, guest_token=guest_token
-        ):
+        if item is None or not _owns(item.cart, user_id=user_id, guest_token=guest_token):
             raise CartItemNotFoundError(item_id)
 
         await self._validate_product_available(item.product_id, quantity)
         await self.repository.update_quantity(item, quantity)
 
-        return await self.repository.get_or_create_cart(
-            user_id, guest_token=guest_token
-        )
+        return await self.repository.get_or_create_cart(user_id, guest_token=guest_token)
 
     async def remove_item(
         self,
@@ -104,26 +94,18 @@ class CartService:
     ) -> Cart:
         item = await self.repository.get_item_by_id(item_id)
 
-        if item is None or not _owns(
-            item.cart, user_id=user_id, guest_token=guest_token
-        ):
+        if item is None or not _owns(item.cart, user_id=user_id, guest_token=guest_token):
             raise CartItemNotFoundError(item_id)
 
         await self.repository.remove_item(item)
-        return await self.repository.get_or_create_cart(
-            user_id, guest_token=guest_token
-        )
+        return await self.repository.get_or_create_cart(user_id, guest_token=guest_token)
 
     async def clear_cart(
         self, user_id: UUID | None = None, *, guest_token: str | None = None
     ) -> Cart:
-        cart = await self.repository.get_or_create_cart(
-            user_id, guest_token=guest_token
-        )
+        cart = await self.repository.get_or_create_cart(user_id, guest_token=guest_token)
         await self.repository.clear(cart)
-        return await self.repository.get_or_create_cart(
-            user_id, guest_token=guest_token
-        )
+        return await self.repository.get_or_create_cart(user_id, guest_token=guest_token)
 
     async def merge_guest_cart_into_user(
         self, *, user_id: UUID, guest_token: str
@@ -133,6 +115,9 @@ class CartService:
         had a guest cart cookie. Anything they added anonymously ends up
         in their real cart; nothing is lost and nothing is duplicated
         beyond summing quantities for a product already in both carts.
+
+        Does nothing if there's no guest cart for this token (the common
+        case -- most logins don't follow a guest shopping session).
         """
         guest_cart = await self.repository.get_cart_by_guest_token(guest_token)
         if guest_cart is None:
@@ -147,20 +132,9 @@ class CartService:
             await self.repository.reassign_to_user(guest_cart, user_id=user_id)
             return
 
-        for guest_item in list(guest_cart.items):
-            existing_item = await self.repository.get_item_by_product(
-                existing_user_cart.id, guest_item.product_id
-            )
-            if existing_item is not None:
-                await self.repository.update_quantity(
-                    existing_item, existing_item.quantity + guest_item.quantity
-                )
-            else:
-                await self.repository.add_item(
-                    cart_id=existing_user_cart.id,
-                    product_id=guest_item.product_id,
-                    quantity=guest_item.quantity,
-                    price_cents=guest_item.price_cents_snapshot,
-                )
+        # One call for all the lines (no query per line); see the repository.
+        await self.repository.merge_items_into_cart(
+            existing_user_cart, list(guest_cart.items)
+        )
 
         await self.repository.delete_cart(guest_cart)

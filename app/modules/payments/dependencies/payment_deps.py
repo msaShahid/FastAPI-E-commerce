@@ -5,6 +5,7 @@ from fastapi import Depends
 
 from app.core.config import get_settings
 from app.core.database import DbSession
+from app.core.jobs import JobQueue
 from app.core.payments.interface import PaymentProvider
 from app.core.payments.stripe_provider import StripePaymentProvider
 from app.modules.orders.dependencies.order_deps import get_order_service
@@ -30,8 +31,9 @@ def get_payment_service(
     repository: Annotated[PaymentRepository, Depends(get_payment_repository)],
     order_service: Annotated[OrderService, Depends(get_order_service)],
     provider: Annotated[PaymentProvider, Depends(get_payment_provider)],
+    db: DbSession,
 ) -> PaymentService:
-    return PaymentService(repository, order_service, provider)
+    return PaymentService(repository, order_service, provider, job_queue=JobQueue(db))
 
 
 PaymentServiceDep = Annotated[PaymentService, Depends(get_payment_service)]

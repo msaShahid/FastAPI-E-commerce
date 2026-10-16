@@ -10,6 +10,7 @@ from app.core.config import get_settings
 from app.core.database import Base, asyncpg_connect_args
 
 # Import every model module here so Base.metadata knows about its table.
+from app.core.jobs.models import BackgroundJob  # noqa: F401
 from app.modules.addresses.models.address import Address  # noqa: F401
 from app.modules.audit.models.audit_log import AuditLog  # noqa: F401
 from app.modules.auth.models.refresh_token import RefreshToken  # noqa: F401
@@ -85,6 +86,9 @@ async def run_async_migrations() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        # Same prepared-statement handling as the app (a no-op unless
+        # DB_DISABLE_PREPARED_STATEMENTS=true), so migrations and
+        # `alembic check` also work behind a PgBouncer-style pooler.
         connect_args=asyncpg_connect_args(settings),
     )
 

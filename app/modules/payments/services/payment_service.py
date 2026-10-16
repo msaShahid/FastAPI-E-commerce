@@ -1,6 +1,7 @@
 import logging
 from uuid import UUID
 
+from app.core.jobs import JobQueue
 from app.core.payments.interface import PaymentProvider, WebhookEvent
 from app.modules.orders.exceptions.order_exceptions import (
     InvalidStatusTransitionError,
@@ -12,6 +13,7 @@ from app.modules.payments.exceptions.payment_exceptions import (
     OrderNotPayableError,
     OrderNotRefundableError,
 )
+from app.modules.payments.jobs import SEND_ORDER_CONFIRMATION, order_confirmation_dedupe_key
 from app.modules.payments.models.payment import Payment
 from app.modules.payments.repositories.payment_repository import PaymentRepository
 from app.shared.enums.order_status import OrderStatus
@@ -24,6 +26,10 @@ DEFAULT_CURRENCY = "usd"
 SUCCEEDED_EVENT = "payment_intent.succeeded"
 FAILED_EVENT = "payment_intent.payment_failed"
 
+# Stripe PaymentIntent statuses that mean "still open, the customer can
+# still complete or retry this exact intent." Anything else (canceled,
+# or a status we don't recognize) is treated as terminal, and a fresh
+# intent is created instead.
 OPEN_INTENT_STATUSES = frozenset(
     {
         "requires_payment_method",
@@ -34,6 +40,7 @@ OPEN_INTENT_STATUSES = frozenset(
     }
 )
 
+
 class PaymentService:
     def __init__(
         self,
@@ -41,20 +48,35 @@ class PaymentService:
         order_service: OrderService,
         provider: PaymentProvider,
         currency: str = DEFAULT_CURRENCY,
+        job_queue: JobQueue | None = None,
     ) -> None:
         self.repository = repository
         self.order_service = order_service
         self.provider = provider
         self.currency = currency
+        # Slow follow-up work (emails ...) is queued, never done inside the
+        # webhook request. None only in unit tests that do not care.
+        self.job_queue = job_queue
 
     async def create_payment_for_order(
         self, *, order_id: UUID, user_id: UUID
     ) -> tuple[Payment, str]:
-
+        """
+        Paying for an order is always a self-service action: an admin
+        cannot start a payment on someone else's order (is_admin=False
+        is deliberate here, not a placeholder -- admins use a different
+        path for anything that touches somebody else's money).
+        """
         order = await self.order_service.get_order(
             order_id=order_id, user_id=user_id, is_admin=False
         )
 
+        # Lock the order row for the rest of this transaction so two
+        # concurrent requests for the same order (double-click, retry
+        # storm) can't both fall through the "no pending payment yet"
+        # check and each create their own Stripe intent. The second
+        # caller blocks here until the first transaction commits, then
+        # re-reads the now-current state.
         order = await self.order_service.lock_order_for_update(order.id)
         self._assert_order_payable(order)
 
@@ -76,22 +98,32 @@ class PaymentService:
             )
 
             if intent.status == "succeeded":
-
+                # Stripe says paid but our webhook hasn't landed yet (or
+                # was lost). Sync locally and refuse a second intent
+                # rather than risk double-charging the customer.
                 if reusable.status != PaymentStatus.SUCCEEDED:
-                    await self.repository.update_status(
-                        reusable, PaymentStatus.SUCCEEDED
-                    )
+                    await self.repository.update_status(reusable, PaymentStatus.SUCCEEDED)
                 raise OrderNotPayableError("This order has already been paid")
 
             if intent.status in OPEN_INTENT_STATUSES:
-
+                # The existing intent is still payable -- reuse it
+                # instead of creating a second one the customer could
+                # also complete.
                 if reusable.status != PaymentStatus.PENDING:
                     await self.repository.update_status(reusable, PaymentStatus.PENDING)
                 return reusable, intent.client_secret
 
+            # Terminal on Stripe's side (e.g. canceled) and not already
+            # marked FAILED locally -- fall through and create a new one.
             if reusable.status != PaymentStatus.FAILED:
                 await self.repository.update_status(reusable, PaymentStatus.FAILED)
 
+        # One Stripe idempotency key per (order, attempt number). A crash
+        # between "Stripe created the intent" and "we saved the Payment
+        # row" is recovered by retrying with the same key: Stripe hands
+        # back the *same* intent instead of creating an orphan. A later,
+        # genuinely new attempt (previous one recorded as FAILED above)
+        # gets a new key because the attempt count has moved on.
         idempotency_key = f"order:{order.id}:intent:{len(existing_payments)}"
 
         intent = await self.provider.create_payment_intent(
@@ -111,11 +143,22 @@ class PaymentService:
     async def refund_payment(
         self, *, order_id: UUID, admin_user_id: UUID
     ) -> tuple[Payment, Order]:
-
+        """
+        Admin-only. Refunds the order's successful payment through Stripe
+        first, and only moves the order to REFUNDED once Stripe confirms
+        the refund -- the order's status must never claim money moved
+        when it didn't. Not reachable for an order that was never paid
+        (or one already fulfilled-and-refunded): see ALLOWED_TRANSITIONS.
+        """
         order = await self.order_service.get_by_id_unchecked(order_id)
         if order is None:
             raise OrderNotFoundError(order_id)
 
+        # Lock for the same reason create_payment_for_order does: without
+        # it, a concurrent second refund request for the same order could
+        # both pass the status/payment checks below before either one
+        # updates anything, and Stripe would be asked to refund the same
+        # PaymentIntent twice.
         order = await self.order_service.lock_order_for_update(order.id)
 
         if order.status not in (OrderStatus.PAID, OrderStatus.FULFILLED):
@@ -130,6 +173,9 @@ class PaymentService:
         if succeeded_payment is None:
             raise OrderNotRefundableError("No successful payment found for this order")
 
+        # One idempotency key per payment being refunded -- a retried
+        # request (client timeout, etc.) hits the same Stripe refund
+        # instead of issuing a second one.
         idempotency_key = f"order:{order.id}:refund:{succeeded_payment.id}"
 
         refund = await self.provider.create_refund(
@@ -158,7 +204,16 @@ class PaymentService:
         await self.process_webhook_event(event)
 
     async def process_webhook_event(self, event: WebhookEvent) -> None:
-
+        """
+        Claims the event_id BEFORE running any side effects. Stripe
+        guarantees at-least-once delivery, so the same event can arrive
+        twice, including concurrently. Claiming first (an atomic
+        INSERT ... ON CONFLICT DO NOTHING) means a concurrent duplicate
+        blocks on the unique index until the first delivery's
+        transaction finishes, then sees it already claimed and returns
+        without touching the payment or order -- there is no window
+        where both duplicates pass a check and both run the handler.
+        """
         claimed = await self.repository.claim_webhook_event(event.event_id)
         if not claimed:
             return
@@ -190,7 +245,12 @@ class PaymentService:
             return
 
         if order.status != OrderStatus.PENDING:
-
+            # Money has been taken (Stripe confirms succeeded) for an
+            # order that is no longer PENDING -- e.g. it was cancelled,
+            # or a second intent for the same order also succeeded. The
+            # order will NOT be moved to PAID. This needs a human to
+            # look at it (likely a refund), so it must not disappear
+            # silently.
             logger.warning(
                 "payment %s succeeded for order %s but order.status=%s "
                 "(not PENDING) -- order was NOT transitioned to PAID; "
@@ -209,12 +269,23 @@ class PaymentService:
             )
         except InvalidStatusTransitionError:
             logger.warning(
-                "payment %s succeeded but order %s could not transition " "%s -> paid",
+                "payment %s succeeded but order %s could not transition "
+                "%s -> paid",
                 payment.id,
                 order.id,
                 order.status.value,
             )
             return
+
+        if self.job_queue is not None:
+            # Saved in this same transaction: the order is PAID and the email
+            # is queued, or (if the commit fails and Stripe re-delivers the
+            # webhook) neither happened yet.
+            await self.job_queue.enqueue(
+                SEND_ORDER_CONFIRMATION,
+                {"order_id": str(order.id)},
+                dedupe_key=order_confirmation_dedupe_key(order.id),
+            )
 
     async def _handle_payment_failed(self, provider_payment_id: str) -> None:
         payment = await self.repository.get_by_provider_payment_id(provider_payment_id)

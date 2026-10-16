@@ -133,6 +133,22 @@ API simply answers from the database. Settings (`CACHE_*`), the invalidation
 design, measured results (about 5x the throughput on the product list) and how
 to cache another endpoint are in [`docs/caching.md`](docs/caching.md).
 
+## Background jobs
+
+Slow work does not run inside a request. It is saved as a job in the same
+transaction as the change that needs it (for example, the Stripe webhook marks
+an order paid *and* queues the confirmation email in one commit) and a separate
+worker runs it later, with retries and backoff:
+
+```bash
+docker compose exec api python -m scripts.run_worker
+```
+
+or set `JOBS_EMBEDDED_WORKER=true` to run the worker inside the API while
+developing. Emails are only written to the log until you plug in a mail
+provider. How it works, the guarantees, how to add a job, how to run it in
+production and how to inspect failed jobs: [`docs/background-jobs.md`](docs/background-jobs.md).
+
 ## Load testing
 
 `loadtest/` contains a Locust script that simulates browsing shoppers plus

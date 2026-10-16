@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated
@@ -12,8 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import close_cache
 from app.core.config import get_settings
-from app.core.database import get_db
+from app.core.database import async_session_factory, get_db
 from app.core.exception_handlers import register_exception_handlers
+from app.core.jobs.worker import run_worker
 from app.core.rate_limit import limiter
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.graphql.schema import graphql_router
@@ -29,10 +32,28 @@ from app.modules.products.api.router import product_router
 from app.modules.users.api.router import users_router
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    stop_worker = asyncio.Event()
+    worker_task: asyncio.Task | None = None
+    if settings.jobs_embedded_worker:
+        from app import jobs as _jobs  # noqa: F401  (registers the job handlers)
+
+        logger.info("Running the background job worker inside the API process")
+        worker_task = asyncio.create_task(
+            run_worker(stop_worker, session_factory=async_session_factory)
+        )
     yield
+    if worker_task is not None:
+        # Let jobs that are mid-run finish, but do not hang shutdown on them.
+        stop_worker.set()
+        try:
+            await asyncio.wait_for(worker_task, timeout=settings.jobs_job_timeout_seconds)
+        except TimeoutError:
+            logger.warning("Job worker did not stop in time; cancelling it")
+            worker_task.cancel()
     # Close the cache's Redis connection pool on shutdown.
     await close_cache()
 

@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import Settings, get_settings
 from app.core.database import async_session_factory
 from app.core.jobs.registry import get_handler
+from app.core.logging_config import bound_context, new_context
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +162,17 @@ async def run_one(
     if job is None:
         return False
 
+    # Every log line while this job runs (including the handler's) carries its id.
+    with bound_context(new_context(job_id=str(job.id), job_type=job.job_type)):
+        await _run_claimed(job, session_factory, config)
+    return True
+
+
+async def _run_claimed(
+    job: ClaimedJob,
+    session_factory: async_sessionmaker[AsyncSession],
+    config: Settings,
+) -> None:
     started = time.monotonic()
     handler = get_handler(job.job_type)
     try:
@@ -199,7 +211,6 @@ async def run_one(
             job.attempts,
             time.monotonic() - started,
         )
-    return True
 
 
 async def run_worker(

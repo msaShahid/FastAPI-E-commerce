@@ -4,6 +4,8 @@ from pydantic import BaseModel
 class ErrorResponse(BaseModel):
 
     detail: str
+    # Also sent in the X-Request-ID header. Quote it to support; it finds the logs.
+    request_id: str | None = None
 
 
 class AppError(Exception):
@@ -42,15 +44,21 @@ class InvalidStateError(AppError):
     def __init__(self, message: str = "Invalid request") -> None:
         super().__init__(message)
 
+
 class BadRequestError(AppError):
 
     def __init__(self, message: str = "Bad request") -> None:
         super().__init__(message)
 
+
 class UpstreamServiceError(AppError):
+    """An external service we depend on (a payment provider, etc.) failed
+    or is unreachable. Distinct from BadRequestError: the caller did
+    nothing wrong here, so this maps to 502, not 400/422."""
 
     def __init__(self, message: str = "An upstream service failed") -> None:
         super().__init__(message)
+
 
 class InvalidImageError(InvalidStateError):
 

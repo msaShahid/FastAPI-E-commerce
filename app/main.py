@@ -17,7 +17,9 @@ from app.core.config import get_settings
 from app.core.database import async_session_factory, get_db
 from app.core.exception_handlers import register_exception_handlers
 from app.core.jobs.worker import run_worker
+from app.core.logging_config import configure_logging
 from app.core.rate_limit import limiter
+from app.core.request_context import REQUEST_ID_HEADER, RequestContextMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.graphql.schema import graphql_router
 from app.modules.addresses.api.router import address_router
@@ -32,6 +34,7 @@ from app.modules.products.api.router import product_router
 from app.modules.users.api.router import users_router
 
 settings = get_settings()
+configure_logging(settings.log_level, settings.log_format)
 logger = logging.getLogger(__name__)
 
 @asynccontextmanager
@@ -75,7 +78,11 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Lets browser JavaScript read the id to show in an error message.
+    expose_headers=[REQUEST_ID_HEADER],
 )
+# Added last = outermost: every response, including CORS preflights, gets an id.
+app.add_middleware(RequestContextMiddleware)
 
 
 app.mount("/media", StaticFiles(directory="media"), name="media")

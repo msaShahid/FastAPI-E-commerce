@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -121,6 +122,12 @@ class Settings(BaseSettings):
     # counter, so "5/minute" actually means 5/minute across the whole
     # deployment.
     redis_url: str = "redis://redis:6379/0"
+
+    # --- Logging ---
+    # json: one JSON object per line (use this wherever logs are collected).
+    # text: readable lines for local development.
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    log_format: Literal["json", "text"] = "json"
 
     # --- Response cache (Redis) ---
     # Caches the public category and product LISTS (see app/core/cache.py and

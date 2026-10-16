@@ -151,6 +151,15 @@ cart lines) have a hard cap. All the numbers are in `app/shared/limits.py`;
 reasons, trade-offs and how to add a new list are in
 [`docs/pagination.md`](docs/pagination.md).
 
+## Logging and request ids
+
+Logs are one JSON object per line (`LOG_FORMAT=text` for readable local output).
+Every request gets an id, returned in the `X-Request-ID` header and in the
+`request_id` field of every error body, and stamped, with the user id and route,
+on every log line the request writes, so a customer's id finds exactly their
+logs. Fields, how to search, and the rules for new code are in
+[`docs/logging.md`](docs/logging.md).
+
 ## Background jobs
 
 Slow work does not run inside a request. It is saved as a job in the same

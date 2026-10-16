@@ -6,6 +6,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 
 from app.core.database import DbSession
+from app.core.logging_config import bind
 from app.core.security import TokenType, decode_token
 from app.modules.auth.models.user import User
 from app.modules.auth.repositories.auth_repository import AuthRepository
@@ -57,6 +58,7 @@ async def get_current_user(
     if user is None or not user.is_active:
         raise unauthorized
 
+    bind(user_id=str(user.id))  # every later log line in this request carries it
     return user
 
 
@@ -69,7 +71,14 @@ async def get_optional_current_user(
     ],
     repository: Annotated[AuthRepository, Depends(get_auth_repository)],
 ) -> User | None:
-
+    """
+    For endpoints that are public but behave differently for a logged-in
+    (specifically admin) caller -- e.g. the product catalog, where an
+    admin should see drafts/archived items that anonymous or non-admin
+    callers should not. No credentials, or invalid/expired ones, is
+    treated the same as "anonymous", never as an error: this dependency
+    must never turn a public endpoint into one that requires auth.
+    """
     if credentials is None:
         return None
     try:

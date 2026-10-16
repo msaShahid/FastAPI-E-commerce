@@ -1,88 +1,89 @@
 import logging
 
 from fastapi import FastAPI, Request, status
-from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.exceptions import (
     BadRequestError,
     ConflictError,
-    ErrorResponse,
     ForbiddenError,
     InvalidStateError,
     NotFoundError,
     UnauthorizedError,
     UpstreamServiceError,
 )
+from app.core.logging_config import mark_logged
+from app.core.request_context import REQUEST_ID_HEADER, get_request_id, restore_context
 
 logger = logging.getLogger(__name__)
+
+
+def _error(
+    request: Request,
+    status_code: int,
+    detail: str | list,
+    headers: dict[str, str] | None = None,
+) -> JSONResponse:
+    """
+    Every error body carries the request id. The header is set here too because
+    the catch-all 500 handler runs outside RequestContextMiddleware, which is
+    what normally adds it.
+    """
+    request_id = get_request_id(request)
+    response = JSONResponse(
+        status_code=status_code,
+        content={"detail": detail, "request_id": request_id},
+        headers=headers,
+    )
+    if request_id:
+        response.headers[REQUEST_ID_HEADER] = request_id
+    return response
 
 
 def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(NotFoundError)
     async def handle_not_found(request: Request, exc: NotFoundError) -> JSONResponse:
-        return JSONResponse(
-            status_code=status.HTTP_404_NOT_FOUND,
-            content=ErrorResponse(detail=exc.message).model_dump(),
-        )
+        return _error(request, status.HTTP_404_NOT_FOUND, exc.message)
 
     @app.exception_handler(ConflictError)
     async def handle_conflict(request: Request, exc: ConflictError) -> JSONResponse:
-        return JSONResponse(
-            status_code=status.HTTP_409_CONFLICT,
-            content=ErrorResponse(detail=exc.message).model_dump(),
-        )
+        return _error(request, status.HTTP_409_CONFLICT, exc.message)
 
     @app.exception_handler(ForbiddenError)
     async def handle_forbidden(request: Request, exc: ForbiddenError) -> JSONResponse:
-        return JSONResponse(
-            status_code=status.HTTP_403_FORBIDDEN,
-            content=ErrorResponse(detail=exc.message).model_dump(),
-        )
+        return _error(request, status.HTTP_403_FORBIDDEN, exc.message)
 
     @app.exception_handler(UnauthorizedError)
     async def handle_unauthorized(request: Request, exc: UnauthorizedError) -> JSONResponse:
-        return JSONResponse(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            content=ErrorResponse(detail=exc.message).model_dump(),
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        return _error(request, status.HTTP_401_UNAUTHORIZED, exc.message, headers={"WWW-Authenticate": "Bearer"})
 
     @app.exception_handler(BadRequestError)
     async def handle_bad_request(request: Request, exc: BadRequestError) -> JSONResponse:
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content=ErrorResponse(detail=exc.message).model_dump(),
-        )
+        return _error(request, status.HTTP_400_BAD_REQUEST, exc.message)
 
     @app.exception_handler(UpstreamServiceError)
     async def handle_upstream_service_error(
         request: Request, exc: UpstreamServiceError
     ) -> JSONResponse:
         logger.warning("Upstream service error on %s %s: %s", request.method, request.url.path, exc)
-        return JSONResponse(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            content=ErrorResponse(detail=exc.message).model_dump(),
-        )
+        return _error(request, status.HTTP_502_BAD_GATEWAY, exc.message)
 
     @app.exception_handler(InvalidStateError)
     async def handle_invalid_state(request: Request, exc: InvalidStateError) -> JSONResponse:
-        return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content=ErrorResponse(detail=exc.message).model_dump(),
-        )
+        return _error(request, status.HTTP_422_UNPROCESSABLE_ENTITY, exc.message)
 
     @app.exception_handler(IntegrityError)
     async def handle_integrity_error(request: Request, exc: IntegrityError) -> JSONResponse:
 
         logger.warning("IntegrityError caught by global handler: %s", exc)
-        return JSONResponse(
-            status_code=status.HTTP_409_CONFLICT,
-            content=ErrorResponse(
-                detail="This request conflicts with existing data"
-            ).model_dump(),
+        return _error(
+            request, status.HTTP_409_CONFLICT, "This request conflicts with existing data"
         )
 
     @app.exception_handler(PoolTimeoutError)
@@ -97,19 +98,37 @@ def register_exception_handlers(app: FastAPI) -> None:
             request.url.path,
             exc,
         )
-        return JSONResponse(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content=ErrorResponse(
-                detail="The service is busy. Please retry in a moment."
-            ).model_dump(),
+        return _error(
+            request,
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "The service is busy. Please retry in a moment.",
             headers={"Retry-After": "1"},
+        )
+
+    # FastAPI's own 404 / 405 / 422 bodies keep their shape ({"detail": ...});
+    # they just gain "request_id" like every other error.
+    @app.exception_handler(StarletteHTTPException)
+    async def handle_http_exception(request: Request, exc: StarletteHTTPException) -> Response:
+        headers = dict(exc.headers) if exc.headers else None
+        if exc.status_code in (204, 304) or exc.status_code < 200:
+            return Response(status_code=exc.status_code, headers=headers)
+        return _error(request, exc.status_code, exc.detail, headers=headers)
+
+    @app.exception_handler(RequestValidationError)
+    async def handle_validation_error(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        return _error(
+            request, status.HTTP_422_UNPROCESSABLE_ENTITY, jsonable_encoder(exc.errors())
         )
 
     @app.exception_handler(Exception)
     async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
-
-        logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content=ErrorResponse(detail="An unexpected error occurred").model_dump(),
+        # Runs outside RequestContextMiddleware (Starlette's ServerErrorMiddleware
+        # is the outermost layer), so put the request's log context back first.
+        with restore_context(request):
+            logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+        mark_logged(exc)  # so uvicorn's duplicate, id-less copy of it is dropped
+        return _error(
+            request, status.HTTP_500_INTERNAL_SERVER_ERROR, "An unexpected error occurred"
         )

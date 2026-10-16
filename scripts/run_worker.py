@@ -16,18 +16,17 @@ import app.jobs  # noqa: F401  (registers the job handlers)
 from app.core.config import get_settings
 from app.core.database import engine
 from app.core.jobs.worker import run_worker
+from app.core.logging_config import configure_logging
 
 
 async def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
+    config = get_settings()
+    configure_logging(config.log_level, config.log_format)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop.set)
 
-    config = get_settings()
     logging.getLogger(__name__).info(
         "Job worker started (concurrency=%d, poll=%ss)",
         config.jobs_concurrency,

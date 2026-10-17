@@ -140,6 +140,14 @@ jobs:
       - name: Check models match migrations
         run: alembic check
 
+      # alembic check ignores CHECK / EXCLUDE constraints. This catches a constraint
+      # declared in a model that no migration creates. The two XOR constraints are a
+      # known, tracked gap: remove them from --allow once a migration adds them.
+      - name: Check named constraints exist in the migrated database
+        run: >-
+          python -m scripts.check_schema_constraints
+          --allow ck_orders_user_xor_guest,ck_carts_user_xor_guest
+
   dependency-audit:
     name: Dependency audit (pip-audit)
     runs-on: ubuntu-latest

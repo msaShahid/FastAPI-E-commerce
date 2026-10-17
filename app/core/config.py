@@ -93,6 +93,11 @@ class Settings(BaseSettings):
     # written approval, recorded in source_reference.
     tax_master_allow_self_approval: bool = False
 
+    # When true, a product must point at an APPROVED tax classification to be activated
+    # or ordered; checkout refuses anything else (HTTP 422, product_tax_unassigned).
+    # Default false keeps the pre-GST behaviour. The GST calculation phase turns it on.
+    tax_classification_required: bool = False
+
     # --- Dev seeding (see scripts/seed.py) ---
     seed_admin_email: str = "admin@example.com"
     seed_admin_password: str = "AdminPassword123!"

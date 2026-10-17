@@ -44,8 +44,31 @@ migration, so a migrated database lacks them. CI reports them via
    then `VALIDATE CONSTRAINT` in the same or a follow-up revision.
 3. Remove the two names from `--allow` in CI.
 
+### Phase 2.3 product tax assignment (done)
+- `products.tax_classification_id` (nullable FK to an existing classification, RESTRICT) and
+  `products.unit` (nullable, 2-8 upper-case letters, format only). Migration `b8d4f1a6c230`;
+  existing products keep NULL = **unassigned**, which is never treated as tax-ready.
+- `POST/PATCH /api/v1/products`: optional `tax_classification_id` and `unit`. Only an existing,
+  **approved** classification can be assigned (422 `tax_classification_invalid` /
+  `classification_not_approved`). PATCH: omit = unchanged, explicit `null` = un-assign. Changes
+  are audited (`product.tax_assignment_changed`, from/to). Admin-only fields on product
+  responses: `unit`, `tax_classification`, `tax_state` (`unassigned | assigned_unapproved |
+  assigned_approved`); everyone else, and every cached public view, gets null.
+- `GET /api/v1/admin/tax/products?state=...`: administrator worklist to find products to classify.
+- Database triggers: a product can only be assigned an approved classification (row-locked, so a
+  concurrent retirement cannot slip past), and a classification assigned to products cannot be
+  retired. The service reports both with stable codes (`classification_in_use`).
+- `TAX_CLASSIFICATION_REQUIRED` (default **false**: nothing changes). When true, activating a
+  product and checking out both require an approved classification (422
+  `product_tax_classification_required` / `product_tax_unassigned`), before any stock change.
+  Turning it on makes existing unclassified active products unorderable: use the worklist first.
+- `assigned_approved` only means a classification is assigned and approved. Whether a tax rule
+  applies on a given date is decided by the calculator (Phase 2.4). No tax is calculated.
+- Downgrading `b8d4f1a6c230` drops the two columns and therefore any assignments: back up first.
+- Open: `unit` is not checked against an official list (a professional decision).
+
 ### Next
-Phase 2.3 (product assignment) then 2.4/2.5 need owner decisions: pricing mode, business
+Phase 2.4 (product assignment) then 2.4/2.5 need owner decisions: pricing mode, business
 registrations, approved classifications/rates, place of supply, shipping tax, rounding.
 
 ## Milestone 1: critical checkout defects (complete, awaiting review)

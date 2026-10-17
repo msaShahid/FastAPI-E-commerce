@@ -573,6 +573,7 @@ async def test_checkout_computes_flat_shipping_and_tax(
         fake_address_repository,
         flat_shipping_cents=500,
         free_shipping_threshold_cents=5000,
+        free_shipping_threshold_basis="subtotal",
         tax_rate_percent=10.0,
     )
     user_id = uuid4()
@@ -613,6 +614,7 @@ async def test_checkout_waives_shipping_above_free_threshold(
         fake_address_repository,
         flat_shipping_cents=500,
         free_shipping_threshold_cents=5000,
+        free_shipping_threshold_basis="subtotal",
         tax_rate_percent=0.0,
     )
     user_id = uuid4()

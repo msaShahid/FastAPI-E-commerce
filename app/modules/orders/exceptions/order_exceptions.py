@@ -72,3 +72,15 @@ class ShippingAddressRequiredError(InvalidStateError):
 class GuestEmailRequiredError(InvalidStateError):
     def __init__(self) -> None:
         super().__init__("An email address is required for guest checkout")
+
+
+
+class ProductTaxUnassignedError(InvalidStateError):
+    code = "product_tax_unassigned"
+
+    def __init__(self, product_ids: list[int]) -> None:
+        ids = ", ".join(str(i) for i in sorted(product_ids))
+        super().__init__(
+            f"These items cannot be ordered yet because their tax classification is not approved: product {ids}"
+        )
+        self.product_ids = sorted(product_ids)

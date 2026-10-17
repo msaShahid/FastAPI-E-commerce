@@ -36,6 +36,7 @@ def get_order_service(
         free_shipping_threshold_cents=settings.free_shipping_threshold_cents,
         free_shipping_threshold_basis=settings.free_shipping_threshold_basis,
         tax_rate_percent=settings.tax_rate_percent,
+        require_tax_classification=settings.tax_classification_required,
     )
 
 

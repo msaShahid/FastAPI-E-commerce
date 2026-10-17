@@ -21,6 +21,7 @@ from app.modules.orders.exceptions.order_exceptions import (
     OrderAccessForbiddenError,
     OrderNotFoundError,
     PriceChangedError,
+    ProductTaxUnassignedError,
     ShippingAddressRequiredError,
 )
 from app.modules.orders.models.order import Order
@@ -44,6 +45,7 @@ class OrderService:
         free_shipping_threshold_cents: int | None = None,
         free_shipping_threshold_basis: str | None = None,
         tax_rate_percent: Decimal | float | str | None = None,
+        require_tax_classification: bool = False,
     ) -> None:
         self.repository = repository
         self.cart_repository = cart_repository
@@ -52,6 +54,8 @@ class OrderService:
         self.flat_shipping_cents = flat_shipping_cents
         self.free_shipping_threshold_cents = free_shipping_threshold_cents
         self.free_shipping_threshold_basis = free_shipping_threshold_basis
+        # When true, every product in the cart must have an APPROVED tax classification.
+        self.require_tax_classification = require_tax_classification
         # Decimal, never float: tax is money. None = not configured.
         self.tax_rate_percent = (
             None if tax_rate_percent is None else Decimal(str(tax_rate_percent))
@@ -241,6 +245,13 @@ class OrderService:
         locked_products = await self.product_repository.get_many_for_update(
             [cart_item.product_id for cart_item in sorted_items]
         )
+
+        if self.require_tax_classification:
+            # Before any stock change: unclassified products are never treated as tax-ready.
+            states = await self.product_repository.tax_states(locked_products.keys())
+            untaxed = [pid for pid in locked_products if states.get(pid) != "approved"]
+            if untaxed:
+                raise ProductTaxUnassignedError(untaxed)
 
         remaining_stock = {pid: p.stock for pid, p in locked_products.items()}
         stock_deltas: dict[int, int] = {}

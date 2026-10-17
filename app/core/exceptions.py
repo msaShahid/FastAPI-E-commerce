@@ -51,6 +51,15 @@ class BadRequestError(AppError):
         super().__init__(message)
 
 
+class ServiceUnavailableError(AppError):
+    """The service cannot do this right now because of its own configuration/state (HTTP 503)."""
+
+    code: str | None = None
+
+    def __init__(self, message: str = "Service unavailable") -> None:
+        super().__init__(message)
+
+
 class UpstreamServiceError(AppError):
     """An external service we depend on (a payment provider, etc.) failed
     or is unreachable. Distinct from BadRequestError: the caller did

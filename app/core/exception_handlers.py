@@ -14,12 +14,12 @@ from app.core.exceptions import (
     ForbiddenError,
     InvalidStateError,
     NotFoundError,
+    ServiceUnavailableError,
     UnauthorizedError,
     UpstreamServiceError,
 )
 from app.core.logging_config import mark_logged
 from app.core.request_context import REQUEST_ID_HEADER, get_request_id, restore_context
-from app.modules.orders.exceptions.order_exceptions import CheckoutNotConfiguredError
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,7 @@ def _error(
     status_code: int,
     detail: str | list,
     headers: dict[str, str] | None = None,
+    code: str | None = None,
 ) -> JSONResponse:
     """
     Every error body carries the request id. The header is set here too because
@@ -36,11 +37,10 @@ def _error(
     what normally adds it.
     """
     request_id = get_request_id(request)
-    response = JSONResponse(
-        status_code=status_code,
-        content={"detail": detail, "request_id": request_id},
-        headers=headers,
-    )
+    content = {"detail": detail, "request_id": request_id}
+    if code is not None:
+        content["code"] = code  # stable, machine-readable (only exceptions that define one)
+    response = JSONResponse(status_code=status_code, content=content, headers=headers)
     if request_id:
         response.headers[REQUEST_ID_HEADER] = request_id
     return response
@@ -50,15 +50,15 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(NotFoundError)
     async def handle_not_found(request: Request, exc: NotFoundError) -> JSONResponse:
-        return _error(request, status.HTTP_404_NOT_FOUND, exc.message)
+        return _error(request, status.HTTP_404_NOT_FOUND, exc.message, code=getattr(exc, "code", None))
 
     @app.exception_handler(ConflictError)
     async def handle_conflict(request: Request, exc: ConflictError) -> JSONResponse:
-        return _error(request, status.HTTP_409_CONFLICT, exc.message)
+        return _error(request, status.HTTP_409_CONFLICT, exc.message, code=getattr(exc, "code", None))
 
     @app.exception_handler(ForbiddenError)
     async def handle_forbidden(request: Request, exc: ForbiddenError) -> JSONResponse:
-        return _error(request, status.HTTP_403_FORBIDDEN, exc.message)
+        return _error(request, status.HTTP_403_FORBIDDEN, exc.message, code=getattr(exc, "code", None))
 
     @app.exception_handler(UnauthorizedError)
     async def handle_unauthorized(request: Request, exc: UnauthorizedError) -> JSONResponse:
@@ -77,15 +77,17 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(InvalidStateError)
     async def handle_invalid_state(request: Request, exc: InvalidStateError) -> JSONResponse:
-        return _error(request, status.HTTP_422_UNPROCESSABLE_ENTITY, exc.message)
+        return _error(request, status.HTTP_422_UNPROCESSABLE_ENTITY, exc.message, code=getattr(exc, "code", None))
 
-    @app.exception_handler(CheckoutNotConfiguredError)
-    async def handle_checkout_not_configured(
-        request: Request, exc: CheckoutNotConfiguredError
+    @app.exception_handler(ServiceUnavailableError)
+    async def handle_service_unavailable(
+        request: Request, exc: ServiceUnavailableError
     ) -> JSONResponse:
-        # A deployment/config problem, not a client error: log loudly.
-        logger.error("Checkout refused: %s", exc.message)
-        return _error(request, status.HTTP_503_SERVICE_UNAVAILABLE, exc.message)
+        # A deployment/configuration problem, not a client error: log loudly.
+        logger.error("Request refused (503): %s", exc.message)
+        return _error(
+            request, status.HTTP_503_SERVICE_UNAVAILABLE, exc.message, code=getattr(exc, "code", None)
+        )
 
     @app.exception_handler(IntegrityError)
     async def handle_integrity_error(request: Request, exc: IntegrityError) -> JSONResponse:

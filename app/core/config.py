@@ -85,6 +85,14 @@ class Settings(BaseSettings):
             )
         return value
 
+    # --- GST master data (see app/modules/tax) ---
+    # Default: a tax-master record must be approved by a DIFFERENT administrator
+    # than its creator. A business with a single administrator can set this to true:
+    # self-approval then requires a written note and is flagged in the audit log.
+    # It gives no independent control; the real safeguard is the GST professional's
+    # written approval, recorded in source_reference.
+    tax_master_allow_self_approval: bool = False
+
     # --- Dev seeding (see scripts/seed.py) ---
     seed_admin_email: str = "admin@example.com"
     seed_admin_password: str = "AdminPassword123!"
@@ -112,6 +120,10 @@ class Settings(BaseSettings):
     # GST milestone. Do not set a rate that has not been approved.
     flat_shipping_cents: int | None = Field(default=None, ge=0)
     free_shipping_threshold_cents: int | None = Field(default=None, ge=0)  # None/0 = no free shipping
+    # What the free-shipping threshold is compared with. Required whenever a
+    # threshold is set, so the owner states the rule instead of inheriting one.
+    # "subtotal" = merchandise subtotal as priced at checkout (before shipping/tax).
+    free_shipping_threshold_basis: Literal["subtotal"] | None = None
     tax_rate_percent: Decimal | None = Field(default=None, ge=0, le=100)
 
     # --- Guest cart ---
@@ -166,6 +178,15 @@ class Settings(BaseSettings):
     # Retry delay after attempt n: base * 2**(n-1), capped.
     jobs_retry_base_seconds: float = Field(default=30.0, ge=0)
     jobs_retry_max_seconds: float = Field(default=3600.0, ge=0)
+
+    @model_validator(mode="after")
+    def _threshold_needs_a_basis(self) -> "Settings":
+        if self.free_shipping_threshold_cents and self.free_shipping_threshold_basis is None:
+            raise ValueError(
+                "free_shipping_threshold_basis must be set (currently: 'subtotal') "
+                "when free_shipping_threshold_cents is set"
+            )
+        return self
 
     @model_validator(mode="after")
     def _lock_outlasts_job_timeout(self) -> "Settings":

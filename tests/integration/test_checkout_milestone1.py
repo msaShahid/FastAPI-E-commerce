@@ -198,6 +198,7 @@ async def test_same_key_different_payload_is_a_conflict(client, db_session, prod
     assert a.status_code == 201
     assert b.status_code == 409
     assert "different request" in b.json()["detail"]
+    assert b.json()["code"] == "idempotency_key_reused"
     assert await _order_count(db_session) == 1
     assert await _stock(client, product["id"]) == 19  # taken once
 
@@ -236,6 +237,7 @@ async def test_checkout_fails_closed_when_pricing_is_not_configured(
     r = await _checkout(client, _guest())
     assert r.status_code == 503
     assert "not configured" in r.json()["detail"]
+    assert r.json()["code"] == "checkout_not_configured"
     assert await _order_count(db_session) == 0
     assert await _stock(client, product["id"]) == 20
     # fixing the configuration makes the same cart checkout fine
@@ -258,6 +260,7 @@ async def test_shipping_and_tax_come_from_explicit_settings(
     s = get_settings()
     monkeypatch.setattr(s, "flat_shipping_cents", shipping)
     monkeypatch.setattr(s, "free_shipping_threshold_cents", threshold)
+    monkeypatch.setattr(s, "free_shipping_threshold_basis", "subtotal" if threshold else None)
     monkeypatch.setattr(s, "tax_rate_percent", Decimal(rate))
     p = await _make_product(client, admin_headers, price=price, sku=f"ST-{price}-{rate}")
     await _add(client, p["id"])

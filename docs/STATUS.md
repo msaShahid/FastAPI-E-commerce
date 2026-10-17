@@ -1,5 +1,35 @@
 # Status
 
+## Milestone 2 (in progress): shipping and GST master foundation
+
+**Checkout and live payments remain disabled.** Tax is NOT calculated yet: the GST master
+is administration-only and not used by checkout. Payments are still USD-only.
+
+### Phase 2.1 shipping (done)
+- Free-shipping threshold now requires `FREE_SHIPPING_THRESHOLD_BASIS` (only `subtotal`
+  is supported); the app refuses to start with a threshold and no basis.
+- Every order stores `shipping_snapshot` (JSONB: charge, threshold, basis, amount applied,
+  `tax_treatment: "undetermined"`). Legacy orders keep NULL. Migration `d5f1b2c9a604`.
+- Shipping charge/threshold values are NOT invented: unset => checkout returns 503.
+
+### Phase 2.2 GST master foundation (done, not used by checkout)
+- Tables (migration `e7a3c9b1d845`, empty, nothing seeded): `tax_classifications`
+  (HSN/SAC), `tax_rules` (effective-dated components, treatment, source reference),
+  `gst_registrations` (business registrations; selecting one is NOT implemented).
+- Admin-only API `/api/v1/admin/tax/...`: create, list, edit (draft only), approve, retire;
+  rules also `close`. Everything is audited. Errors carry a stable `code`.
+- Rules: all start as draft; approval needs a source reference, an approved classification
+  and no overlap (also enforced by a DB exclusion constraint). Approved records are never
+  edited; they are closed/retired and replaced.
+- Approval: creator cannot approve their own record unless
+  `TAX_MASTER_ALLOW_SELF_APPROVAL=true` (then a note is required and audited).
+- Validation is format-only (HSN 2/4/6/8 digits, SAC 6 digits, GSTIN pattern + state prefix).
+  Whether a code, rate or GSTIN is correct is for the GST professional.
+
+### Next
+Phase 2.3 (product assignment) then 2.4/2.5 need owner decisions: pricing mode, business
+registrations, approved classifications/rates, place of supply, shipping tax, rounding.
+
 ## Milestone 1: critical checkout defects (complete, awaiting review)
 
 **Checkout and live payments must stay disabled in production.** Shipping and tax are

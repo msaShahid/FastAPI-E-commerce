@@ -19,6 +19,7 @@ from app.core.exceptions import (
 )
 from app.core.logging_config import mark_logged
 from app.core.request_context import REQUEST_ID_HEADER, get_request_id, restore_context
+from app.modules.orders.exceptions.order_exceptions import CheckoutNotConfiguredError
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,14 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(InvalidStateError)
     async def handle_invalid_state(request: Request, exc: InvalidStateError) -> JSONResponse:
         return _error(request, status.HTTP_422_UNPROCESSABLE_ENTITY, exc.message)
+
+    @app.exception_handler(CheckoutNotConfiguredError)
+    async def handle_checkout_not_configured(
+        request: Request, exc: CheckoutNotConfiguredError
+    ) -> JSONResponse:
+        # A deployment/config problem, not a client error: log loudly.
+        logger.error("Checkout refused: %s", exc.message)
+        return _error(request, status.HTTP_503_SERVICE_UNAVAILABLE, exc.message)
 
     @app.exception_handler(IntegrityError)
     async def handle_integrity_error(request: Request, exc: IntegrityError) -> JSONResponse:

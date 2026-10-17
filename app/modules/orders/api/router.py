@@ -1,14 +1,19 @@
 from typing import Annotated
 from uuid import UUID
 
-from app.modules.orders.services.shipping import ShippingAddressInput
-from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Request, status
+from fastapi.responses import JSONResponse
 
+from app.core.request_context import get_request_id
 from app.modules.auth.dependencies.auth import AdminUser, CurrentUser, OptionalUser
 from app.modules.cart.dependencies.cart_identity import GUEST_CART_COOKIE, CartOwnerDep
 from app.modules.orders.dependencies.order_deps import OrderServiceDep
-from app.modules.orders.exceptions.order_exceptions import GuestEmailRequiredError
+from app.modules.orders.exceptions.order_exceptions import (
+    GuestEmailRequiredError,
+    PriceChangedError,
+)
 from app.modules.orders.schemas.order import CheckoutRequest, OrderRead, OrderStatusUpdate
+from app.modules.orders.services.shipping import ShippingAddressInput
 from app.shared.enums.order_status import OrderStatus
 from app.shared.enums.roles import UserRole
 from app.shared.pagination.schemas import PageParams, PaginatedResponse
@@ -17,15 +22,28 @@ order_router = APIRouter(prefix="/orders", tags=["orders"])
 
 
 @order_router.post(
-    "/checkout", response_model=OrderRead, status_code=status.HTTP_201_CREATED
+    "/checkout",
+    response_model=OrderRead,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        409: {
+            "description": (
+                "Either code=price_changed (cart prices changed; the cart is already "
+                "updated, review the new total and check out again), or the "
+                "Idempotency-Key was already used with a different request."
+            )
+        },
+        503: {"description": "Shipping/tax are not configured; checkout is disabled."},
+    },
 )
 async def checkout(
+    request: Request,
     current_user: OptionalUser,
     owner: CartOwnerDep,
     service: OrderServiceDep,
     payload: CheckoutRequest,
-    idempotency_key: str = Header(..., alias="Idempotency-Key"),
-) -> OrderRead:
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=255),
+) -> OrderRead | JSONResponse:
     if current_user is None and not payload.guest_email:
         raise GuestEmailRequiredError()
 
@@ -35,14 +53,28 @@ async def checkout(
         else None
     )
 
-    order = await service.checkout(
-        user_id=owner.user_id,
-        guest_token=owner.guest_token,
-        guest_email=payload.guest_email if current_user is None else None,
-        idempotency_key=idempotency_key,
-        address_id=payload.address_id,
-        shipping_address=shipping_address,
-    )
+    try:
+        order = await service.checkout(
+            user_id=owner.user_id,
+            guest_token=owner.guest_token,
+            guest_email=payload.guest_email if current_user is None else None,
+            idempotency_key=idempotency_key,
+            address_id=payload.address_id,
+            shipping_address=shipping_address,
+        )
+    except PriceChangedError as exc:
+        # Returned (not raised) on purpose: an exception would roll back the cart
+        # refresh, and the customer would be told "prices changed" forever.
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={
+                "detail": exc.message,
+                "code": "price_changed",
+                "changes": exc.changes,
+                "new_subtotal_cents": exc.new_subtotal_cents,
+                "request_id": get_request_id(request),
+            },
+        )
     return OrderRead.model_validate(order)
 
 

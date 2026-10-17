@@ -65,6 +65,9 @@ class FakeOrderRepository:
         matching.sort(key=lambda o: o.created_at or datetime.min, reverse=True)
         return matching[offset : offset + limit], len(matching)
 
+    async def lock_idempotency_key(self, scope: str) -> None:
+        return None  # no concurrency in the in-memory fake
+
     async def create_order(
         self,
         *,
@@ -75,6 +78,7 @@ class FakeOrderRepository:
         shipping_cents,
         tax_cents,
         total_cents,
+        request_hash=None,
         guest_token=None,
         guest_email=None,
         shipping_recipient_name=None,
@@ -92,6 +96,7 @@ class FakeOrderRepository:
             guest_token=guest_token,
             guest_email=guest_email,
             idempotency_key=idempotency_key,
+            request_hash=request_hash,
             status=OrderStatus.PENDING,
             subtotal_cents=subtotal_cents,
             shipping_cents=shipping_cents,
@@ -122,6 +127,10 @@ class FakeOrderRepository:
 
 
 class FakeCartRepositoryForOrders:
+    async def set_price_snapshot(self, item, price_cents: int):
+        item.price_cents_snapshot = price_cents
+        return item
+
     def __init__(self) -> None:
         self.carts: dict[UUID, Cart] = {}
         self._next_cart_id = 1

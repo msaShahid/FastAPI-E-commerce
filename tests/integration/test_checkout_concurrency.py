@@ -27,6 +27,8 @@ def _build_service(session) -> OrderService:
         OrderRepository(session),
         CartRepository(session),
         ProductRepository(session),
+        flat_shipping_cents=0,
+        tax_rate_percent=0,
     )
 
 

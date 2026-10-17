@@ -76,7 +76,7 @@ class AuthService:
             raise InvalidRefreshTokenError()
 
         jti = payload.get("jti")
-        stored = await self.repository.get_refresh_token_by_jti(jti)
+        stored = await self.repository.get_refresh_token_by_jti(jti, for_update=True)
 
         if stored is None:
             raise InvalidRefreshTokenError()
@@ -91,6 +91,9 @@ class AuthService:
                 stored.user_id,
             )
             await self.repository.revoke_family(stored.family_id)
+            # Persist the revocation NOW: the request fails below, and get_db
+            # rolls back on an exception, which would silently undo it.
+            await self.repository.commit()
             raise InvalidRefreshTokenError()
 
         if stored.expires_at < datetime.now(UTC):

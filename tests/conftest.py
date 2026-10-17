@@ -58,6 +58,23 @@ async def _clean_database(test_engine):
 
 
 @pytest.fixture(autouse=True)
+def _checkout_pricing_configured_for_tests(monkeypatch):
+    """
+    Production leaves shipping/tax UNSET so checkout fails closed. Tests that are
+    not about shipping/tax run with an explicit zero config; tests about the
+    fail-closed behaviour or real amounts override these on the same object.
+    """
+    from decimal import Decimal
+
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "flat_shipping_cents", 0)
+    monkeypatch.setattr(settings, "free_shipping_threshold_cents", None)
+    monkeypatch.setattr(settings, "tax_rate_percent", Decimal("0"))
+
+
+@pytest.fixture(autouse=True)
 def _cache_disabled_by_default():
     """
     Every test starts with caching OFF, so a response cached by one test can

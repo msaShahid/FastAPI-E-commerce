@@ -55,6 +55,8 @@ class CheckoutRequest(BaseModel):
     def _one_address_source(self) -> "CheckoutRequest":
         if self.address_id is not None and self.shipping_address is not None:
             raise ValueError("Provide either address_id or shipping_address, not both")
+        if self.address_id is None and self.shipping_address is None:
+            raise ValueError("A shipping address is required: provide address_id or shipping_address")
         return self
 
 

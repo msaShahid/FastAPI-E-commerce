@@ -1,4 +1,5 @@
 from app.core.exceptions import (
+    AppError,
     ConflictError,
     ForbiddenError,
     InvalidStateError,
@@ -28,7 +29,32 @@ class OrderAccessForbiddenError(ForbiddenError):
 
 class IdempotencyKeyConflictError(ConflictError):
     def __init__(self) -> None:
-        super().__init__("This idempotency key was already used")
+        super().__init__(
+            "This Idempotency-Key was already used with a different request. "
+            "Use a new key for a different checkout."
+        )
+
+
+class PriceChangedError(ConflictError):
+    """Raised when a cart line's price no longer matches the product's current price.
+
+    Carries what the customer needs to review. The router turns it into a 409
+    response with code "price_changed" (and commits the refreshed cart prices).
+    """
+
+    def __init__(self, changes: list[dict], new_subtotal_cents: int) -> None:
+        super().__init__("Prices changed since you added these items. Review the new total.")
+        self.changes = changes
+        self.new_subtotal_cents = new_subtotal_cents
+
+
+class CheckoutNotConfiguredError(AppError):
+    """Shipping or tax settings are missing, so a total cannot be computed safely."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Checkout is temporarily unavailable: shipping and tax are not configured."
+        )
 
 
 class ShippingAddressRequiredError(InvalidStateError):

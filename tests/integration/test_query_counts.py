@@ -403,7 +403,9 @@ async def _stale_orders(db_session, *, orders: int, lines: int) -> None:
 async def _cancel_stale(test_session_factory) -> list:
     async with test_session_factory() as session:
         service = OrderService(
-            OrderRepository(session), CartRepository(session), ProductRepository(session)
+            OrderRepository(session), CartRepository(session), ProductRepository(session),
+            flat_shipping_cents=0,
+            tax_rate_percent=0,
         )
         cancelled = await service.cancel_stale_pending_orders(
             older_than=datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=30)

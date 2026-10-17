@@ -85,7 +85,9 @@ async def _checkout(session_factory, user_id):
     # One session/transaction per attempt, like get_db does per request.
     async with session_factory() as session:
         service = OrderService(
-            OrderRepository(session), CartRepository(session), ProductRepository(session)
+            OrderRepository(session), CartRepository(session), ProductRepository(session),
+            flat_shipping_cents=0,
+            tax_rate_percent=0,
         )
         try:
             await service.checkout(user_id=user_id, idempotency_key=f"key-{user_id}")

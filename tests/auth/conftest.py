@@ -68,8 +68,13 @@ class FakeAuthRepository:
         self.refresh_tokens[jti] = token
         return token
 
-    async def get_refresh_token_by_jti(self, jti: str) -> FakeRefreshToken | None:
+    async def get_refresh_token_by_jti(
+        self, jti: str, *, for_update: bool = False
+    ) -> FakeRefreshToken | None:
         return self.refresh_tokens.get(jti)
+
+    async def commit(self) -> None:
+        self.commits = getattr(self, "commits", 0) + 1  # the real one commits the session
 
     async def revoke_refresh_token(self, token: FakeRefreshToken) -> None:
         token.revoked = True

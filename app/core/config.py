@@ -1,3 +1,4 @@
+from decimal import Decimal
 from functools import lru_cache
 from typing import Literal
 
@@ -103,9 +104,15 @@ class Settings(BaseSettings):
     pending_order_timeout_minutes: int = 30
 
     # --- Shipping & tax (flat-rate; no carrier/tax-service integration) ---
-    flat_shipping_cents: int = 500
-    free_shipping_threshold_cents: int = 5000
-    tax_rate_percent: float = 8.0
+    # Deliberately UNSET by default. Checkout refuses to run (HTTP 503) until
+    # flat_shipping_cents and tax_rate_percent are both set explicitly, so a
+    # taxable amount can never silently default to zero or to a placeholder
+    # rate. Setting a value to 0 is allowed but must be a conscious decision.
+    # These are interim flat settings; destination-based tax arrives with the
+    # GST milestone. Do not set a rate that has not been approved.
+    flat_shipping_cents: int | None = Field(default=None, ge=0)
+    free_shipping_threshold_cents: int | None = Field(default=None, ge=0)  # None/0 = no free shipping
+    tax_rate_percent: Decimal | None = Field(default=None, ge=0, le=100)
 
     # --- Guest cart ---
     # How long an anonymous shopper's cart cookie lives before it expires.

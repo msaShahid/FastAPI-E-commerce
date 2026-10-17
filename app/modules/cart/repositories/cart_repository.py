@@ -152,6 +152,12 @@ class CartRepository:
         await self.db.flush()
         return item
 
+    async def set_price_snapshot(self, item: CartItem, price_cents: int) -> CartItem:
+        """Brings a cart line's price up to the product's current price."""
+        item.price_cents_snapshot = price_cents
+        await self.db.flush()
+        return item
+
     async def remove_item(self, item: CartItem) -> None:
         await self.db.delete(item)
         await self.db.flush()

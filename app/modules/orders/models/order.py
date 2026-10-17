@@ -59,6 +59,11 @@ class Order(Base, TimestampMixin):
     )
 
     idempotency_key: Mapped[str] = mapped_column(String(255), index=True)
+    # SHA-256 of the checkout request (address + guest email) that created this
+    # order. A replay of the same key with a different request is rejected.
+    # NULL on orders created before this column existed (replays are then
+    # accepted as before, since there is nothing to compare against).
+    request_hash: Mapped[str | None] = mapped_column(String(64), default=None)
 
     subtotal_cents: Mapped[int] = mapped_column(Integer)
     shipping_cents: Mapped[int] = mapped_column(Integer, default=0, server_default="0")

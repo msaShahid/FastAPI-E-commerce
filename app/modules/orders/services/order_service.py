@@ -1,4 +1,8 @@
+import hashlib
+import json
+from dataclasses import asdict
 from datetime import datetime
+from decimal import ROUND_HALF_UP, Decimal
 from uuid import UUID
 
 from app.modules.addresses.exceptions.address_exceptions import AddressNotFoundError
@@ -9,11 +13,14 @@ from app.modules.cart.exceptions.cart_exceptions import (
 )
 from app.modules.cart.repositories.cart_repository import CartRepository
 from app.modules.orders.exceptions.order_exceptions import (
+    CheckoutNotConfiguredError,
     EmptyCartError,
     GuestEmailRequiredError,
+    IdempotencyKeyConflictError,
     InvalidStatusTransitionError,
     OrderAccessForbiddenError,
     OrderNotFoundError,
+    PriceChangedError,
     ShippingAddressRequiredError,
 )
 from app.modules.orders.models.order import Order
@@ -33,9 +40,9 @@ class OrderService:
         product_repository: ProductRepository,
         address_repository: AddressRepository | None = None,
         *,
-        flat_shipping_cents: int = 0,
-        free_shipping_threshold_cents: int = 0,
-        tax_rate_percent: float = 0.0,
+        flat_shipping_cents: int | None = None,
+        free_shipping_threshold_cents: int | None = None,
+        tax_rate_percent: Decimal | float | str | None = None,
     ) -> None:
         self.repository = repository
         self.cart_repository = cart_repository
@@ -43,20 +50,52 @@ class OrderService:
         self.address_repository = address_repository
         self.flat_shipping_cents = flat_shipping_cents
         self.free_shipping_threshold_cents = free_shipping_threshold_cents
-        self.tax_rate_percent = tax_rate_percent
+        # Decimal, never float: tax is money. None = not configured.
+        self.tax_rate_percent = (
+            None if tax_rate_percent is None else Decimal(str(tax_rate_percent))
+        )
+
+    def _assert_pricing_configured(self) -> None:
+        """Shipping and tax must be set on purpose; never default them to zero."""
+        if self.flat_shipping_cents is None or self.tax_rate_percent is None:
+            raise CheckoutNotConfiguredError()
 
     def _calculate_shipping_and_tax(self, subtotal_cents: int) -> tuple[int, int]:
-        # Flat rate, waived above the free-shipping threshold. A
-        # threshold of 0 means "disabled" -- shipping is always the
-        # flat rate in that case (there's no subtotal that waives it).
+        self._assert_pricing_configured()
+        # Flat rate, waived at/above the free-shipping threshold. A threshold
+        # of None or 0 means "disabled" (no subtotal waives it).
         threshold = self.free_shipping_threshold_cents
-        if threshold > 0 and subtotal_cents >= threshold:
+        if threshold and subtotal_cents >= threshold:
             shipping_cents = 0
         else:
             shipping_cents = self.flat_shipping_cents
 
-        tax_cents = round(subtotal_cents * self.tax_rate_percent / 100)
+        # Exact decimal arithmetic, rounded half-up to a whole minor unit.
+        tax_cents = int(
+            (Decimal(subtotal_cents) * self.tax_rate_percent / 100).quantize(
+                Decimal(1), rounding=ROUND_HALF_UP
+            )
+        )
         return shipping_cents, tax_cents
+
+    @staticmethod
+    def _request_fingerprint(
+        *,
+        address_id: int | None,
+        shipping_address: ShippingAddressInput | None,
+        guest_email: str | None,
+    ) -> str:
+        """Stable hash of everything the customer sent that shapes the order."""
+        canonical = json.dumps(
+            {
+                "address_id": address_id,
+                "shipping_address": asdict(shipping_address) if shipping_address else None,
+                "guest_email": guest_email,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     async def _resolve_shipping_snapshot(
         self,
@@ -133,6 +172,17 @@ class OrderService:
         if is_guest and not guest_email:
             raise GuestEmailRequiredError()
 
+        fingerprint = self._request_fingerprint(
+            address_id=address_id,
+            shipping_address=shipping_address,
+            guest_email=guest_email if is_guest else None,
+        )
+
+        # Concurrent requests with the same (identity, key) take turns here, so
+        # the later one finds the first one's order below instead of racing it.
+        scope = f"checkout:{'guest:' + str(guest_token) if is_guest else 'user:' + str(user_id)}:{idempotency_key}"
+        await self.repository.lock_idempotency_key(scope)
+
         if is_guest:
             existing = await self.repository.get_by_idempotency_key(
                 idempotency_key, guest_token=guest_token
@@ -142,7 +192,13 @@ class OrderService:
                 idempotency_key, user_id=user_id
             )
         if existing is not None:
+            # NULL hash = an order from before fingerprints existed: nothing to compare.
+            if existing.request_hash is not None and existing.request_hash != fingerprint:
+                raise IdempotencyKeyConflictError()
             return existing
+
+        # Fail before taking any lock or touching stock if totals can't be computed.
+        self._assert_pricing_configured()
 
         shipping_columns = await self._resolve_shipping_snapshot(
             user_id=user_id,
@@ -168,6 +224,7 @@ class OrderService:
 
         remaining_stock = {pid: p.stock for pid, p in locked_products.items()}
         stock_deltas: dict[int, int] = {}
+        price_changes: list[dict] = []
 
         for cart_item in sorted_items:
             product = locked_products.get(cart_item.product_id)
@@ -180,14 +237,41 @@ class OrderService:
             remaining_stock[product.id] -= cart_item.quantity
             stock_deltas[product.id] = stock_deltas.get(product.id, 0) - cart_item.quantity
 
-            subtotal_cents += cart_item.price_cents_snapshot * cart_item.quantity
+            # The locked product row is the only authority on price. The cart's
+            # snapshot is just what the customer last saw.
+            current_price = product.price_cents
+            if cart_item.price_cents_snapshot != current_price:
+                price_changes.append(
+                    {
+                        "cart_item": cart_item,
+                        "product_id": product.id,
+                        "name": product.name,
+                        "old_price_cents": cart_item.price_cents_snapshot,
+                        "new_price_cents": current_price,
+                    }
+                )
+
+            subtotal_cents += current_price * cart_item.quantity
             order_items_data.append(
                 {
                     "product_id": product.id,
                     "product_name_snapshot": product.name,
-                    "price_cents_snapshot": cart_item.price_cents_snapshot,
+                    "price_cents_snapshot": current_price,
                     "quantity": cart_item.quantity,
                 }
+            )
+
+        if price_changes:
+            # Nothing has been charged or decremented yet. Bring the cart up to
+            # date so the customer reviews the real total, then ask them to
+            # confirm by checking out again (the router commits this refresh).
+            for change in price_changes:
+                await self.cart_repository.set_price_snapshot(
+                    change["cart_item"], change["new_price_cents"]
+                )
+            raise PriceChangedError(
+                changes=[{k: v for k, v in c.items() if k != "cart_item"} for c in price_changes],
+                new_subtotal_cents=subtotal_cents,
             )
 
         # One UPDATE for every product's stock, not one per cart line.
@@ -201,6 +285,7 @@ class OrderService:
             guest_token=guest_token if is_guest else None,
             guest_email=guest_email if is_guest else None,
             idempotency_key=idempotency_key,
+            request_hash=fingerprint,
             items=order_items_data,
             subtotal_cents=subtotal_cents,
             shipping_cents=shipping_cents,

@@ -65,6 +65,8 @@ def order_service(
         fake_order_repository,
         fake_cart_repository_for_orders,
         fake_product_repository_for_orders,
+        flat_shipping_cents=0,
+        tax_rate_percent=0,
     )
 
 
@@ -83,6 +85,8 @@ def order_service_with_address(
         fake_cart_repository_for_orders,
         fake_product_repository_for_orders,
         fake_address_repository,
+        flat_shipping_cents=0,
+        tax_rate_percent=0,
     )
 
 
@@ -488,7 +492,9 @@ async def test_cancel_stale_pending_orders_skips_order_that_became_paid_before_l
 
     order_repo = RacyOrderRepository()
     service = OrderService(
-        order_repo, fake_cart_repository_for_orders, fake_product_repository_for_orders
+        order_repo, fake_cart_repository_for_orders, fake_product_repository_for_orders,
+        flat_shipping_cents=0,
+        tax_rate_percent=0,
     )
     product = await _make_product(fake_product_repository_for_orders, stock=5)
     order = _make_stale_order(order_repo, product, quantity=2, age_minutes=60)

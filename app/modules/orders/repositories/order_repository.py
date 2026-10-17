@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -14,6 +14,18 @@ from app.shared.enums.order_status import OrderStatus
 class OrderRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
+
+    async def lock_idempotency_key(self, scope: str) -> None:
+        """
+        Serializes concurrent checkouts that share one (identity, Idempotency-Key)
+        until this transaction ends. The second request waits, then finds the
+        first one's order and returns it, instead of failing on the unique
+        constraint. `scope` must already include the identity and the key.
+        """
+        await self.db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
+            {"scope": scope},
+        )
 
     async def get_by_idempotency_key(
         self, key: str, *, user_id: UUID | None = None, guest_token: str | None = None
@@ -149,6 +161,7 @@ class OrderRepository:
         shipping_cents: int,
         tax_cents: int,
         total_cents: int,
+        request_hash: str | None = None,
         guest_token: str | None = None,
         guest_email: str | None = None,
         shipping_recipient_name: str | None = None,
@@ -164,6 +177,7 @@ class OrderRepository:
             guest_token=guest_token,
             guest_email=guest_email,
             idempotency_key=idempotency_key,
+            request_hash=request_hash,
             subtotal_cents=subtotal_cents,
             shipping_cents=shipping_cents,
             tax_cents=tax_cents,

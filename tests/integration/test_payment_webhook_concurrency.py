@@ -104,6 +104,8 @@ async def _deliver_webhook(session_factory, event: WebhookEvent):
                 OrderRepository(session),
                 CartRepository(session),
                 ProductRepository(session),
+                flat_shipping_cents=0,
+                tax_rate_percent=0,
             ),
             provider=None,
         )

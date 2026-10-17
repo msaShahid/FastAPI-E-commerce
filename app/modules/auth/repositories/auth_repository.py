@@ -53,11 +53,27 @@ class AuthRepository:
         await self.db.flush()
         return token
 
-    async def get_refresh_token_by_jti(self, jti: str) -> RefreshToken | None:
-        result = await self.db.execute(
-            select(RefreshToken).where(RefreshToken.jti == jti)
-        )
+    async def get_refresh_token_by_jti(
+        self, jti: str, *, for_update: bool = False
+    ) -> RefreshToken | None:
+        """
+        for_update=True row-locks the token for the rest of the transaction, so two
+        concurrent refreshes with the same token are serialized: the second waits,
+        then sees it already revoked (i.e. a replay) instead of also succeeding.
+        """
+        query = select(RefreshToken).where(RefreshToken.jti == jti)
+        if for_update:
+            query = query.with_for_update().execution_options(populate_existing=True)
+        result = await self.db.execute(query)
         return result.scalar_one_or_none()
+
+    async def commit(self) -> None:
+        """
+        Commits now. Used when a change must survive the request even though the
+        request then fails (get_db rolls back on an exception), e.g. revoking a
+        token family after a replay was detected.
+        """
+        await self.db.commit()
 
     async def revoke_refresh_token(self, token: RefreshToken) -> None:
         token.revoked = True

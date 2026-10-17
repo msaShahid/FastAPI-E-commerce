@@ -1,9 +1,10 @@
 from datetime import datetime
 
 from fastapi import Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.shared.enums.product_status import ProductStatus
+from app.shared.enums.tax import ProductTaxState
 from app.shared.pagination.schemas import PageParams
 
 
@@ -15,6 +16,25 @@ class CategorySummary(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TaxClassificationSummary(BaseModel):
+    id: int
+    kind: str
+    code: str
+    description: str
+    status: str
+
+    model_config = {"from_attributes": True}
+
+
+def _normalize_unit(value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = value.strip().upper()
+    if not (2 <= len(value) <= 8) or not value.isascii() or not value.isalpha():
+        raise ValueError("unit must be 2-8 letters (a unit quantity code such as the one printed on invoices)")
+    return value
+
+
 class ProductCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=5000)
@@ -23,6 +43,11 @@ class ProductCreate(BaseModel):
     stock: int = Field(default=0, ge=0)
     category_id: int
     status: ProductStatus = ProductStatus.DRAFT
+    # Optional: an existing APPROVED classification from the GST master, and the unit.
+    tax_classification_id: int | None = Field(default=None, gt=0)
+    unit: str | None = Field(default=None, max_length=8)
+
+    _unit = field_validator("unit")(_normalize_unit)
 
 
 class ProductUpdate(BaseModel):
@@ -32,6 +57,11 @@ class ProductUpdate(BaseModel):
     stock: int | None = Field(default=None, ge=0)
     category_id: int | None = None
     status: ProductStatus | None = None
+    # Send null explicitly to un-assign; omit the field to leave it unchanged.
+    tax_classification_id: int | None = Field(default=None, gt=0)
+    unit: str | None = Field(default=None, max_length=8)
+
+    _unit = field_validator("unit")(_normalize_unit)
 
 
 class ProductQueryParams(PageParams):
@@ -59,6 +89,10 @@ class ProductRead(BaseModel):
     category: CategorySummary
     image_path: str | None
     image_url: str | None = None
+    # Administrator-only (null for everyone else, including the cached public views).
+    unit: str | None = None
+    tax_classification: TaxClassificationSummary | None = None
+    tax_state: ProductTaxState | None = None
     created_at: datetime
     updated_at: datetime
 

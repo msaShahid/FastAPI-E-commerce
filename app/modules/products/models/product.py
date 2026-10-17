@@ -9,6 +9,7 @@ from app.shared.mixins import TimestampMixin
 
 if TYPE_CHECKING:
     from app.modules.categories.models.category import Category
+    from app.modules.tax.models.tax import TaxClassification
 
 class Product(Base, TimestampMixin):
 
@@ -38,12 +39,24 @@ class Product(Base, TimestampMixin):
     category_id: Mapped[int] = mapped_column(
         ForeignKey("categories.id", ondelete="RESTRICT"),
     )
+
+    # Approved HSN/SAC classification (GST master). NULL = unclassified, which is never
+    # treated as tax-ready. A database trigger only allows an APPROVED classification, and
+    # only allows retiring a classification that no product uses.
+    tax_classification_id: Mapped[int | None] = mapped_column(
+        ForeignKey("tax_classifications.id", ondelete="RESTRICT"), index=True, default=None
+    )
+    # Unit quantity code for the product (format only: 2-8 upper-case letters). Checking it
+    # against the official list is a business/professional decision, not made here.
+    unit: Mapped[str | None] = mapped_column(String(8), default=None)
+    tax_classification: Mapped["TaxClassification | None"] = relationship()
     # category is the parent of the product
     category: Mapped["Category"] = relationship(back_populates="products")
 
     __table_args__ = (
         CheckConstraint("price_cents > 0", name="ck_products_price_positive"),
         CheckConstraint("stock >= 0", name="ck_products_stock_non_negative"),
+        CheckConstraint("unit IS NULL OR unit ~ '^[A-Z]{2,8}$'", name="ck_products_unit_format"),
         # Default storefront listing: WHERE status = 'active' ORDER BY created_at DESC.
         Index("ix_products_status_created_at", "status", "created_at"),
         # Admin listing (all statuses), newest first: no status filter, so the

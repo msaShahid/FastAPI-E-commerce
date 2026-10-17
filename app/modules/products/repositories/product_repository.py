@@ -2,10 +2,11 @@ from collections.abc import Iterable
 
 from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.modules.products.models.product import Product
+from app.modules.tax.models.tax import TaxClassification
 from app.shared.enums.product_status import ProductStatus
 
 
@@ -17,7 +18,7 @@ class ProductRepository:
         result = await self.db.execute(
             select(Product)
             .where(Product.id == product_id)
-            .options(selectinload(Product.category))
+            .options(selectinload(Product.category), joinedload(Product.tax_classification))
         )
         return result.scalar_one_or_none()
 
@@ -71,7 +72,7 @@ class ProductRepository:
 
         items_query = (
             select(Product)
-            .options(selectinload(Product.category))
+            .options(selectinload(Product.category), joinedload(Product.tax_classification))
             .order_by(sort_column.desc() if is_descending else sort_column.asc())
             .offset(offset)
             .limit(limit)
@@ -91,14 +92,29 @@ class ProductRepository:
         # loaded it, and lazy-loading inside async serialization raises
         # MissingGreenlet (HTTP 500), so load it eagerly here -- same as
         # get_by_id does with selectinload.
-        await self.db.refresh(product, attribute_names=["category"])
+        await self.db.refresh(product, attribute_names=["category", "tax_classification"])
         return product
 
     async def update(self, product: Product, **fields) -> Product:
         for key, value in fields.items():
             setattr(product, key, value)
         await self.db.flush()
+        if "tax_classification_id" in fields:
+            # the relationship was loaded before the FK changed: reload it so the response is current
+            await self.db.refresh(product, attribute_names=["tax_classification"])
         return product
+
+    async def tax_states(self, product_ids: Iterable[int]) -> dict[int, str | None]:
+        """product id -> status of its classification (None = unclassified). One query."""
+        ids = list(set(product_ids))
+        if not ids:
+            return {}
+        rows = await self.db.execute(
+            select(Product.id, TaxClassification.status)
+            .outerjoin(TaxClassification, Product.tax_classification_id == TaxClassification.id)
+            .where(Product.id.in_(ids))
+        )
+        return {pid: status for pid, status in rows.all()}
 
     async def get_by_id_for_update(self, product_id: int) -> Product | None:
 

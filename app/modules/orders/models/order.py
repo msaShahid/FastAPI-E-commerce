@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import CheckConstraint, Enum, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -69,6 +70,9 @@ class Order(Base, TimestampMixin):
     shipping_cents: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     tax_cents: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     total_cents: Mapped[int] = mapped_column(Integer)
+    # How shipping_cents was decided (policy values in force at checkout). Frozen
+    # with the order; later settings changes never alter it. NULL on legacy orders.
+    shipping_snapshot: Mapped[dict | None] = mapped_column(JSONB, default=None)
     shipping_recipient_name: Mapped[str | None] = mapped_column(String(200), default=None)
     shipping_line1: Mapped[str | None] = mapped_column(String(255), default=None)
     shipping_line2: Mapped[str | None] = mapped_column(String(255), default=None)

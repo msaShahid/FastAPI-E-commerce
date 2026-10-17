@@ -42,6 +42,7 @@ class OrderService:
         *,
         flat_shipping_cents: int | None = None,
         free_shipping_threshold_cents: int | None = None,
+        free_shipping_threshold_basis: str | None = None,
         tax_rate_percent: Decimal | float | str | None = None,
     ) -> None:
         self.repository = repository
@@ -50,6 +51,7 @@ class OrderService:
         self.address_repository = address_repository
         self.flat_shipping_cents = flat_shipping_cents
         self.free_shipping_threshold_cents = free_shipping_threshold_cents
+        self.free_shipping_threshold_basis = free_shipping_threshold_basis
         # Decimal, never float: tax is money. None = not configured.
         self.tax_rate_percent = (
             None if tax_rate_percent is None else Decimal(str(tax_rate_percent))
@@ -59,6 +61,24 @@ class OrderService:
         """Shipping and tax must be set on purpose; never default them to zero."""
         if self.flat_shipping_cents is None or self.tax_rate_percent is None:
             raise CheckoutNotConfiguredError()
+        if self.free_shipping_threshold_cents and self.free_shipping_threshold_basis is None:
+            raise CheckoutNotConfiguredError()  # a threshold without a stated basis is ambiguous
+
+    def _shipping_snapshot(self, shipping_cents: int) -> dict:
+        """Frozen record of the shipping policy used for one order (integer paise)."""
+        return {
+            "version": 1,
+            "source": "settings",
+            "method": "standard",
+            "flat_charge_paise": self.flat_shipping_cents,
+            "free_threshold_paise": self.free_shipping_threshold_cents or None,
+            "threshold_basis": self.free_shipping_threshold_basis,
+            "applied_paise": shipping_cents,
+            "free_shipping_applied": bool(
+                self.free_shipping_threshold_cents and shipping_cents == 0 and self.flat_shipping_cents
+            ),
+            "tax_treatment": "undetermined",  # decided with the GST work, not assumed here
+        }
 
     def _calculate_shipping_and_tax(self, subtotal_cents: int) -> tuple[int, int]:
         self._assert_pricing_configured()
@@ -286,6 +306,7 @@ class OrderService:
             guest_email=guest_email if is_guest else None,
             idempotency_key=idempotency_key,
             request_hash=fingerprint,
+            shipping_snapshot=self._shipping_snapshot(shipping_cents),
             items=order_items_data,
             subtotal_cents=subtotal_cents,
             shipping_cents=shipping_cents,

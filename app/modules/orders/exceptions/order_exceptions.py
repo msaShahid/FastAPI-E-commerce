@@ -1,9 +1,9 @@
 from app.core.exceptions import (
-    AppError,
     ConflictError,
     ForbiddenError,
     InvalidStateError,
     NotFoundError,
+    ServiceUnavailableError,
 )
 
 
@@ -28,6 +28,8 @@ class OrderAccessForbiddenError(ForbiddenError):
 
 
 class IdempotencyKeyConflictError(ConflictError):
+    code = "idempotency_key_reused"
+
     def __init__(self) -> None:
         super().__init__(
             "This Idempotency-Key was already used with a different request. "
@@ -48,8 +50,10 @@ class PriceChangedError(ConflictError):
         self.new_subtotal_cents = new_subtotal_cents
 
 
-class CheckoutNotConfiguredError(AppError):
+class CheckoutNotConfiguredError(ServiceUnavailableError):
     """Shipping or tax settings are missing, so a total cannot be computed safely."""
+
+    code = "checkout_not_configured"
 
     def __init__(self) -> None:
         super().__init__(

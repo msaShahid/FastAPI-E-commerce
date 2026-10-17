@@ -69,6 +69,7 @@ class OrderRead(BaseModel):
     shipping_cents: int
     tax_cents: int
     total_cents: int
+    shipping_snapshot: dict | None = None
     shipping_address: ShippingAddressRead
     items: list[OrderItemRead]
     created_at: datetime
@@ -90,6 +91,7 @@ class OrderRead(BaseModel):
             "shipping_cents": order.shipping_cents,
             "tax_cents": order.tax_cents,
             "total_cents": order.total_cents,
+            "shipping_snapshot": order.shipping_snapshot,
             "items": order.items,
             "created_at": order.created_at,
             "shipping_address": {

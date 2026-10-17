@@ -34,6 +34,7 @@ def get_order_service(
         address_repository,
         flat_shipping_cents=settings.flat_shipping_cents,
         free_shipping_threshold_cents=settings.free_shipping_threshold_cents,
+        free_shipping_threshold_basis=settings.free_shipping_threshold_basis,
         tax_rate_percent=settings.tax_rate_percent,
     )
 

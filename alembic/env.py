@@ -24,6 +24,7 @@ from app.modules.orders.models.order_status_history import OrderStatusHistory  #
 from app.modules.payments.models.payment import Payment  # noqa: F401
 from app.modules.payments.models.webhook_event import ProcessedWebhookEvent  # noqa: F401
 from app.modules.products.models.product import Product  # noqa: F401
+from app.modules.tax.models.tax import GstRegistration, TaxClassification, TaxRule  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

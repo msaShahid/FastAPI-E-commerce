@@ -27,10 +27,18 @@ from sqlalchemy.dialects.postgresql import ExcludeConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+from app.modules.tax.models.guard import GUARD_FUNCTION_SQL, GUARDED_TABLES, trigger_name
 from app.shared.mixins import TimestampMixin
 
 # The overlap exclusion constraint needs this extension (test schemas are built from models).
 event.listen(Base.metadata, "before_create", DDL("CREATE EXTENSION IF NOT EXISTS btree_gist"))
+
+# Immutability triggers (see guard.py). DDL() treats % as a format marker, so escape it.
+event.listen(
+    Base.metadata,
+    "before_create",
+    DDL(GUARD_FUNCTION_SQL.replace("%", "%%")).execute_if(dialect="postgresql"),
+)
 
 _STATUS_OK = "status IN ('draft', 'approved', 'retired')"
 
@@ -151,3 +159,19 @@ class GstRegistration(Base, TimestampMixin, _Approval):
     valid_from: Mapped[date] = mapped_column(Date)
     valid_to: Mapped[date | None] = mapped_column(Date, default=None)
     status: Mapped[str] = mapped_column(String(20), default="draft", server_default="draft")
+
+
+def _install_guard_triggers() -> None:
+    for table in (TaxClassification.__table__, TaxRule.__table__, GstRegistration.__table__):
+        assert table.name in GUARDED_TABLES
+        event.listen(
+            table,
+            "after_create",
+            DDL(
+                f"CREATE TRIGGER {trigger_name(table.name)} BEFORE INSERT OR UPDATE OR DELETE "
+                f"ON {table.name} FOR EACH ROW EXECUTE FUNCTION tax_master_guard()"
+            ).execute_if(dialect="postgresql"),
+        )
+
+
+_install_guard_triggers()

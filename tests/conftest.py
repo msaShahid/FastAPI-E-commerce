@@ -3,12 +3,14 @@ import os
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.cache import Cache, flush_pending, set_cache
 from app.core.database import Base, get_db
 from app.core.storage.interface import StorageService
 from app.main import app
+from app.modules.tax.models.guard import GUARDED_TABLES
 
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL",
@@ -47,8 +49,12 @@ def test_session_factory(test_engine):
 async def _clean_database(test_engine):
     async def clean():
         async with test_engine.begin() as conn:
+            # The GST master's immutability trigger (rightly) refuses DELETE of approved
+            # records. TRUNCATE does not fire row triggers, so it is the test-cleanup path.
+            await conn.execute(text("TRUNCATE tax_rules, tax_classifications, gst_registrations"))
             for table in reversed(Base.metadata.sorted_tables):
-                await conn.execute(table.delete())
+                if table.name not in GUARDED_TABLES:
+                    await conn.execute(table.delete())
 
     await clean()
     yield

@@ -26,6 +26,24 @@ is administration-only and not used by checkout. Payments are still USD-only.
 - Validation is format-only (HSN 2/4/6/8 digits, SAC 6 digits, GSTIN pattern + state prefix).
   Whether a code, rate or GSTIN is correct is for the GST professional.
 
+### Immutability (database level)
+Migration `f2b6d8a4c917` adds a trigger (`tax_master_guard`) on the three tax tables: records
+must be inserted as drafts; an approved record can only be retired (an approved rule may
+also have its end date brought forward, never extended); retired records are read-only;
+non-draft records cannot be deleted; creator/approver can be cleared but not reassigned.
+It protects against scripts and direct SQL, not against a superuser disabling triggers.
+Test cleanup uses TRUNCATE, which does not fire row triggers.
+
+### Known schema gap (NOT fixed here, needs its own migration)
+`ck_orders_user_xor_guest` and `ck_carts_user_xor_guest` exist in the models but in no
+migration, so a migrated database lacks them. CI reports them via
+`scripts/check_schema_constraints.py` (allowlisted). Proposed fix, separate change:
+1. Pre-check on the real database: `SELECT count(*) FROM orders WHERE NOT (...)` and the same
+   for carts. If any rows violate it, stop and review them; do not rewrite data silently.
+2. Migration adds both constraints as `NOT VALID` (instant, no table scan, no long lock),
+   then `VALIDATE CONSTRAINT` in the same or a follow-up revision.
+3. Remove the two names from `--allow` in CI.
+
 ### Next
 Phase 2.3 (product assignment) then 2.4/2.5 need owner decisions: pricing mode, business
 registrations, approved classifications/rates, place of supply, shipping tax, rounding.

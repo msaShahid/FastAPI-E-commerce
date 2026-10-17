@@ -234,12 +234,15 @@ async def test_database_blocks_overlapping_approved_rules_even_if_the_service_is
     client, admin_headers, admin2_headers, db_session
 ):
     c = await approved_classification(client, admin_headers, admin2_headers)
-    sql = text("""INSERT INTO tax_rules (classification_id, treatment, cgst_rate, sgst_utgst_rate, igst_rate,
-                  effective_from, effective_to, status, source_reference, approved_at)
-                  VALUES (:c, 'taxable', 2.5, 2.5, 5, :f, :t, 'approved', 'TEST', now())""")
-    await db_session.execute(sql, {"c": c["id"], "f": date(2030, 1, 1), "t": date(2031, 1, 1)})
+    insert = text("""INSERT INTO tax_rules (classification_id, treatment, cgst_rate, sgst_utgst_rate, igst_rate,
+                  effective_from, effective_to, source_reference)
+                  VALUES (:c, 'taxable', 2.5, 2.5, 5, :f, :t, 'TEST') RETURNING id""")
+    approve = text("UPDATE tax_rules SET status = 'approved', approved_at = now() WHERE id = :i")
+    first = (await db_session.execute(insert, {"c": c["id"], "f": date(2030, 1, 1), "t": date(2031, 1, 1)})).scalar_one()
+    second = (await db_session.execute(insert, {"c": c["id"], "f": date(2030, 6, 1), "t": None})).scalar_one()
+    await db_session.execute(approve, {"i": first})
     with pytest.raises(IntegrityError):
-        await db_session.execute(sql, {"c": c["id"], "f": date(2030, 6, 1), "t": None})
+        await db_session.execute(approve, {"i": second})
     await db_session.rollback()
 
 

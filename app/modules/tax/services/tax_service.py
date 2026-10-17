@@ -24,12 +24,14 @@ from app.modules.tax.repositories.tax_repository import TaxRepository
 from app.modules.tax.schemas.tax import (
     ClassificationCreate,
     ClassificationUpdate,
+    ProductTaxRead,
     RegistrationCreate,
     RegistrationUpdate,
     RuleCreate,
     RuleUpdate,
     check_rule_shape,
 )
+from app.shared.enums.tax import product_tax_state
 
 
 def _blank(value: str | None) -> bool:
@@ -151,12 +153,34 @@ class TaxService:
 
     async def retire_classification(self, actor: User, record_id: int):
         record = await self._get(TaxClassification, record_id, "Classification", lock=True)
-        if record.status != "retired" and await self.repo.has_open_rules(record.id):
-            raise ClassificationInUseError()
+        if record.status != "retired":
+            if await self.repo.has_open_rules(record.id):
+                raise ClassificationInUseError()
+            count = await self.repo.count_products_using(record.id)
+            if count:
+                raise ClassificationInUseError(f"it is assigned to {count} product(s)")
         self._retire(record)
         await self.repo.save(record)
         await self._log(actor, "tax.classification.retired", "tax_classification", record)
         return record
+
+    async def list_products(self, *, offset: int, limit: int, state=None):
+        rows, total = await self.repo.list_products_by_tax_state(
+            state.value if state else None, offset=offset, limit=limit
+        )
+        items = [
+            ProductTaxRead(
+                id=p.id,
+                sku=p.sku,
+                name=p.name,
+                status=p.status.value if hasattr(p.status, "value") else str(p.status),
+                unit=p.unit,
+                tax_classification_id=p.tax_classification_id,
+                tax_state=product_tax_state(cls_status),
+            )
+            for p, cls_status in rows
+        ]
+        return items, total
 
     # ------------------------------------------------------------ rules
     async def create_rule(self, actor: User, data: RuleCreate):

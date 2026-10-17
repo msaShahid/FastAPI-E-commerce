@@ -74,8 +74,8 @@ class RuleOverlapError(_Coded, ConflictError):
 class ClassificationInUseError(_Coded, ConflictError):
     code = "classification_in_use"
 
-    def __init__(self) -> None:
-        super().__init__("This classification still has draft or approved rules")
+    def __init__(self, reason: str = "it still has draft or approved rules") -> None:
+        super().__init__(f"This classification cannot be retired: {reason}")
 
 
 class InvalidTaxInputError(_Coded, InvalidStateError):

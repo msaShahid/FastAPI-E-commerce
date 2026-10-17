@@ -4,6 +4,7 @@ from typing import Any
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.products.models.product import Product
 from app.modules.tax.models.tax import GstRegistration, TaxClassification, TaxRule
 
 
@@ -60,6 +61,43 @@ class TaxRepository:
             )
         ).scalar_one()
         return count > 0
+
+    async def count_products_using(self, classification_id: int) -> int:
+        return (
+            await self.db.execute(
+                select(func.count())
+                .select_from(Product)
+                .where(Product.tax_classification_id == classification_id)
+            )
+        ).scalar_one()
+
+    async def list_products_by_tax_state(self, state, *, offset: int, limit: int):
+        """(product, classification status | None) rows, filtered by assignment state."""
+        conditions = []
+        if state == "unassigned":
+            conditions.append(Product.tax_classification_id.is_(None))
+        elif state == "assigned_approved":
+            conditions.append(TaxClassification.status == "approved")
+        elif state == "assigned_unapproved":
+            conditions.append(Product.tax_classification_id.is_not(None))
+            conditions.append(TaxClassification.status != "approved")
+        base = select(Product, TaxClassification.status).outerjoin(
+            TaxClassification, Product.tax_classification_id == TaxClassification.id
+        )
+        total = (
+            await self.db.execute(
+                select(func.count())
+                .select_from(Product)
+                .outerjoin(TaxClassification, Product.tax_classification_id == TaxClassification.id)
+                .where(*conditions)
+            )
+        ).scalar_one()
+        rows = (
+            await self.db.execute(
+                base.where(*conditions).order_by(Product.id).offset(offset).limit(limit)
+            )
+        ).all()
+        return rows, total
 
     async def overlapping_approved_rule(
         self, classification_id: int, start: date, end: date | None, exclude_id: int

@@ -6,7 +6,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.shared.enums.tax import ClassificationKind, TaxRecordStatus, TaxTreatment
+from app.shared.enums.tax import ClassificationKind, ProductTaxState, TaxRecordStatus, TaxTreatment
 
 Rate = Annotated[Decimal, Field(ge=0, le=100, max_digits=6, decimal_places=3)]
 _GSTIN = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$")
@@ -56,6 +56,18 @@ class ClassificationRead(_Audited):
     code: str
     description: str
     source_reference: str | None
+
+
+class ProductTaxRead(BaseModel):
+    """A product and whether it points at an approved classification (administrators only)."""
+
+    id: int
+    sku: str
+    name: str
+    status: str
+    unit: str | None
+    tax_classification_id: int | None
+    tax_state: ProductTaxState
 
 
 # ---------------------------------------------------------------- rules

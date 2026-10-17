@@ -27,7 +27,14 @@ from sqlalchemy.dialects.postgresql import ExcludeConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
-from app.modules.tax.models.guard import GUARD_FUNCTION_SQL, GUARDED_TABLES, trigger_name
+from app.modules.products.models.product import Product
+from app.modules.tax.models.guard import (
+    GUARD_FUNCTION_SQL,
+    GUARDED_TABLES,
+    PRODUCT_TAX_FUNCTIONS,
+    PRODUCT_TAX_TRIGGERS,
+    trigger_name,
+)
 from app.shared.mixins import TimestampMixin
 
 # The overlap exclusion constraint needs this extension (test schemas are built from models).
@@ -39,6 +46,13 @@ event.listen(
     "before_create",
     DDL(GUARD_FUNCTION_SQL.replace("%", "%%")).execute_if(dialect="postgresql"),
 )
+
+for _function_sql in PRODUCT_TAX_FUNCTIONS:
+    event.listen(
+        Base.metadata,
+        "before_create",
+        DDL(_function_sql.replace("%", "%%")).execute_if(dialect="postgresql"),
+    )
 
 _STATUS_OK = "status IN ('draft', 'approved', 'retired')"
 
@@ -174,4 +188,17 @@ def _install_guard_triggers() -> None:
         )
 
 
+def _install_product_tax_triggers() -> None:
+    tables = {"products": Product.__table__, "tax_classifications": TaxClassification.__table__}
+    for name, (table, when, function) in PRODUCT_TAX_TRIGGERS.items():
+        event.listen(
+            tables[table],
+            "after_create",
+            DDL(
+                f"CREATE TRIGGER {name} {when} ON {table} FOR EACH ROW EXECUTE FUNCTION {function}()"
+            ).execute_if(dialect="postgresql"),
+        )
+
+
 _install_guard_triggers()
+_install_product_tax_triggers()

@@ -88,6 +88,50 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;'''
 
+PRODUCT_ASSIGNMENT_GUARD_SQL = r'''CREATE OR REPLACE FUNCTION products_tax_assignment_guard() RETURNS trigger AS $$
+BEGIN
+    IF NEW.tax_classification_id IS NOT NULL
+       AND (TG_OP = 'INSERT' OR NEW.tax_classification_id IS DISTINCT FROM OLD.tax_classification_id) THEN
+        -- FOR SHARE: a concurrent retirement of this classification must wait for us and
+        -- then sees this product, so a product can never end up on a retired classification.
+        PERFORM 1 FROM tax_classifications
+            WHERE id = NEW.tax_classification_id AND status = 'approved' FOR SHARE;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'tax master: a product can only be assigned an approved classification'
+                USING ERRCODE = 'integrity_constraint_violation';
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;'''
+
+CLASSIFICATION_RETIRE_GUARD_SQL = r'''CREATE OR REPLACE FUNCTION tax_classification_retire_guard() RETURNS trigger AS $$
+BEGIN
+    IF NEW.status = 'retired' AND OLD.status <> 'retired'
+       AND EXISTS (SELECT 1 FROM products WHERE tax_classification_id = OLD.id) THEN
+        RAISE EXCEPTION 'tax master: a classification still assigned to products cannot be retired'
+            USING ERRCODE = 'integrity_constraint_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;'''
+
+# One statement per entry (the driver executes a single command at a time).
+PRODUCT_TAX_FUNCTIONS = (PRODUCT_ASSIGNMENT_GUARD_SQL, CLASSIFICATION_RETIRE_GUARD_SQL)
+
+PRODUCT_TAX_TRIGGERS = {
+    "trg_products_tax_assignment_guard": (
+        "products",
+        "BEFORE INSERT OR UPDATE OF tax_classification_id",
+        "products_tax_assignment_guard",
+    ),
+    "trg_tax_classification_retire_guard": (
+        "tax_classifications",
+        "BEFORE UPDATE OF status",
+        "tax_classification_retire_guard",
+    ),
+}
+
 GUARDED_TABLES = ("tax_classifications", "tax_rules", "gst_registrations")
 
 

@@ -7,6 +7,7 @@ from app.modules.tax.schemas.tax import (
     ClassificationCreate,
     ClassificationRead,
     ClassificationUpdate,
+    ProductTaxRead,
     RegistrationCreate,
     RegistrationRead,
     RegistrationUpdate,
@@ -15,7 +16,7 @@ from app.modules.tax.schemas.tax import (
     RuleRead,
     RuleUpdate,
 )
-from app.shared.enums.tax import ClassificationKind, TaxRecordStatus
+from app.shared.enums.tax import ClassificationKind, ProductTaxState, TaxRecordStatus
 from app.shared.pagination.schemas import PageParams, PaginatedResponse
 
 # Administrator-only. Records start as drafts; nothing here is used by checkout yet.
@@ -71,6 +72,20 @@ async def approve_classification(
 @tax_router.post("/classifications/{record_id}/retire", response_model=ClassificationRead)
 async def retire_classification(record_id: int, admin: AdminUser, service: TaxServiceDep):
     return await service.retire_classification(admin, record_id)
+
+
+# ------------------------------------------------------------------ products
+@tax_router.get("/products", response_model=PaginatedResponse[ProductTaxRead])
+async def list_products_by_tax_state(
+    _admin: AdminUser,
+    service: TaxServiceDep,
+    params: PageParams = Depends(),
+    state: ProductTaxState | None = Query(
+        default=None, description="Find products to classify: unassigned, assigned_unapproved, assigned_approved"
+    ),
+):
+    items, total = await service.list_products(offset=params.offset, limit=params.page_size, state=state)
+    return PaginatedResponse(items=items, total=total, page=params.page, page_size=params.page_size)
 
 
 # ------------------------------------------------------------------ rules

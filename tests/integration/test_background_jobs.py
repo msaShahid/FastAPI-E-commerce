@@ -466,6 +466,8 @@ class FakeProvider(PaymentProvider):
             event_id=data["event_id"],
             event_type="payment_intent.succeeded",
             provider_payment_id=data["provider_payment_id"],
+            amount=data.get("amount", 5000),
+            currency=data.get("currency", "usd"),
         )
 
 

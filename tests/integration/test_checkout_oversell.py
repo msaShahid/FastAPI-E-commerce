@@ -88,6 +88,7 @@ async def _checkout(session_factory, user_id):
             OrderRepository(session), CartRepository(session), ProductRepository(session),
             flat_shipping_cents=0,
             tax_rate_percent=0,
+            currency="usd",
         )
         try:
             await service.checkout(user_id=user_id, idempotency_key=f"key-{user_id}")

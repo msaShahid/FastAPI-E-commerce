@@ -67,6 +67,7 @@ def order_service(
         fake_product_repository_for_orders,
         flat_shipping_cents=0,
         tax_rate_percent=0,
+        currency="usd",
     )
 
 
@@ -87,6 +88,7 @@ def order_service_with_address(
         fake_address_repository,
         flat_shipping_cents=0,
         tax_rate_percent=0,
+        currency="usd",
     )
 
 
@@ -495,6 +497,7 @@ async def test_cancel_stale_pending_orders_skips_order_that_became_paid_before_l
         order_repo, fake_cart_repository_for_orders, fake_product_repository_for_orders,
         flat_shipping_cents=0,
         tax_rate_percent=0,
+        currency="usd",
     )
     product = await _make_product(fake_product_repository_for_orders, stock=5)
     order = _make_stale_order(order_repo, product, quantity=2, age_minutes=60)
@@ -575,6 +578,7 @@ async def test_checkout_computes_flat_shipping_and_tax(
         free_shipping_threshold_cents=5000,
         free_shipping_threshold_basis="subtotal",
         tax_rate_percent=10.0,
+        currency="usd",
     )
     user_id = uuid4()
     product = await _make_product(
@@ -616,6 +620,7 @@ async def test_checkout_waives_shipping_above_free_threshold(
         free_shipping_threshold_cents=5000,
         free_shipping_threshold_basis="subtotal",
         tax_rate_percent=0.0,
+        currency="usd",
     )
     user_id = uuid4()
     product = await _make_product(

@@ -29,6 +29,7 @@ def _build_service(session) -> OrderService:
         ProductRepository(session),
         flat_shipping_cents=0,
         tax_rate_percent=0,
+        currency="usd",
     )
 
 

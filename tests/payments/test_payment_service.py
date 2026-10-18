@@ -27,6 +27,7 @@ def make_order(repo, *, user_id, status, total_cents=5000) -> Order:
         user_id=user_id,
         idempotency_key=f"key-{uuid4()}",
         status=status,
+        currency="usd",
         subtotal_cents=total_cents,
         shipping_cents=0,
         tax_cents=0,

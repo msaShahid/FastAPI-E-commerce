@@ -106,6 +106,7 @@ async def _deliver_webhook(session_factory, event: WebhookEvent):
                 ProductRepository(session),
                 flat_shipping_cents=0,
                 tax_rate_percent=0,
+                currency="usd",
             ),
             provider=None,
         )
@@ -138,6 +139,8 @@ async def test_concurrent_duplicate_webhook_delivery_applies_side_effects_once(
         event_id="evt_concurrent_dup",
         event_type=SUCCEEDED_EVENT,
         provider_payment_id=payment.provider_payment_id,
+        amount=payment.amount_cents,
+        currency=payment.currency,
     )
 
     results = await asyncio.gather(

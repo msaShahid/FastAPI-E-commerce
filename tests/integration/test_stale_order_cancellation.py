@@ -100,6 +100,7 @@ async def test_cancel_stale_pending_orders_against_real_db(db_session, test_sess
             ProductRepository(session),
             flat_shipping_cents=0,
             tax_rate_percent=0,
+            currency="usd",
         )
         cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=30)
         cancelled_ids = await service.cancel_stale_pending_orders(older_than=cutoff)

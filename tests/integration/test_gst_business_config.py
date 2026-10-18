@@ -255,7 +255,8 @@ async def test_a_fresh_business_is_not_ready_and_the_report_says_exactly_why(cli
     assert codes == {"no_approved_tax_settings", "gst_calculator_not_implemented"}
     assert body["flags"] == {"tax_calculation_enabled": False, "tax_classification_required": False}
     assert body["payments"]["live_payments_enabled"] is False and body["payments"]["payment_currency"] == "usd"
-    assert {b["code"] for b in body["payments"]["blockers"]} == {"payment_currency_not_inr", "orders_have_no_currency"}
+    # INR is never assumed: the test store is configured in USD and USD is enabled, so no payment blocker.
+    assert body["payments"]["blockers"] == []
     assert body["counts"]["active_products"] == 0
 
 

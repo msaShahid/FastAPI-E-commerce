@@ -52,12 +52,22 @@ async def _clean_database(test_engine):
             # The GST master's immutability trigger (rightly) refuses DELETE of approved
             # records. TRUNCATE does not fire row triggers, so it is the test-cleanup path.
             # CASCADE also empties products (they reference classifications) and their dependents.
-            await conn.execute(text("TRUNCATE business_tax_settings, tax_rules, tax_classifications, gst_registrations CASCADE"))
+            # store_settings is truncated too: its guard refuses DELETE once orders exist.
+            await conn.execute(text(
+                "TRUNCATE business_tax_settings, tax_rules, tax_classifications, gst_registrations, "
+                "store_settings CASCADE"))
             for table in reversed(Base.metadata.sorted_tables):
-                if table.name not in GUARDED_TABLES:
+                if table.name not in GUARDED_TABLES and table.name != "store_settings":
                     await conn.execute(table.delete())
 
+    async def seed_store_currency():
+        # Production starts with NO store currency (checkout answers 503 until an admin sets it).
+        # Tests run with an explicit one; tests about the unconfigured state delete this row.
+        async with test_engine.begin() as conn:
+            await conn.execute(text("INSERT INTO store_settings (id, currency) VALUES (1, 'usd')"))
+
     await clean()
+    await seed_store_currency()
     yield
     await clean()
 
@@ -79,6 +89,8 @@ def _checkout_pricing_configured_for_tests(monkeypatch):
     monkeypatch.setattr(settings, "flat_shipping_cents", 0)
     monkeypatch.setattr(settings, "free_shipping_threshold_cents", None)
     monkeypatch.setattr(settings, "tax_rate_percent", Decimal("0"))
+    # The (fake) payment provider in tests may charge any verified currency.
+    monkeypatch.setattr(settings, "payment_currencies_enabled", "usd,inr,eur,gbp,jpy")
 
 
 @pytest.fixture(autouse=True)

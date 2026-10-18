@@ -124,6 +124,8 @@ class FakePaymentProvider(PaymentProvider):
         self._refunds_by_idempotency_key: dict[str, str] = {}
         self.refunds: dict[str, dict] = {}
         self.valid_signature = "valid-signature"
+        self.created_with: list[dict] = []  # (amount, currency) of every intent created
+        self.refund_calls: list[dict] = []
 
     async def create_payment_intent(
         self, *, amount_cents: int, currency: str, metadata: dict, idempotency_key: str
@@ -143,7 +145,10 @@ class FakePaymentProvider(PaymentProvider):
         self.intents[provider_payment_id] = {
             "status": "requires_payment_method",
             "client_secret": client_secret,
+            "amount": amount_cents,
+            "currency": currency,
         }
+        self.created_with.append({"amount_cents": amount_cents, "currency": currency})
         self._by_idempotency_key[idempotency_key] = provider_payment_id
         return PaymentIntentResult(
             provider_payment_id=provider_payment_id,
@@ -162,8 +167,9 @@ class FakePaymentProvider(PaymentProvider):
         )
 
     async def create_refund(
-        self, *, provider_payment_id: str, amount_cents: int, idempotency_key: str
+        self, *, provider_payment_id: str, amount_cents: int, currency: str, idempotency_key: str
     ) -> RefundResult:
+        self.refund_calls.append({"amount_cents": amount_cents, "currency": currency})
         existing_id = self._refunds_by_idempotency_key.get(idempotency_key)
         if existing_id is not None:
             data = self.refunds[existing_id]
@@ -196,10 +202,15 @@ class FakePaymentProvider(PaymentProvider):
         if signature_header != self.valid_signature:
             raise InvalidWebhookSignatureError()
         data = json.loads(payload)
+        intent = self.intents.get(data["provider_payment_id"], {})
+        # Like Stripe, the event reports what the intent was created with, unless a test
+        # overrides amount/currency in the payload to simulate a mismatch.
         return WebhookEvent(
             event_id=data["event_id"],
             event_type=data["event_type"],
             provider_payment_id=data["provider_payment_id"],
+            amount=data.get("amount", intent.get("amount")),
+            currency=data.get("currency", intent.get("currency")),
         )
 
 

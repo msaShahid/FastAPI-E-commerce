@@ -303,8 +303,10 @@ async def test_product_and_checkout_requests_never_modify_the_tax_master(client,
 class FakeProvider(PaymentProvider):
     def __init__(self):
         self.refunds = []
+        self.intent = {}
 
     async def create_payment_intent(self, *, amount_cents, currency, metadata, idempotency_key):
+        self.intent = {"amount": amount_cents, "currency": currency}
         return PaymentIntentResult("pi_test_1", "pi_test_1_secret", "requires_payment_method")
 
     async def retrieve_payment_intent(self, *, provider_payment_id):
@@ -312,9 +314,10 @@ class FakeProvider(PaymentProvider):
 
     def verify_and_parse_webhook(self, *, payload, signature_header):
         d = json.loads(payload)
-        return WebhookEvent(d["event_id"], d["type"], d["pi"])
+        return WebhookEvent(d["event_id"], d["type"], d["pi"], self.intent.get("amount"),
+                            None, self.intent.get("currency"))
 
-    async def create_refund(self, *, provider_payment_id, amount_cents, idempotency_key):
+    async def create_refund(self, *, provider_payment_id, amount_cents, currency, idempotency_key):
         self.refunds.append(provider_payment_id)
         return RefundResult("re_1", amount_cents, "succeeded")
 

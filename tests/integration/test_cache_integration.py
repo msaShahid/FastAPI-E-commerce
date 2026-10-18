@@ -384,6 +384,7 @@ async def test_stale_order_cancellation_invalidates_the_list(
             OrderRepository(session), CartRepository(session), ProductRepository(session),
             flat_shipping_cents=0,
             tax_rate_percent=0,
+            currency="usd",
         )
         cancelled = await service.cancel_stale_pending_orders(
             older_than=datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=30)

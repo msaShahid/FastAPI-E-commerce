@@ -158,8 +158,57 @@ migrations or seeds (a test enforces: no GSTIN-like literals, no tax-data insert
 12. Invoice numbering, e-invoicing applicability and credit-note policy (a later phase).
 13. Payments: INR support on the client's Stripe account (currency work is a later phase).
 
+### Phase 2.6 currency and money correctness (done; live payments still disabled)
+**Model.** Money is an integer number of MINOR units of a currency (the `*_cents` / `*_paise` names are
+historical). Decimal arithmetic wherever a fraction can appear; floats are rejected; rounding is explicit
+half-up (`app/core/money.py`). Flat interim tax is computed on minor units, so it is correct for any
+exponent.
+- **Currency registry** (`app/core/money.py`): exponent per ISO 4217 and a `payment_verified` flag.
+  Registered: usd, inr, eur, gbp (2 decimals), jpy (0), krw (0), kwd, bhd (3). **Verified for Stripe
+  payments (against https://docs.stripe.com/currencies, checked 2026-10-18): usd, inr, eur, gbp, jpy only.**
+  Stripe's page documents minor-unit integer amounts, two-decimal as the default and JPY as zero-decimal; it
+  does NOT document three-decimal currencies or confirm KRW, so kwd/bhd/krw support arithmetic and orders
+  but payments in them are refused (`payment_currency_not_verified`). Not claimed: any other currency.
+- **Store currency** (per deployment = per client): table `store_settings`, set once by an administrator
+  with `PUT /api/v1/store/currency`; public `GET /api/v1/store/currency` gives code and exponent.
+  Checkout answers 503 `store_currency_not_configured` until it is set. **Locked once any order exists**
+  (service 409 `store_currency_locked` + database trigger), so a setting can never reinterpret history.
+  Existing deployments must set it after upgrading.
+- **Orders** store `currency` (immutable once set, trigger); shipping and tax snapshots carry the currency
+  and exponent. Orders created before this change keep currency NULL (unknown, never assumed) and cannot be
+  paid until a decision is made about them.
+- **Payments**: built from the ORDER's currency and total (no hard-coded USD). The currency must be verified
+  AND enabled by the client in `PAYMENT_CURRENCIES_ENABLED` (empty = refused; Stripe account support is
+  account-specific and cannot be verified by code). `to_stripe_amount` is the single conversion point (for
+  every verified currency Stripe's amount is the minor-unit integer). A payment's amount/currency are
+  immutable (trigger). An existing payment that disagrees with its order is never reused (422
+  `payment_inconsistent`).
+- **Webhooks** verify amount, `amount_received` and currency against our stored payment and order BEFORE any
+  state change. Missing or different values never mark anything paid; they are recorded in the audit log
+  (`payment.amount_mismatch`, `payment.unverifiable_success`, `payment.order_mismatch`).
+- **Refunds** use the original payment's currency and amount; an order/payment currency disagreement is
+  refused; a refund that differs from the request is recorded (`payment.refund_mismatch`).
+- Readiness (`GET /api/v1/admin/tax/readiness`) payments section reports `store_currency_not_configured`,
+  `payment_currency_not_verified`, `payment_currency_not_enabled`. INR is not special-cased.
+- Not changed: shipping/tax setting names (`FLAT_SHIPPING_CENTS`, ...) remain minor units of the store
+  currency; discounts do not exist; no currency conversion is done anywhere.
+
+### Payment-readiness blockers after Phase 2.6 (live payments must stay disabled)
+1. ~~Currency~~ addressed above, but each client must still enable their currency in
+   `PAYMENT_CURRENCIES_ENABLED` after confirming their own Stripe account can charge it; minimum/maximum
+   charge amounts per currency are not enforced (Stripe rejects out-of-range amounts).
+2. Late payments are visible in the audit log but nothing acts on them; the stale-order job still does not
+   cancel Stripe intents. (reservation/expiry phase + business policy)
+3. Admin status PATCH can still mark paid/refunded without a payment/refund and cancel without restock.
+4. Webhook: unrecognised events are dropped; dashboard refunds/disputes are not reconciled; refunds are two
+   columns, not a table; Stripe calls run inside the DB transaction without an explicit timeout.
+5. Guests cannot pay.
+6. The interim tax engine is not a GST calculation.
+7. Known schema gap: the two XOR constraints.
+8. Legacy orders (currency NULL) need an explicit decision before they can be paid or refunded.
+
 ### Next
-Phase 2.6 (product assignment) then 2.4/2.5 need owner decisions: pricing mode, business
+Phase 2.7 (product assignment) then 2.4/2.5 need owner decisions: pricing mode, business
 registrations, approved classifications/rates, place of supply, shipping tax, rounding.
 
 ## Milestone 1: critical checkout defects (complete, awaiting review)

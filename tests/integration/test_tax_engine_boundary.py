@@ -75,6 +75,20 @@ async def approved_rule(client, h1, h2, cid, treatment="taxable", start="2020-01
     return r["id"]
 
 
+async def approved_settings(client, h1, h2, *, reg_valid_to=None):
+    """An approved business tax configuration under an approved (fictional) registration."""
+    reg = (await client.post(f"{T}/registrations", headers=h1, json={
+        "gstin": "27ABCDE1234F1Z5", "legal_name": "Test Business", "state_code": "27",
+        "valid_from": "2020-01-01", "valid_to": reg_valid_to})).json()
+    assert (await client.post(f"{T}/registrations/{reg['id']}/approve", headers=h2)).status_code == 200
+    s = (await client.post(f"{T}/settings", headers=h1, json={
+        "pricing_mode": "exclusive", "place_of_supply_basis": "delivery_state",
+        "shipping_tax_treatment": "not_taxed", "rounding_policy": "line_half_up",
+        "registration_id": reg["id"], "effective_from": "2020-01-01", "source_reference": "TEST-APPROVAL"})).json()
+    assert (await client.post(f"{T}/settings/{s['id']}/approve", headers=h2)).status_code == 200
+    return s["id"]
+
+
 async def product(client, h, category, sku, cid=None, price=1000, stock=10):
     r = await client.post(f"{API}/products", headers=h, json={
         "name": f"Item {sku}", "description": None, "price_cents": price, "sku": sku, "stock": stock,
@@ -241,6 +255,7 @@ async def test_a_ready_cart_is_still_refused_because_the_gst_engine_is_not_imple
 ):
     cid = await classification(client, admin_headers, admin2)
     await approved_rule(client, admin_headers, admin2, cid, treatment=treatment)
+    await approved_settings(client, admin_headers, admin2)  # the business configuration is complete too
     p = await product(client, admin_headers, category, f"RDY-{treatment}", cid=cid)
     r = await checkout(client, [p["id"]])
     assert r.status_code == 503 and r.json()["code"] == "tax_engine_not_implemented"

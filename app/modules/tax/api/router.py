@@ -8,6 +8,7 @@ from app.modules.tax.schemas.tax import (
     ClassificationRead,
     ClassificationUpdate,
     ProductTaxRead,
+    ReadinessRead,
     RegistrationCreate,
     RegistrationRead,
     RegistrationUpdate,
@@ -15,6 +16,9 @@ from app.modules.tax.schemas.tax import (
     RuleCreate,
     RuleRead,
     RuleUpdate,
+    SettingsCreate,
+    SettingsRead,
+    SettingsUpdate,
 )
 from app.shared.enums.tax import ClassificationKind, ProductTaxState, TaxRecordStatus
 from app.shared.pagination.schemas import PageParams, PaginatedResponse
@@ -166,3 +170,44 @@ async def approve_registration(
 @tax_router.post("/registrations/{record_id}/retire", response_model=RegistrationRead)
 async def retire_registration(record_id: int, admin: AdminUser, service: TaxServiceDep):
     return await service.retire_registration(admin, record_id)
+
+
+# ------------------------------------------------------------------ business tax settings
+@tax_router.post("/settings", response_model=SettingsRead, status_code=201)
+async def create_settings(payload: SettingsCreate, admin: AdminUser, service: TaxServiceDep):
+    return await service.create_settings(admin, payload)
+
+
+@tax_router.get("/settings", response_model=PaginatedResponse[SettingsRead])
+async def list_settings(
+    _admin: AdminUser,
+    service: TaxServiceDep,
+    params: PageParams = Depends(),
+    status: TaxRecordStatus | None = None,
+):
+    items, total = await service.list_settings(offset=params.offset, limit=params.page_size, status=status)
+    return _page(items, total, params, SettingsRead)
+
+
+@tax_router.patch("/settings/{record_id}", response_model=SettingsRead)
+async def update_settings(record_id: int, payload: SettingsUpdate, admin: AdminUser, service: TaxServiceDep):
+    return await service.update_settings(admin, record_id, payload)
+
+
+@tax_router.post("/settings/{record_id}/approve", response_model=SettingsRead)
+async def approve_settings(
+    record_id: int, admin: AdminUser, service: TaxServiceDep, payload: ApproveRequest | None = None
+):
+    return await service.approve_settings(admin, record_id, payload.note if payload else None)
+
+
+@tax_router.post("/settings/{record_id}/retire", response_model=SettingsRead)
+async def retire_settings(record_id: int, admin: AdminUser, service: TaxServiceDep):
+    return await service.retire_settings(admin, record_id)
+
+
+# ------------------------------------------------------------------ readiness
+@tax_router.get("/readiness", response_model=ReadinessRead)
+async def gst_readiness(_admin: AdminUser, service: TaxServiceDep):
+    """What is still missing before GST could be activated. Read-only."""
+    return await service.readiness()

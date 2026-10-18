@@ -175,8 +175,66 @@ class GstRegistration(Base, TimestampMixin, _Approval):
     status: Mapped[str] = mapped_column(String(20), default="draft", server_default="draft")
 
 
+class BusinessTaxSettings(Base, TimestampMixin, _Approval):
+    """The business's explicit, approved tax configuration (one deployment = one business).
+
+    Complete by construction: every choice is a required column, so there is no half-configured
+    record and nothing is defaulted. Without an approved record effective on the date, GST
+    calculation is blocked. Approved records are never edited: retire and replace.
+    """
+
+    __tablename__ = "business_tax_settings"
+    __table_args__ = (
+        CheckConstraint(_STATUS_OK, name="ck_business_tax_settings_status"),
+        CheckConstraint("pricing_mode IN ('inclusive', 'exclusive')", name="ck_business_tax_settings_pricing"),
+        CheckConstraint("place_of_supply_basis IN ('delivery_state')", name="ck_business_tax_settings_pos"),
+        CheckConstraint(
+            "shipping_tax_treatment IN ('not_taxed', 'taxable_with_goods')",
+            name="ck_business_tax_settings_shipping",
+        ),
+        CheckConstraint(
+            "rounding_policy IN ('line_half_up', 'invoice_half_up')", name="ck_business_tax_settings_rounding"
+        ),
+        CheckConstraint(
+            "effective_to IS NULL OR effective_to > effective_from", name="ck_business_tax_settings_dates"
+        ),
+        CheckConstraint(
+            "status <> 'approved' OR (approved_at IS NOT NULL AND "
+            "source_reference IS NOT NULL AND length(btrim(source_reference)) > 0)",
+            name="ck_business_tax_settings_approved_fields",
+        ),
+        # At most one approved configuration applies on any day.
+        ExcludeConstraint(
+            (text("daterange(effective_from, effective_to, '[)')"), "&&"),
+            using="gist",
+            where=text("status = 'approved'"),
+            name="ex_business_tax_settings_no_approved_overlap",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    pricing_mode: Mapped[str] = mapped_column(String(10))
+    place_of_supply_basis: Mapped[str] = mapped_column(String(20))
+    shipping_tax_treatment: Mapped[str] = mapped_column(String(30))
+    rounding_policy: Mapped[str] = mapped_column(String(20))
+    # The business's GST registration this configuration applies under (must be approved).
+    registration_id: Mapped[int] = mapped_column(
+        ForeignKey("gst_registrations.id", ondelete="RESTRICT"), index=True
+    )
+    effective_from: Mapped[date] = mapped_column(Date)
+    effective_to: Mapped[date | None] = mapped_column(Date, default=None)
+    status: Mapped[str] = mapped_column(String(20), default="draft", server_default="draft")
+    # The GST professional's written approval of these choices. Required to approve.
+    source_reference: Mapped[str | None] = mapped_column(Text, default=None)
+
+
 def _install_guard_triggers() -> None:
-    for table in (TaxClassification.__table__, TaxRule.__table__, GstRegistration.__table__):
+    for table in (
+        TaxClassification.__table__,
+        TaxRule.__table__,
+        GstRegistration.__table__,
+        BusinessTaxSettings.__table__,
+    ):
         assert table.name in GUARDED_TABLES
         event.listen(
             table,

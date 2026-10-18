@@ -1,11 +1,17 @@
 from datetime import date
 from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.products.models.product import Product
-from app.modules.tax.models.tax import GstRegistration, TaxClassification, TaxRule
+from app.modules.tax.models.tax import (
+    BusinessTaxSettings,
+    GstRegistration,
+    TaxClassification,
+    TaxRule,
+)
+from app.shared.enums.product_status import ProductStatus
 
 
 class TaxRepository:
@@ -62,6 +68,9 @@ class TaxRepository:
         ).scalar_one()
         return count > 0
 
+    async def get_registration(self, registration_id: int):
+        return await self.get(GstRegistration, registration_id)
+
     async def classification_statuses(self, ids) -> dict[int, str]:
         ids = list(ids)
         if not ids:
@@ -88,6 +97,62 @@ class TaxRepository:
         for rule in rows.scalars().all():
             found.setdefault(rule.classification_id, []).append(rule)
         return found
+
+    async def approved_settings_covering(self, as_of: date) -> "list[BusinessTaxSettings]":  # noqa: UP037
+        rows = await self.db.execute(
+            select(BusinessTaxSettings).where(
+                BusinessTaxSettings.status == "approved",
+                BusinessTaxSettings.effective_from <= as_of,
+                or_(BusinessTaxSettings.effective_to.is_(None), BusinessTaxSettings.effective_to > as_of),
+            )
+        )
+        return list(rows.scalars().all())
+
+    async def overlapping_approved_settings(self, start: date, end: date | None, exclude_id: int):
+        conditions = [
+            BusinessTaxSettings.status == "approved",
+            BusinessTaxSettings.id != exclude_id,
+            or_(BusinessTaxSettings.effective_to.is_(None), BusinessTaxSettings.effective_to > start),
+        ]
+        if end is not None:
+            conditions.append(BusinessTaxSettings.effective_from < end)
+        return (await self.db.execute(select(BusinessTaxSettings.id).where(*conditions).limit(1))).first()
+
+    async def registration_has_open_settings(self, registration_id: int) -> bool:
+        count = (
+            await self.db.execute(
+                select(func.count())
+                .select_from(BusinessTaxSettings)
+                .where(
+                    BusinessTaxSettings.registration_id == registration_id,
+                    BusinessTaxSettings.status != "retired",
+                )
+            )
+        ).scalar_one()
+        return count > 0
+
+    async def readiness_counts(self, as_of: date) -> dict[str, int]:
+        """How many ACTIVE products cannot be taxed yet, and why. Read-only."""
+        active = Product.status == ProductStatus.ACTIVE
+        covering = exists().where(
+            TaxRule.classification_id == Product.tax_classification_id,
+            TaxRule.status == "approved",
+            TaxRule.effective_from <= as_of,
+            or_(TaxRule.effective_to.is_(None), TaxRule.effective_to > as_of),
+        )
+
+        async def count(*conditions, join=False) -> int:
+            query = select(func.count()).select_from(Product)
+            if join:
+                query = query.join(TaxClassification, Product.tax_classification_id == TaxClassification.id)
+            return (await self.db.execute(query.where(active, *conditions))).scalar_one()
+
+        return {
+            "active_products": await count(),
+            "active_unclassified": await count(Product.tax_classification_id.is_(None)),
+            "active_classification_not_approved": await count(TaxClassification.status != "approved", join=True),
+            "active_without_effective_rule": await count(TaxClassification.status == "approved", ~covering, join=True),
+        }
 
     async def count_products_using(self, classification_id: int) -> int:
         return (

@@ -107,8 +107,59 @@ migration, so a migrated database lacks them. CI reports them via
 6. The interim tax engine is not a GST calculation; checkout totals are not tax-compliant until the GST engine.
 7. Known schema gap: the two XOR constraints (see above).
 
+### Phase 2.5 per-client GST configuration (done; GST still NOT calculated)
+**Architecture / isolation.** The code has no tenant concept (no tenant/org columns or tables). The
+verified model is **one deployment per client**: each client gets its own database (and Redis, via
+`CACHE_KEY_PREFIX`, and Stripe keys). All tax data (registrations, classifications, rules, business
+configuration) is therefore per-client by deployment isolation; nothing client-specific lives in code,
+migrations or seeds (a test enforces: no GSTIN-like literals, no tax-data inserts in `app/`, `alembic/`,
+`scripts/`). Never point two clients at one database. Sharing a database between clients would need
+`tenant_id` on every table (a redesign): not done, not needed for deployment-per-client.
+- `business_tax_settings` (migration `d6a9c4f1b873`, empty, nothing seeded): the business's approved
+  configuration. Every choice is a required column, so nothing is defaulted: `pricing_mode`
+  (inclusive | exclusive), `place_of_supply_basis` (delivery_state), `shipping_tax_treatment`
+  (not_taxed | taxable_with_goods), `rounding_policy` (line_half_up | invoice_half_up), the GST
+  `registration_id` it applies under, effective dates, and the professional's written approval
+  (`source_reference`, required to approve). The allowed values are the modes the calculator will
+  implement, not legal advice; the client's professional chooses.
+- Same controls as the rest of the tax master: draft -> approved (distinct approver, or audited
+  self-approval flag), approved records are immutable (service + DB trigger), at most one approved
+  configuration per day (DB exclusion constraint), retire and replace. A registration used by a
+  non-retired configuration cannot be retired.
+- Admin API `/api/v1/admin/tax/settings` (create/list/edit draft/approve/retire) and
+  `GET /api/v1/admin/tax/readiness`: a read-only report of exactly what still blocks GST activation
+  (missing/ambiguous configuration, registration not approved/valid, active products unclassified or
+  without an effective rule, calculator not implemented) plus payment blockers (currency not INR, orders
+  have no currency). `ready` can only be true when `blockers` is empty; it cannot be today because
+  `GST_CALCULATOR_IMPLEMENTED` is false.
+- The GST engine now also blocks checkout (422 `tax_calculation_blocked`, `configuration (<reason>)`) when
+  the configuration is missing, ambiguous, or its registration is not approved/valid on the date.
+  A fully configured business is still refused (503 `tax_engine_not_implemented`).
+- Limits: one pinned registration per configuration (multi-registration selection rules are not defined);
+  only the registration's state is known as a location (no separate dispatch location); B2B, SEZ, exports,
+  discounts and cess are unsupported.
+
+### Client facts still needed before GST can be activated (per client)
+1. GST registration status (regular / composition / unregistered). If unregistered or composition, GST
+   may not be charged at all: the business must say so before anything is configured.
+2. Each GSTIN, legal name, registration state and validity dates (entered through the admin API by the
+   client, never by us). If more than one registration exists: which one applies to which supplies.
+3. Dispatch/warehouse location(s) if different from the registration state.
+4. Pricing mode: tax-inclusive or tax-exclusive. Existing prices are treated as exclusive today.
+5. HSN/SAC for every product, from the client's GST professional.
+6. For each classification: treatment and rates (CGST/SGST/UTGST/IGST), the notification reference and
+   effective dates; cess if applicable.
+7. Place of supply: confirmation that delivery-state applies to the client's supplies, and how to treat
+   special cases (SEZ, exports, buyers with a GSTIN, union territories).
+8. Shipping: charge, free threshold, serviceable areas, and the shipping tax treatment.
+9. Rounding policy (per line or per invoice) and the CGST/SGST remainder rule.
+10. Which date governs the rate (order, payment or supply).
+11. Whether discounts exist (not supported yet).
+12. Invoice numbering, e-invoicing applicability and credit-note policy (a later phase).
+13. Payments: INR support on the client's Stripe account (currency work is a later phase).
+
 ### Next
-Phase 2.5 (product assignment) then 2.4/2.5 need owner decisions: pricing mode, business
+Phase 2.6 (product assignment) then 2.4/2.5 need owner decisions: pricing mode, business
 registrations, approved classifications/rates, place of supply, shipping tax, rounding.
 
 ## Milestone 1: critical checkout defects (complete, awaiting review)

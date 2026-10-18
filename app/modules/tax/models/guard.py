@@ -132,7 +132,7 @@ PRODUCT_TAX_TRIGGERS = {
     ),
 }
 
-GUARDED_TABLES = ("tax_classifications", "tax_rules", "gst_registrations")
+GUARDED_TABLES = ("tax_classifications", "tax_rules", "gst_registrations", "business_tax_settings")
 
 
 def trigger_name(table: str) -> str:

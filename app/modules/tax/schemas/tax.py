@@ -6,7 +6,16 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.shared.enums.tax import ClassificationKind, ProductTaxState, TaxRecordStatus, TaxTreatment
+from app.shared.enums.tax import (
+    ClassificationKind,
+    PlaceOfSupplyBasis,
+    PricingMode,
+    ProductTaxState,
+    RoundingPolicy,
+    ShippingTaxTreatment,
+    TaxRecordStatus,
+    TaxTreatment,
+)
 
 Rate = Annotated[Decimal, Field(ge=0, le=100, max_digits=6, decimal_places=3)]
 _GSTIN = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$")
@@ -158,3 +167,70 @@ class RegistrationRead(_Audited):
     state_code: str
     valid_from: date
     valid_to: date | None
+
+
+# ---------------------------------------------------------------- business tax settings
+class SettingsCreate(BaseModel):
+    """Every choice is required and explicit. There are no defaults: the business decides."""
+
+    pricing_mode: PricingMode
+    place_of_supply_basis: PlaceOfSupplyBasis
+    shipping_tax_treatment: ShippingTaxTreatment
+    rounding_policy: RoundingPolicy
+    registration_id: int = Field(gt=0)
+    effective_from: date
+    effective_to: date | None = None
+    source_reference: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def _dates(self) -> "SettingsCreate":
+        if self.effective_to is not None and self.effective_to <= self.effective_from:
+            raise ValueError("effective_to must be after effective_from")
+        return self
+
+
+class SettingsUpdate(BaseModel):
+    pricing_mode: PricingMode | None = None
+    place_of_supply_basis: PlaceOfSupplyBasis | None = None
+    shipping_tax_treatment: ShippingTaxTreatment | None = None
+    rounding_policy: RoundingPolicy | None = None
+    registration_id: int | None = Field(default=None, gt=0)
+    effective_from: date | None = None
+    effective_to: date | None = None
+    source_reference: str | None = Field(default=None, max_length=2000)
+
+
+class SettingsRead(_Audited):
+    id: int
+    pricing_mode: PricingMode
+    place_of_supply_basis: PlaceOfSupplyBasis
+    shipping_tax_treatment: ShippingTaxTreatment
+    rounding_policy: RoundingPolicy
+    registration_id: int
+    effective_from: date
+    effective_to: date | None
+    source_reference: str | None
+
+
+# ---------------------------------------------------------------- readiness report
+class ReadinessBlocker(BaseModel):
+    code: str
+    detail: str
+
+
+class PaymentReadiness(BaseModel):
+    live_payments_enabled: bool
+    payment_currency: str
+    blockers: list[ReadinessBlocker]
+
+
+class ReadinessRead(BaseModel):
+    """Why GST cannot be activated yet. `ready` is true only when `blockers` is empty."""
+
+    as_of: date
+    ready: bool
+    blockers: list[ReadinessBlocker]
+    settings_id: int | None
+    counts: dict[str, int]
+    flags: dict[str, bool]
+    payments: PaymentReadiness

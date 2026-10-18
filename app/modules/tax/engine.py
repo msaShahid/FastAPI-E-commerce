@@ -19,7 +19,7 @@ requests cannot modify tax classifications or rules.
 """
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Protocol
 
@@ -34,6 +34,21 @@ UNAPPROVED_CLASSIFICATION = "unapproved_classification"
 NO_APPLICABLE_RULE = "no_applicable_rule"
 AMBIGUOUS_RULE = "ambiguous_rule"
 UNKNOWN_TREATMENT = "unknown_treatment"
+
+# Configuration blockers (the business's own tax setup), not tied to a product.
+NO_APPROVED_SETTINGS = "no_approved_tax_settings"
+AMBIGUOUS_SETTINGS = "ambiguous_tax_settings"
+REGISTRATION_NOT_APPROVED = "registration_not_approved"
+REGISTRATION_NOT_VALID_ON_DATE = "registration_not_valid_on_date"
+
+# Flip only when the GST calculator really exists (a later phase). While False, the readiness
+# report can never show "ready" and the GST engine can never return a result.
+GST_CALCULATOR_IMPLEMENTED = False
+
+
+def india_today() -> date:
+    """Today's date in India (UTC+05:30, no DST). Which date governs a supply is a professional decision."""
+    return datetime.now(timezone(timedelta(hours=5, minutes=30))).date()
 
 
 # ------------------------------------------------------------------ errors
@@ -57,7 +72,10 @@ class TaxCalculationBlockedError(InvalidStateError):
     code = "tax_calculation_blocked"
 
     def __init__(self, blockers: list["TaxBlocker"]) -> None:
-        detail = "; ".join(f"product {b.product_id} ({b.reason})" for b in blockers)
+        detail = "; ".join(
+            f"product {b.product_id} ({b.reason})" if b.product_id is not None else f"configuration ({b.reason})"
+            for b in blockers
+        )
         super().__init__(f"Tax cannot be determined for: {detail}")
         self.blockers = blockers
 
@@ -81,7 +99,7 @@ class TaxRequest:
 
 @dataclass(frozen=True)
 class TaxBlocker:
-    product_id: int
+    product_id: int | None  # None = the business configuration, not a product
     reason: str
 
 
@@ -106,6 +124,26 @@ class TaxEngine(Protocol):
 
 
 # ------------------------------------------------------------------ readiness (read-only)
+async def evaluate_config(repository: TaxRepository, as_of: date):
+    """The business's tax setup: exactly one approved configuration, under a valid approved registration.
+
+    Returns (configuration or None, blockers). An empty blocker list means "configured", not "tax is 0".
+    """
+    settings = await repository.approved_settings_covering(as_of)
+    if not settings:
+        return None, [TaxBlocker(None, NO_APPROVED_SETTINGS)]
+    if len(settings) > 1:
+        return None, [TaxBlocker(None, AMBIGUOUS_SETTINGS)]
+    config = settings[0]
+    registration = await repository.get_registration(config.registration_id)
+    if registration is None or registration.status != "approved":
+        return config, [TaxBlocker(None, REGISTRATION_NOT_APPROVED)]
+    if registration.valid_from > as_of or (registration.valid_to is not None and registration.valid_to <= as_of):
+        return config, [TaxBlocker(None, REGISTRATION_NOT_VALID_ON_DATE)]
+    return config, []
+
+
+
 async def evaluate_readiness(
     repository: TaxRepository, lines: list[TaxLine], as_of: date
 ) -> list[TaxBlocker]:
@@ -187,7 +225,8 @@ class GstTaxEngine:
         self.repository = repository
 
     async def calculate(self, request: TaxRequest) -> TaxResult:
-        blockers = await evaluate_readiness(self.repository, request.lines, request.as_of)
+        _config, blockers = await evaluate_config(self.repository, request.as_of)
+        blockers = blockers + await evaluate_readiness(self.repository, request.lines, request.as_of)
         if blockers:
             raise TaxCalculationBlockedError(blockers)
         raise TaxEngineUnavailableError()

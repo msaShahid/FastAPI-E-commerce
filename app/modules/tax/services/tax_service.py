@@ -6,6 +6,11 @@ from sqlalchemy.exc import IntegrityError
 from app.core.config import get_settings
 from app.modules.audit.services.audit_service import AuditService
 from app.modules.auth.models.user import User
+from app.modules.tax.engine import (
+    GST_CALCULATOR_IMPLEMENTED,
+    evaluate_config,
+    india_today,
+)
 from app.modules.tax.exceptions.tax_exceptions import (
     ApprovalPrerequisiteError,
     ApprovalRequiresDistinctApproverError,
@@ -15,20 +20,32 @@ from app.modules.tax.exceptions.tax_exceptions import (
     ImmutableTaxRecordError,
     InvalidTaxInputError,
     InvalidTaxTransitionError,
+    RegistrationInUseError,
     RuleOverlapError,
     SelfApprovalNoteRequiredError,
+    SettingsOverlapError,
     TaxRecordNotFoundError,
 )
-from app.modules.tax.models.tax import GstRegistration, TaxClassification, TaxRule
+from app.modules.tax.models.tax import (
+    BusinessTaxSettings,
+    GstRegistration,
+    TaxClassification,
+    TaxRule,
+)
 from app.modules.tax.repositories.tax_repository import TaxRepository
 from app.modules.tax.schemas.tax import (
     ClassificationCreate,
     ClassificationUpdate,
+    PaymentReadiness,
     ProductTaxRead,
+    ReadinessBlocker,
+    ReadinessRead,
     RegistrationCreate,
     RegistrationUpdate,
     RuleCreate,
     RuleUpdate,
+    SettingsCreate,
+    SettingsUpdate,
     check_rule_shape,
 )
 from app.shared.enums.tax import product_tax_state
@@ -320,7 +337,135 @@ class TaxService:
 
     async def retire_registration(self, actor: User, record_id: int):
         record = await self._get(GstRegistration, record_id, "Registration", lock=True)
+        if record.status != "retired" and await self.repo.registration_has_open_settings(record.id):
+            raise RegistrationInUseError()
         self._retire(record)
         await self.repo.save(record)
         await self._log(actor, "tax.registration.retired", "gst_registration", record)
         return record
+
+    # ------------------------------------------------------------ business tax settings
+    async def create_settings(self, actor: User, data: SettingsCreate):
+        registration = await self._get(GstRegistration, data.registration_id, "Registration")
+        if registration.status == "retired":
+            raise InvalidTaxInputError("Cannot use a retired registration")
+        record = await self.repo.add(
+            BusinessTaxSettings(
+                pricing_mode=data.pricing_mode.value,
+                place_of_supply_basis=data.place_of_supply_basis.value,
+                shipping_tax_treatment=data.shipping_tax_treatment.value,
+                rounding_policy=data.rounding_policy.value,
+                registration_id=data.registration_id,
+                effective_from=data.effective_from,
+                effective_to=data.effective_to,
+                source_reference=data.source_reference,
+                created_by_user_id=actor.id,
+            )
+        )
+        await self._log(actor, "tax.settings.created", "business_tax_settings", record,
+                        {"pricing_mode": record.pricing_mode, "registration_id": record.registration_id})
+        return record
+
+    async def list_settings(self, *, offset, limit, status=None):
+        conditions = [BusinessTaxSettings.status == status.value] if status else []
+        return await self.repo.list(BusinessTaxSettings, conditions, offset=offset, limit=limit)
+
+    async def update_settings(self, actor: User, record_id: int, data: SettingsUpdate):
+        record = await self._get(BusinessTaxSettings, record_id, "Tax configuration", lock=True)
+        self._require_draft(record)
+        changes = data.model_dump(exclude_unset=True)
+        self._apply_changes(record, changes, nullable={"effective_to", "source_reference"})
+        if record.effective_to is not None and record.effective_to <= record.effective_from:
+            raise InvalidTaxInputError("effective_to must be after effective_from")
+        if "registration_id" in changes:
+            await self._get(GstRegistration, record.registration_id, "Registration")
+        await self.repo.save(record)
+        await self._log(actor, "tax.settings.updated", "business_tax_settings", record, {"fields": sorted(changes)})
+        return record
+
+    async def approve_settings(self, actor: User, record_id: int, note: str | None):
+        record = await self._get(BusinessTaxSettings, record_id, "Tax configuration", lock=True)
+        if record.status == "draft":
+            if _blank(record.source_reference):
+                raise ApprovalPrerequisiteError(
+                    "The GST professional's written approval (source reference) is required to approve a tax configuration"
+                )
+            registration = await self._get(GstRegistration, record.registration_id, "Registration")
+            if registration.status != "approved":
+                raise ApprovalPrerequisiteError("The registration must be approved first")
+            if await self.repo.overlapping_approved_settings(record.effective_from, record.effective_to, record.id):
+                raise SettingsOverlapError()
+        details = self._approve(record, actor, note)
+        try:
+            await self.repo.save(record)
+        except IntegrityError as exc:
+            if "ex_business_tax_settings_no_approved_overlap" in str(exc):
+                raise SettingsOverlapError() from exc
+            raise
+        await self._log(actor, "tax.settings.approved", "business_tax_settings", record, details)
+        return record
+
+    async def retire_settings(self, actor: User, record_id: int):
+        record = await self._get(BusinessTaxSettings, record_id, "Tax configuration", lock=True)
+        self._retire(record)
+        await self.repo.save(record)
+        await self._log(actor, "tax.settings.retired", "business_tax_settings", record)
+        return record
+
+    # ------------------------------------------------------------ readiness report
+    async def readiness(self, as_of=None) -> ReadinessRead:
+        """Everything still missing before GST could be activated. Read-only; changes nothing."""
+        from app.modules.orders.models.order import Order
+        from app.modules.payments.services.payment_service import DEFAULT_CURRENCY
+
+        settings = get_settings()
+        as_of = as_of or india_today()
+        config, config_blockers = await evaluate_config(self.repo, as_of)
+        counts = await self.repo.readiness_counts(as_of)
+        blockers = [ReadinessBlocker(code=b.reason, detail=_CONFIG_DETAIL[b.reason]) for b in config_blockers]
+        for key, code, text in _COUNT_BLOCKERS:
+            if counts[key]:
+                blockers.append(ReadinessBlocker(code=code, detail=f"{counts[key]} {text}"))
+        if not GST_CALCULATOR_IMPLEMENTED:
+            blockers.append(ReadinessBlocker(
+                code="gst_calculator_not_implemented", detail="The GST calculator has not been implemented yet"))
+
+        payment_blockers = []
+        if DEFAULT_CURRENCY.lower() != "inr":
+            payment_blockers.append(ReadinessBlocker(
+                code="payment_currency_not_inr", detail=f"Payments are created in {DEFAULT_CURRENCY.upper()}, not INR"))
+        if not hasattr(Order, "currency"):
+            payment_blockers.append(ReadinessBlocker(
+                code="orders_have_no_currency", detail="Orders do not record a currency"))
+        return ReadinessRead(
+            as_of=as_of,
+            ready=not blockers,
+            blockers=blockers,
+            settings_id=config.id if config is not None and not config_blockers else None,
+            counts=counts,
+            flags={
+                "tax_calculation_enabled": settings.tax_calculation_enabled,
+                "tax_classification_required": settings.tax_classification_required,
+            },
+            payments=PaymentReadiness(
+                live_payments_enabled=settings.live_payments_enabled,
+                payment_currency=DEFAULT_CURRENCY.lower(),
+                blockers=payment_blockers,
+            ),
+        )
+
+
+_CONFIG_DETAIL = {
+    "no_approved_tax_settings": "No approved business tax configuration is effective today",
+    "ambiguous_tax_settings": "More than one approved business tax configuration is effective today",
+    "registration_not_approved": "The registration the tax configuration refers to is not approved",
+    "registration_not_valid_on_date": "The registration the tax configuration refers to is not valid today",
+}
+
+_COUNT_BLOCKERS = (
+    ("active_unclassified", "active_products_unclassified", "active product(s) have no tax classification"),
+    ("active_classification_not_approved", "active_products_classification_not_approved",
+     "active product(s) point at a classification that is not approved"),
+    ("active_without_effective_rule", "active_products_without_effective_rule",
+     "active product(s) have an approved classification but no approved rule effective today"),
+)

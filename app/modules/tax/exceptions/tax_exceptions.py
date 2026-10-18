@@ -80,3 +80,20 @@ class ClassificationInUseError(_Coded, ConflictError):
 
 class InvalidTaxInputError(_Coded, InvalidStateError):
     code = "tax_master_invalid_input"
+
+
+
+class SettingsOverlapError(_Coded, ConflictError):
+    code = "settings_overlap"
+
+    def __init__(self) -> None:
+        super().__init__(
+            "An approved tax configuration already applies in that period. Retire it first, then approve the new one."
+        )
+
+
+class RegistrationInUseError(_Coded, ConflictError):
+    code = "registration_in_use"
+
+    def __init__(self) -> None:
+        super().__init__("This registration is used by a tax configuration that is not retired")

@@ -3,6 +3,13 @@ from uuid import UUID
 
 from app.core.config import get_settings
 from app.core.jobs import JobQueue
+from app.core.money import (
+    CurrencyNotPayableError,
+    InvalidMoneyError,
+    UnsupportedCurrencyError,
+    get_currency,
+    to_stripe_amount,
+)
 from app.core.payments.interface import PaymentProvider, WebhookEvent
 from app.modules.audit.services.audit_service import AuditService
 from app.modules.orders.exceptions.order_exceptions import (
@@ -15,6 +22,7 @@ from app.modules.payments.exceptions.payment_exceptions import (
     LivePaymentsDisabledError,
     OrderNotPayableError,
     OrderNotRefundableError,
+    PaymentInconsistentError,
 )
 from app.modules.payments.jobs import SEND_ORDER_CONFIRMATION, order_confirmation_dedupe_key
 from app.modules.payments.models.payment import Payment
@@ -23,8 +31,6 @@ from app.shared.enums.order_status import OrderStatus
 from app.shared.enums.payment_status import PaymentStatus
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_CURRENCY = "usd"
 
 SUCCEEDED_EVENT = "payment_intent.succeeded"
 FAILED_EVENT = "payment_intent.payment_failed"
@@ -50,14 +56,12 @@ class PaymentService:
         repository: PaymentRepository,
         order_service: OrderService,
         provider: PaymentProvider,
-        currency: str = DEFAULT_CURRENCY,
         job_queue: JobQueue | None = None,
         audit: AuditService | None = None,
     ) -> None:
         self.repository = repository
         self.order_service = order_service
         self.provider = provider
-        self.currency = currency
         # Slow follow-up work (emails ...) is queued, never done inside the
         # webhook request. None only in unit tests that do not care.
         self.job_queue = job_queue
@@ -71,6 +75,15 @@ class PaymentService:
         settings = get_settings()
         if settings.stripe_secret_key.startswith(("sk_live_", "rk_live_")) and not settings.live_payments_enabled:
             raise LivePaymentsDisabledError()
+
+    def _assert_currency_payable(self, code: str):
+        """The currency must be known, verified for the integration AND enabled for this account."""
+        currency = get_currency(code)  # unknown code -> 422 currency_unsupported
+        if not self.provider.supports_currency(currency.code):
+            raise CurrencyNotPayableError(currency.code, "payment_currency_not_verified")
+        if currency.code not in get_settings().enabled_payment_currencies():
+            raise CurrencyNotPayableError(currency.code, "payment_currency_not_enabled")
+        return currency
 
     async def _flag_for_review(self, action: str, payment_id, details: dict) -> None:
         if self.audit is not None:
@@ -101,6 +114,13 @@ class PaymentService:
         order = await self.order_service.lock_order_for_update(order.id)
         self._assert_order_payable(order)
 
+        # The payment is built from the ORDER's own currency and total, never from a global
+        # setting, so a later change of store configuration can't alter what is charged.
+        if order.currency is None:
+            raise OrderNotPayableError("This order has no recorded currency and cannot be paid")
+        currency = self._assert_currency_payable(order.currency)
+        stripe_amount = to_stripe_amount(order.total_cents, currency.code)
+
         existing_payments = await self.repository.list_for_order(order.id)
         if any(p.status == PaymentStatus.SUCCEEDED for p in existing_payments):
             raise OrderNotPayableError("This order has already been paid")
@@ -114,6 +134,8 @@ class PaymentService:
             None,
         )
         if reusable is not None:
+            if reusable.currency != currency.code or reusable.amount_cents != order.total_cents:
+                raise PaymentInconsistentError("The existing payment does not match the order's amount/currency")
             intent = await self.provider.retrieve_payment_intent(
                 provider_payment_id=reusable.provider_payment_id
             )
@@ -148,8 +170,8 @@ class PaymentService:
         idempotency_key = f"order:{order.id}:intent:{len(existing_payments)}"
 
         intent = await self.provider.create_payment_intent(
-            amount_cents=order.total_cents,
-            currency=self.currency,
+            amount_cents=stripe_amount,
+            currency=currency.code,
             metadata={"order_id": str(order.id)},
             idempotency_key=idempotency_key,
         )
@@ -157,7 +179,7 @@ class PaymentService:
             order_id=order.id,
             provider_payment_id=intent.provider_payment_id,
             amount_cents=order.total_cents,
-            currency=self.currency,
+            currency=currency.code,
         )
         return payment, intent.client_secret
 
@@ -195,6 +217,11 @@ class PaymentService:
         if succeeded_payment is None:
             raise OrderNotRefundableError("No successful payment found for this order")
 
+        # Refund in the ORIGINAL payment's currency and amount; if the order disagrees, refuse.
+        if order.currency is not None and order.currency != succeeded_payment.currency:
+            raise PaymentInconsistentError("The payment currency does not match the order currency")
+        refund_amount = to_stripe_amount(succeeded_payment.amount_cents, succeeded_payment.currency)
+
         # One idempotency key per payment being refunded -- a retried
         # request (client timeout, etc.) hits the same Stripe refund
         # instead of issuing a second one.
@@ -202,9 +229,23 @@ class PaymentService:
 
         refund = await self.provider.create_refund(
             provider_payment_id=succeeded_payment.provider_payment_id,
-            amount_cents=succeeded_payment.amount_cents,
+            amount_cents=refund_amount,
+            currency=succeeded_payment.currency,
             idempotency_key=idempotency_key,
         )
+        if refund.amount_cents != refund_amount or refund.currency not in (None, succeeded_payment.currency):
+            # Money has moved, so the refund is recorded as the provider reports it; but a
+            # disagreement with what was requested needs a human.
+            await self._flag_for_review(
+                "payment.refund_mismatch",
+                succeeded_payment.id,
+                {
+                    "requested_amount": refund_amount,
+                    "requested_currency": succeeded_payment.currency,
+                    "refunded_amount": refund.amount_cents,
+                    "refunded_currency": refund.currency,
+                },
+            )
 
         succeeded_payment = await self.repository.mark_refunded(
             succeeded_payment,
@@ -241,11 +282,53 @@ class PaymentService:
             return
 
         if event.event_type == SUCCEEDED_EVENT:
-            await self._handle_payment_succeeded(event.provider_payment_id)
+            await self._handle_payment_succeeded(event)
         elif event.event_type == FAILED_EVENT:
             await self._handle_payment_failed(event.provider_payment_id)
 
-    async def _handle_payment_succeeded(self, provider_payment_id: str) -> None:
+    async def _event_matches_payment(self, event: WebhookEvent, payment: Payment) -> bool:
+        """Verifies the provider's amount and currency against OUR stored payment and order.
+
+        Anything missing or different is recorded for review and the payment is NOT marked
+        succeeded: a mismatch is never treated as success.
+        """
+        details = {"provider_payment_id": event.provider_payment_id, "payment_id": str(payment.id)}
+        if event.amount is None or event.currency is None:
+            await self._flag_for_review("payment.unverifiable_success", payment.id, details)
+            return False
+        try:
+            expected = to_stripe_amount(payment.amount_cents, payment.currency)
+        except (CurrencyNotPayableError, InvalidMoneyError, UnsupportedCurrencyError):
+            expected = None
+        received_ok = event.amount_received is None or event.amount_received == expected
+        if expected is None or event.amount != expected or not received_ok or event.currency != payment.currency:
+            await self._flag_for_review(
+                "payment.amount_mismatch",
+                payment.id,
+                {
+                    **details,
+                    "expected_amount": expected,
+                    "expected_currency": payment.currency,
+                    "received_amount": event.amount,
+                    "received_amount_received": event.amount_received,
+                    "received_currency": event.currency,
+                },
+            )
+            return False
+        order = await self.order_service.get_by_id_unchecked(payment.order_id)
+        if order is not None and (
+            order.total_cents != payment.amount_cents or order.currency not in (None, payment.currency)
+        ):
+            await self._flag_for_review(
+                "payment.order_mismatch",
+                payment.id,
+                {**details, "order_total": order.total_cents, "order_currency": order.currency},
+            )
+            return False
+        return True
+
+    async def _handle_payment_succeeded(self, event: WebhookEvent) -> None:
+        provider_payment_id = event.provider_payment_id
         payment = await self.repository.get_by_provider_payment_id(provider_payment_id)
         if payment is None:
             logger.warning(
@@ -255,6 +338,9 @@ class PaymentService:
             await self._flag_for_review(
                 "payment.unmatched_success", None, {"provider_payment_id": provider_payment_id}
             )
+            return
+
+        if not await self._event_matches_payment(event, payment):
             return
 
         if payment.status != PaymentStatus.SUCCEEDED:

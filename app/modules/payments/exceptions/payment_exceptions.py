@@ -21,3 +21,13 @@ class LivePaymentsDisabledError(ServiceUnavailableError):
 
     def __init__(self) -> None:
         super().__init__("Live payments are disabled")
+
+
+
+class PaymentInconsistentError(InvalidStateError):
+    """An existing payment/order disagree on amount or currency: nothing is created or changed."""
+
+    code = "payment_inconsistent"
+
+    def __init__(self, message: str = "The payment does not match the order") -> None:
+        super().__init__(message)

@@ -14,6 +14,7 @@ class Payment(Base, TimestampMixin):
     __tablename__ = "payments"
     __table_args__ = (
         CheckConstraint("amount_cents > 0", name="ck_payments_amount_positive"),
+        CheckConstraint("currency ~ '^[a-z]{3}$'", name="ck_payments_currency_format"),
         # Mirrors the partial unique index created in migration c0cc58801d7a:
         # at most one *pending* payment per order. It must be declared here
         # too, otherwise `alembic check` reports it as drift and tests built

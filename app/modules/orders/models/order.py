@@ -73,6 +73,9 @@ class Order(Base, TimestampMixin):
     # How shipping_cents was decided (policy values in force at checkout). Frozen
     # with the order; later settings changes never alter it. NULL on legacy orders.
     shipping_snapshot: Mapped[dict | None] = mapped_column(JSONB, default=None)
+    # How tax_cents was decided: which engine, its inputs/outputs, and whether it is a GST
+    # calculation (`gst_calculated`). Frozen with the order. NULL on legacy orders.
+    tax_snapshot: Mapped[dict | None] = mapped_column(JSONB, default=None)
     shipping_recipient_name: Mapped[str | None] = mapped_column(String(200), default=None)
     shipping_line1: Mapped[str | None] = mapped_column(String(255), default=None)
     shipping_line2: Mapped[str | None] = mapped_column(String(255), default=None)

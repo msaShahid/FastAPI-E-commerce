@@ -12,10 +12,31 @@ from app.modules.orders.repositories.order_repository import OrderRepository
 from app.modules.orders.services.order_service import OrderService
 from app.modules.products.dependencies.product_deps import get_product_repository
 from app.modules.products.repositories.product_repository import ProductRepository
+from app.modules.tax.engine import GstTaxEngine, NotConfiguredTaxEngine, TaxEngine
+from app.modules.tax.repositories.tax_repository import TaxRepository
 
 
 def get_order_repository(db: DbSession) -> OrderRepository:
     return OrderRepository(db)
+
+
+def get_tax_engine(db: DbSession) -> TaxEngine:
+    """Selects the tax engine from configuration. Overridable in tests.
+
+    GST enabled -> the GST engine (readiness checks, then refuses: not implemented yet).
+    Otherwise a configured flat percentage -> the interim engine (OrderService builds it).
+    Otherwise -> not configured (checkout refuses).
+    """
+    settings = get_settings()
+    if settings.tax_calculation_enabled:
+        return GstTaxEngine(TaxRepository(db))
+    return NotConfiguredTaxEngine() if settings.tax_rate_percent is None else _flat(settings)
+
+
+def _flat(settings) -> TaxEngine:
+    from app.modules.tax.engine import FlatInterimTaxEngine
+
+    return FlatInterimTaxEngine(settings.tax_rate_percent)
 
 
 def get_order_service(
@@ -23,6 +44,7 @@ def get_order_service(
     cart_repository: Annotated[CartRepository, Depends(get_cart_repository)],
     product_repository: Annotated[ProductRepository, Depends(get_product_repository)],
     address_repository: Annotated[AddressRepository, Depends(get_address_repository)],
+    tax_engine: Annotated[TaxEngine, Depends(get_tax_engine)],
 ) -> OrderService:
     # Settings are read per request (not at import) and passed explicitly. Unset
     # shipping/tax stay None, which makes checkout refuse instead of charging 0.
@@ -37,6 +59,7 @@ def get_order_service(
         free_shipping_threshold_basis=settings.free_shipping_threshold_basis,
         tax_rate_percent=settings.tax_rate_percent,
         require_tax_classification=settings.tax_classification_required,
+        tax_engine=tax_engine,
     )
 
 

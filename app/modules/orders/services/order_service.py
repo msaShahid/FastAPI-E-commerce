@@ -1,8 +1,8 @@
 import hashlib
 import json
 from dataclasses import asdict
-from datetime import datetime
-from decimal import ROUND_HALF_UP, Decimal
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from uuid import UUID
 
 from app.modules.addresses.exceptions.address_exceptions import AddressNotFoundError
@@ -28,6 +28,14 @@ from app.modules.orders.models.order import Order
 from app.modules.orders.repositories.order_repository import OrderRepository
 from app.modules.orders.services.shipping import ShippingAddressInput, address_as_order_columns
 from app.modules.products.repositories.product_repository import ProductRepository
+from app.modules.tax.engine import (
+    FlatInterimTaxEngine,
+    NotConfiguredTaxEngine,
+    TaxEngine,
+    TaxLine,
+    TaxRequest,
+    TaxResult,
+)
 from app.shared.enums.order_status import ALLOWED_TRANSITIONS, OrderStatus
 from app.shared.enums.product_status import ProductStatus
 
@@ -46,6 +54,7 @@ class OrderService:
         free_shipping_threshold_basis: str | None = None,
         tax_rate_percent: Decimal | float | str | None = None,
         require_tax_classification: bool = False,
+        tax_engine: TaxEngine | None = None,
     ) -> None:
         self.repository = repository
         self.cart_repository = cart_repository
@@ -60,10 +69,18 @@ class OrderService:
         self.tax_rate_percent = (
             None if tax_rate_percent is None else Decimal(str(tax_rate_percent))
         )
+        # Tax always goes through an engine. Without one, a configured flat percentage selects the
+        # interim engine and anything else is "not configured" (checkout refuses): never zero.
+        if tax_engine is not None:
+            self.tax_engine = tax_engine
+        elif self.tax_rate_percent is not None:
+            self.tax_engine = FlatInterimTaxEngine(self.tax_rate_percent)
+        else:
+            self.tax_engine = NotConfiguredTaxEngine()
 
     def _assert_pricing_configured(self) -> None:
         """Shipping and tax must be set on purpose; never default them to zero."""
-        if self.flat_shipping_cents is None or self.tax_rate_percent is None:
+        if self.flat_shipping_cents is None or not self.tax_engine.is_configured:
             raise CheckoutNotConfiguredError()
         if self.free_shipping_threshold_cents and self.free_shipping_threshold_basis is None:
             raise CheckoutNotConfiguredError()  # a threshold without a stated basis is ambiguous
@@ -84,23 +101,40 @@ class OrderService:
             "tax_treatment": "undetermined",  # decided with the GST work, not assumed here
         }
 
-    def _calculate_shipping_and_tax(self, subtotal_cents: int) -> tuple[int, int]:
+    def _calculate_shipping(self, subtotal_cents: int) -> int:
         self._assert_pricing_configured()
         # Flat rate, waived at/above the free-shipping threshold. A threshold
         # of None or 0 means "disabled" (no subtotal waives it).
         threshold = self.free_shipping_threshold_cents
         if threshold and subtotal_cents >= threshold:
-            shipping_cents = 0
-        else:
-            shipping_cents = self.flat_shipping_cents
+            return 0
+        return self.flat_shipping_cents
 
-        # Exact decimal arithmetic, rounded half-up to a whole minor unit.
-        tax_cents = int(
-            (Decimal(subtotal_cents) * self.tax_rate_percent / 100).quantize(
-                Decimal(1), rounding=ROUND_HALF_UP
+    async def _calculate_tax(
+        self, *, order_items_data: list[dict], locked_products: dict, subtotal_cents: int, shipping_cents: int
+    ) -> TaxResult:
+        """Asks the tax engine. An engine either returns a result it stands behind or raises."""
+        lines = [
+            TaxLine(
+                product_id=item["product_id"],
+                quantity=item["quantity"],
+                unit_price_paise=item["price_cents_snapshot"],
+                classification_id=locked_products[item["product_id"]].tax_classification_id,
+            )
+            for item in order_items_data
+        ]
+        india_today = datetime.now(timezone(timedelta(hours=5, minutes=30))).date()  # no DST in India
+        result = await self.tax_engine.calculate(
+            TaxRequest(
+                lines=lines,
+                subtotal_paise=subtotal_cents,
+                shipping_paise=shipping_cents,
+                as_of=india_today,
             )
         )
-        return shipping_cents, tax_cents
+        if not isinstance(result, TaxResult):  # defence in depth: never trust "something else"
+            raise CheckoutNotConfiguredError()
+        return result
 
     @staticmethod
     def _request_fingerprint(
@@ -305,11 +339,20 @@ class OrderService:
                 new_subtotal_cents=subtotal_cents,
             )
 
+        # Shipping and tax are decided BEFORE any stock change, so a configuration or tax problem
+        # leaves no mutation behind (and the request's transaction is rolled back anyway).
+        shipping_cents = self._calculate_shipping(subtotal_cents)
+        tax_result = await self._calculate_tax(
+            order_items_data=order_items_data,
+            locked_products=locked_products,
+            subtotal_cents=subtotal_cents,
+            shipping_cents=shipping_cents,
+        )
+        tax_cents = tax_result.tax_paise
+        total_cents = subtotal_cents + shipping_cents + tax_cents
+
         # One UPDATE for every product's stock, not one per cart line.
         await self.product_repository.adjust_stock_many(locked_products, stock_deltas)
-
-        shipping_cents, tax_cents = self._calculate_shipping_and_tax(subtotal_cents)
-        total_cents = subtotal_cents + shipping_cents + tax_cents
 
         order = await self.repository.create_order(
             user_id=user_id,
@@ -322,6 +365,7 @@ class OrderService:
             subtotal_cents=subtotal_cents,
             shipping_cents=shipping_cents,
             tax_cents=tax_cents,
+            tax_snapshot=tax_result.snapshot,
             total_cents=total_cents,
             **shipping_columns,
         )

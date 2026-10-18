@@ -58,8 +58,10 @@ class StripePaymentProvider(PaymentProvider):
         )
 
     async def create_refund(
-        self, *, provider_payment_id: str, amount_cents: int, idempotency_key: str
+        self, *, provider_payment_id: str, amount_cents: int, currency: str, idempotency_key: str
     ) -> RefundResult:
+        # A refund inherits the PaymentIntent's currency; Stripe takes no currency parameter. The
+        # caller passes the ORIGINAL payment currency and we check Stripe agrees with it.
         try:
             refund = await asyncio.to_thread(
                 stripe.Refund.create,
@@ -73,6 +75,7 @@ class StripePaymentProvider(PaymentProvider):
             provider_refund_id=refund.id,
             amount_cents=refund.amount,
             status=refund.status,
+            currency=(getattr(refund, "currency", None) or "").lower() or None,
         )
 
     def verify_and_parse_webhook(
@@ -85,9 +88,13 @@ class StripePaymentProvider(PaymentProvider):
         except (stripe.SignatureVerificationError, ValueError) as exc:
             raise InvalidWebhookSignatureError() from exc
 
-        payment_intent_id = event["data"]["object"]["id"]
+        obj = event["data"]["object"]
+        currency = obj.get("currency")
         return WebhookEvent(
             event_id=event["id"],
             event_type=event["type"],
-            provider_payment_id=payment_intent_id,
+            provider_payment_id=obj["id"],
+            amount=obj.get("amount"),
+            amount_received=obj.get("amount_received"),
+            currency=currency.lower() if isinstance(currency, str) else None,
         )

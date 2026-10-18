@@ -98,6 +98,12 @@ class Settings(BaseSettings):
     # never produces a tax amount. Takes precedence over TAX_RATE_PERCENT if both are set.
     tax_calculation_enabled: bool = False
 
+    # Currencies this deployment's Stripe account is allowed to charge, comma separated
+    # (e.g. "inr" or "usd,eur"). EMPTY by default, so payments are refused until the client
+    # confirms in their own Stripe account which currencies it can actually charge. Only
+    # currencies verified by this platform (app/core/money.py) are accepted here.
+    payment_currencies_enabled: str = ""
+
     # Live Stripe keys (sk_live_/rk_live_) are refused unless this is true. Keep false: payment
     # currency handling (INR) is not finished. Test keys are unaffected.
     live_payments_enabled: bool = False
@@ -192,6 +198,19 @@ class Settings(BaseSettings):
     # Retry delay after attempt n: base * 2**(n-1), capped.
     jobs_retry_base_seconds: float = Field(default=30.0, ge=0)
     jobs_retry_max_seconds: float = Field(default=3600.0, ge=0)
+
+    @model_validator(mode="after")
+    def _payment_currencies_are_valid(self) -> "Settings":
+        from app.core.money import CURRENCIES
+
+        for code in self.enabled_payment_currencies():
+            currency = CURRENCIES.get(code)
+            if currency is None or not currency.payment_verified:
+                raise ValueError(f"payment_currencies_enabled: '{code}' is not a currency verified for payments")
+        return self
+
+    def enabled_payment_currencies(self) -> set[str]:
+        return {c.strip().lower() for c in self.payment_currencies_enabled.split(",") if c.strip()}
 
     @model_validator(mode="after")
     def _threshold_needs_a_basis(self) -> "Settings":

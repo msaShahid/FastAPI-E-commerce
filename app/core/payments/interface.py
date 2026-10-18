@@ -15,6 +15,11 @@ class WebhookEvent:
     event_id: str
     event_type: str  # e.g. "payment_intent.succeeded"
     provider_payment_id: str
+    # What the provider says was charged: integer minor units and lower-case ISO currency.
+    # None means "not provided"; the payment service treats that as unverifiable, never as OK.
+    amount: int | None = None
+    amount_received: int | None = None
+    currency: str | None = None
 
 
 @dataclass
@@ -22,9 +27,17 @@ class RefundResult:
     provider_refund_id: str
     amount_cents: int
     status: str  # provider-native status, e.g. Stripe's "succeeded"
+    currency: str | None = None
 
 
 class PaymentProvider(ABC):
+    def supports_currency(self, code: str) -> bool:
+        """Whether payments in this currency are verified for the integration (see app/core/money.py)."""
+        from app.core.money import CURRENCIES
+
+        currency = CURRENCIES.get(code.strip().lower())
+        return bool(currency and currency.payment_verified)
+
     @abstractmethod
     async def create_payment_intent(
         self, *, amount_cents: int, currency: str, metadata: dict, idempotency_key: str
@@ -45,6 +58,6 @@ class PaymentProvider(ABC):
 
     @abstractmethod
     async def create_refund(
-        self, *, provider_payment_id: str, amount_cents: int, idempotency_key: str
+        self, *, provider_payment_id: str, amount_cents: int, currency: str, idempotency_key: str
     ) -> RefundResult:
         raise NotImplementedError

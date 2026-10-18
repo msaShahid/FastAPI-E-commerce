@@ -93,6 +93,15 @@ class Settings(BaseSettings):
     # written approval, recorded in source_reference.
     tax_master_allow_self_approval: bool = False
 
+    # Selects the future GST engine (see app/modules/tax/engine.py). Default false. Today the
+    # engine only checks readiness and then refuses (HTTP 503 tax_engine_not_implemented): it
+    # never produces a tax amount. Takes precedence over TAX_RATE_PERCENT if both are set.
+    tax_calculation_enabled: bool = False
+
+    # Live Stripe keys (sk_live_/rk_live_) are refused unless this is true. Keep false: payment
+    # currency handling (INR) is not finished. Test keys are unaffected.
+    live_payments_enabled: bool = False
+
     # When true, a product must point at an APPROVED tax classification to be activated
     # or ordered; checkout refuses anything else (HTTP 422, product_tax_unassigned).
     # Default false keeps the pre-GST behaviour. The GST calculation phase turns it on.

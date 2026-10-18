@@ -69,6 +69,7 @@ class OrderRead(BaseModel):
     shipping_cents: int
     tax_cents: int
     total_cents: int
+    currency: str | None = None
     shipping_snapshot: dict | None = None
     tax_snapshot: dict | None = None
     shipping_address: ShippingAddressRead
@@ -92,6 +93,7 @@ class OrderRead(BaseModel):
             "shipping_cents": order.shipping_cents,
             "tax_cents": order.tax_cents,
             "total_cents": order.total_cents,
+            "currency": order.currency,
             "shipping_snapshot": order.shipping_snapshot,
             "tax_snapshot": order.tax_snapshot,
             "items": order.items,

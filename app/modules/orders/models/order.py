@@ -25,6 +25,7 @@ class Order(Base, TimestampMixin):
         UniqueConstraint(
             "guest_token", "idempotency_key", name="uq_orders_guest_token_idempotency_key"
         ),
+        CheckConstraint("currency IS NULL OR currency ~ '^[a-z]{3}$'", name="ck_orders_currency_format"),
         CheckConstraint(
             "(user_id IS NOT NULL AND guest_token IS NULL AND guest_email IS NULL) OR "
             "(user_id IS NULL AND guest_token IS NOT NULL AND guest_email IS NOT NULL)",
@@ -72,6 +73,10 @@ class Order(Base, TimestampMixin):
     total_cents: Mapped[int] = mapped_column(Integer)
     # How shipping_cents was decided (policy values in force at checkout). Frozen
     # with the order; later settings changes never alter it. NULL on legacy orders.
+    # ISO 4217 code (lower case) of every *_cents amount on this order. Copied from the store
+    # currency when the order is created and immutable afterwards (database trigger). NULL on
+    # orders created before currencies were recorded: their currency is unknown, not assumed.
+    currency: Mapped[str | None] = mapped_column(String(3), default=None)
     shipping_snapshot: Mapped[dict | None] = mapped_column(JSONB, default=None)
     # How tax_cents was decided: which engine, its inputs/outputs, and whether it is a GST
     # calculation (`gst_calculated`). Frozen with the order. NULL on legacy orders.

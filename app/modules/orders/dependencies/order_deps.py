@@ -12,6 +12,7 @@ from app.modules.orders.repositories.order_repository import OrderRepository
 from app.modules.orders.services.order_service import OrderService
 from app.modules.products.dependencies.product_deps import get_product_repository
 from app.modules.products.repositories.product_repository import ProductRepository
+from app.modules.store.repositories.store_repository import StoreRepository
 from app.modules.tax.engine import GstTaxEngine, NotConfiguredTaxEngine, TaxEngine
 from app.modules.tax.repositories.tax_repository import TaxRepository
 
@@ -45,6 +46,7 @@ def get_order_service(
     product_repository: Annotated[ProductRepository, Depends(get_product_repository)],
     address_repository: Annotated[AddressRepository, Depends(get_address_repository)],
     tax_engine: Annotated[TaxEngine, Depends(get_tax_engine)],
+    db: DbSession,
 ) -> OrderService:
     # Settings are read per request (not at import) and passed explicitly. Unset
     # shipping/tax stay None, which makes checkout refuse instead of charging 0.
@@ -60,6 +62,7 @@ def get_order_service(
         tax_rate_percent=settings.tax_rate_percent,
         require_tax_classification=settings.tax_classification_required,
         tax_engine=tax_engine,
+        store_repository=StoreRepository(db),
     )
 
 

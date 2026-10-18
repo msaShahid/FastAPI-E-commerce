@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
 
+from app.core.money import StoreCurrencyNotConfiguredError, get_currency
 from app.modules.addresses.exceptions.address_exceptions import AddressNotFoundError
 from app.modules.addresses.repositories.address_repository import AddressRepository
 from app.modules.cart.exceptions.cart_exceptions import (
@@ -55,6 +56,8 @@ class OrderService:
         tax_rate_percent: Decimal | float | str | None = None,
         require_tax_classification: bool = False,
         tax_engine: TaxEngine | None = None,
+        currency: str | None = None,
+        store_repository=None,
     ) -> None:
         self.repository = repository
         self.cart_repository = cart_repository
@@ -63,6 +66,9 @@ class OrderService:
         self.flat_shipping_cents = flat_shipping_cents
         self.free_shipping_threshold_cents = free_shipping_threshold_cents
         self.free_shipping_threshold_basis = free_shipping_threshold_basis
+        # The store currency: a fixed value (tests, scripts) or read from the store settings.
+        self.currency = currency
+        self.store_repository = store_repository
         # When true, every product in the cart must have an APPROVED tax classification.
         self.require_tax_classification = require_tax_classification
         # Decimal, never float: tax is money. None = not configured.
@@ -85,7 +91,16 @@ class OrderService:
         if self.free_shipping_threshold_cents and self.free_shipping_threshold_basis is None:
             raise CheckoutNotConfiguredError()  # a threshold without a stated basis is ambiguous
 
-    def _shipping_snapshot(self, shipping_cents: int) -> dict:
+    async def _resolve_currency(self):
+        """The store currency, or a 503: an order is never created without an explicit currency."""
+        code = self.currency
+        if code is None and self.store_repository is not None:
+            code = await self.store_repository.get_currency()
+        if code is None:
+            raise StoreCurrencyNotConfiguredError()
+        return get_currency(code)
+
+    def _shipping_snapshot(self, shipping_cents: int, currency=None) -> dict:
         """Frozen record of the shipping policy used for one order (integer paise)."""
         return {
             "version": 1,
@@ -94,6 +109,8 @@ class OrderService:
             "flat_charge_paise": self.flat_shipping_cents,
             "free_threshold_paise": self.free_shipping_threshold_cents or None,
             "threshold_basis": self.free_shipping_threshold_basis,
+            "currency": currency.code if currency else None,
+            "minor_unit_exponent": currency.exponent if currency else None,
             "applied_paise": shipping_cents,
             "free_shipping_applied": bool(
                 self.free_shipping_threshold_cents and shipping_cents == 0 and self.flat_shipping_cents
@@ -257,6 +274,7 @@ class OrderService:
 
         # Fail before taking any lock or touching stock if totals can't be computed.
         self._assert_pricing_configured()
+        currency = await self._resolve_currency()
 
         shipping_columns = await self._resolve_shipping_snapshot(
             user_id=user_id,
@@ -360,12 +378,17 @@ class OrderService:
             guest_email=guest_email if is_guest else None,
             idempotency_key=idempotency_key,
             request_hash=fingerprint,
-            shipping_snapshot=self._shipping_snapshot(shipping_cents),
+            currency=currency.code,
+            shipping_snapshot=self._shipping_snapshot(shipping_cents, currency),
             items=order_items_data,
             subtotal_cents=subtotal_cents,
             shipping_cents=shipping_cents,
             tax_cents=tax_cents,
-            tax_snapshot=tax_result.snapshot,
+            tax_snapshot={
+                **tax_result.snapshot,
+                "currency": currency.code,
+                "minor_unit_exponent": currency.exponent,
+            },
             total_cents=total_cents,
             **shipping_columns,
         )

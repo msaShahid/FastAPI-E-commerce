@@ -1,8 +1,10 @@
 import logging
 from uuid import UUID
 
+from app.core.config import get_settings
 from app.core.jobs import JobQueue
 from app.core.payments.interface import PaymentProvider, WebhookEvent
+from app.modules.audit.services.audit_service import AuditService
 from app.modules.orders.exceptions.order_exceptions import (
     InvalidStatusTransitionError,
     OrderNotFoundError,
@@ -10,6 +12,7 @@ from app.modules.orders.exceptions.order_exceptions import (
 from app.modules.orders.models.order import Order
 from app.modules.orders.services.order_service import OrderService
 from app.modules.payments.exceptions.payment_exceptions import (
+    LivePaymentsDisabledError,
     OrderNotPayableError,
     OrderNotRefundableError,
 )
@@ -49,6 +52,7 @@ class PaymentService:
         provider: PaymentProvider,
         currency: str = DEFAULT_CURRENCY,
         job_queue: JobQueue | None = None,
+        audit: AuditService | None = None,
     ) -> None:
         self.repository = repository
         self.order_service = order_service
@@ -57,6 +61,22 @@ class PaymentService:
         # Slow follow-up work (emails ...) is queued, never done inside the
         # webhook request. None only in unit tests that do not care.
         self.job_queue = job_queue
+        # Payment events that need a human (late payment, unmatched payment) are written to the
+        # audit log so operations can list them via GET /audit-logs, not only to a log line.
+        self.audit = audit
+
+    @staticmethod
+    def _assert_live_payments_allowed() -> None:
+        """A live Stripe key is refused unless LIVE_PAYMENTS_ENABLED is set. Test keys are unaffected."""
+        settings = get_settings()
+        if settings.stripe_secret_key.startswith(("sk_live_", "rk_live_")) and not settings.live_payments_enabled:
+            raise LivePaymentsDisabledError()
+
+    async def _flag_for_review(self, action: str, payment_id, details: dict) -> None:
+        if self.audit is not None:
+            await self.audit.log(
+                actor_user_id=None, action=action, target_type="payment", target_id=payment_id, details=details
+            )
 
     async def create_payment_for_order(
         self, *, order_id: UUID, user_id: UUID
@@ -67,6 +87,7 @@ class PaymentService:
         is deliberate here, not a placeholder -- admins use a different
         path for anything that touches somebody else's money).
         """
+        self._assert_live_payments_allowed()
         order = await self.order_service.get_order(
             order_id=order_id, user_id=user_id, is_admin=False
         )
@@ -150,6 +171,7 @@ class PaymentService:
         when it didn't. Not reachable for an order that was never paid
         (or one already fulfilled-and-refunded): see ALLOWED_TRANSITIONS.
         """
+        self._assert_live_payments_allowed()
         order = await self.order_service.get_by_id_unchecked(order_id)
         if order is None:
             raise OrderNotFoundError(order_id)
@@ -230,6 +252,9 @@ class PaymentService:
                 "payment_intent.succeeded for unknown provider_payment_id=%s",
                 provider_payment_id,
             )
+            await self._flag_for_review(
+                "payment.unmatched_success", None, {"provider_payment_id": provider_payment_id}
+            )
             return
 
         if payment.status != PaymentStatus.SUCCEEDED:
@@ -258,6 +283,19 @@ class PaymentService:
                 payment.id,
                 order.id,
                 order.status.value,
+            )
+            # Money was taken for an order that is not PENDING: record it for a human (no automatic
+            # refund or fulfilment is done; that policy is a later decision).
+            await self._flag_for_review(
+                "payment.late_unreconciled",
+                payment.id,
+                {
+                    "order_id": str(order.id),
+                    "order_status": order.status.value,
+                    "provider_payment_id": provider_payment_id,
+                    "amount_cents": payment.amount_cents,
+                    "currency": payment.currency,
+                },
             )
             return
 

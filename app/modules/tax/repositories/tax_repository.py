@@ -62,6 +62,33 @@ class TaxRepository:
         ).scalar_one()
         return count > 0
 
+    async def classification_statuses(self, ids) -> dict[int, str]:
+        ids = list(ids)
+        if not ids:
+            return {}
+        rows = await self.db.execute(
+            select(TaxClassification.id, TaxClassification.status).where(TaxClassification.id.in_(ids))
+        )
+        return {cid: status for cid, status in rows.all()}
+
+    async def approved_rules_covering(self, ids, as_of: date) -> "dict[int, list[TaxRule]]":  # noqa: UP037
+        """Approved rules per classification whose [from, to) range contains `as_of`."""
+        ids = list(ids)
+        if not ids:
+            return {}
+        rows = await self.db.execute(
+            select(TaxRule).where(
+                TaxRule.classification_id.in_(ids),
+                TaxRule.status == "approved",
+                TaxRule.effective_from <= as_of,
+                or_(TaxRule.effective_to.is_(None), TaxRule.effective_to > as_of),
+            )
+        )
+        found: dict[int, list[TaxRule]] = {}
+        for rule in rows.scalars().all():
+            found.setdefault(rule.classification_id, []).append(rule)
+        return found
+
     async def count_products_using(self, classification_id: int) -> int:
         return (
             await self.db.execute(

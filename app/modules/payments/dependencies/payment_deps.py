@@ -8,6 +8,7 @@ from app.core.database import DbSession
 from app.core.jobs import JobQueue
 from app.core.payments.interface import PaymentProvider
 from app.core.payments.stripe_provider import StripePaymentProvider
+from app.modules.audit.dependencies.audit_deps import AuditServiceDep
 from app.modules.orders.dependencies.order_deps import get_order_service
 from app.modules.orders.services.order_service import OrderService
 from app.modules.payments.repositories.payment_repository import PaymentRepository
@@ -32,8 +33,9 @@ def get_payment_service(
     order_service: Annotated[OrderService, Depends(get_order_service)],
     provider: Annotated[PaymentProvider, Depends(get_payment_provider)],
     db: DbSession,
+    audit: AuditServiceDep,
 ) -> PaymentService:
-    return PaymentService(repository, order_service, provider, job_queue=JobQueue(db))
+    return PaymentService(repository, order_service, provider, job_queue=JobQueue(db), audit=audit)
 
 
 PaymentServiceDep = Annotated[PaymentService, Depends(get_payment_service)]

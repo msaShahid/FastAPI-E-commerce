@@ -1,4 +1,4 @@
-from app.core.exceptions import InvalidStateError, NotFoundError
+from app.core.exceptions import InvalidStateError, NotFoundError, ServiceUnavailableError
 
 
 class PaymentNotFoundError(NotFoundError):
@@ -14,3 +14,10 @@ class OrderNotPayableError(InvalidStateError):
 class OrderNotRefundableError(InvalidStateError):
     def __init__(self, message: str = "This order cannot be refunded") -> None:
         super().__init__(message)
+
+
+class LivePaymentsDisabledError(ServiceUnavailableError):
+    code = "live_payments_disabled"
+
+    def __init__(self) -> None:
+        super().__init__("Live payments are disabled")

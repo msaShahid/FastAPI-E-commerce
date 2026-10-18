@@ -415,8 +415,8 @@ class TaxService:
     # ------------------------------------------------------------ readiness report
     async def readiness(self, as_of=None) -> ReadinessRead:
         """Everything still missing before GST could be activated. Read-only; changes nothing."""
-        from app.modules.orders.models.order import Order
-        from app.modules.payments.services.payment_service import DEFAULT_CURRENCY
+        from app.core.money import CURRENCIES
+        from app.modules.store.repositories.store_repository import StoreRepository
 
         settings = get_settings()
         as_of = as_of or india_today()
@@ -430,13 +430,23 @@ class TaxService:
             blockers.append(ReadinessBlocker(
                 code="gst_calculator_not_implemented", detail="The GST calculator has not been implemented yet"))
 
+        # Payments are in the STORE's currency (INR is never assumed). It must be set, verified for
+        # the payment integration, and enabled by the client for their Stripe account.
+        store_currency = await StoreRepository(self.repo.db).get_currency()
         payment_blockers = []
-        if DEFAULT_CURRENCY.lower() != "inr":
+        if store_currency is None:
             payment_blockers.append(ReadinessBlocker(
-                code="payment_currency_not_inr", detail=f"Payments are created in {DEFAULT_CURRENCY.upper()}, not INR"))
-        if not hasattr(Order, "currency"):
-            payment_blockers.append(ReadinessBlocker(
-                code="orders_have_no_currency", detail="Orders do not record a currency"))
+                code="store_currency_not_configured", detail="The store currency has not been set"))
+        else:
+            currency = CURRENCIES.get(store_currency)
+            if currency is None or not currency.payment_verified:
+                payment_blockers.append(ReadinessBlocker(
+                    code="payment_currency_not_verified",
+                    detail=f"Payments in '{store_currency}' are not verified for the payment integration"))
+            elif store_currency not in settings.enabled_payment_currencies():
+                payment_blockers.append(ReadinessBlocker(
+                    code="payment_currency_not_enabled",
+                    detail=f"'{store_currency}' is not in PAYMENT_CURRENCIES_ENABLED for this deployment"))
         return ReadinessRead(
             as_of=as_of,
             ready=not blockers,
@@ -449,7 +459,7 @@ class TaxService:
             },
             payments=PaymentReadiness(
                 live_payments_enabled=settings.live_payments_enabled,
-                payment_currency=DEFAULT_CURRENCY.lower(),
+                payment_currency=store_currency,
                 blockers=payment_blockers,
             ),
         )

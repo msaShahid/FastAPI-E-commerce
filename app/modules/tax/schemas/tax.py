@@ -220,7 +220,7 @@ class ReadinessBlocker(BaseModel):
 
 class PaymentReadiness(BaseModel):
     live_payments_enabled: bool
-    payment_currency: str
+    payment_currency: str | None
     blockers: list[ReadinessBlocker]
 
 

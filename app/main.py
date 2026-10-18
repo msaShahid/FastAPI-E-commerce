@@ -31,6 +31,7 @@ from app.modules.orders.api.router import order_router
 from app.modules.payments.api.router import payment_router
 from app.modules.playground.api.router import playground_router
 from app.modules.products.api.router import product_router
+from app.modules.store.api.router import store_router
 from app.modules.tax.api.router import tax_router
 from app.modules.users.api.router import users_router
 
@@ -101,6 +102,7 @@ app.include_router(order_router, prefix=settings.api_v1_prefix)
 app.include_router(payment_router, prefix=settings.api_v1_prefix)
 app.include_router(audit_router, prefix=settings.api_v1_prefix)
 app.include_router(tax_router, prefix=settings.api_v1_prefix)
+app.include_router(store_router, prefix=settings.api_v1_prefix)
 
 
 app.include_router(graphql_router, prefix="/graphql")

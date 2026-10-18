@@ -21,6 +21,7 @@ from sqlalchemy.dialects.postgresql import ExcludeConstraint
 import app.main  # noqa: F401  (imports every model so the metadata is complete)
 from app.core.config import get_settings
 from app.core.database import Base
+from app.modules.store.models.guard import CURRENCY_TRIGGERS
 from app.modules.tax.models.guard import GUARDED_TABLES, PRODUCT_TAX_TRIGGERS, trigger_name
 
 
@@ -64,7 +65,7 @@ async def main(allow: set[str]) -> int:
         want[trigger_name(table)] = table
         if trigger_name(table) in present:
             have.add(trigger_name(table))
-    for name, (table, _when, _function) in PRODUCT_TAX_TRIGGERS.items():
+    for name, (table, _when, _function) in {**PRODUCT_TAX_TRIGGERS, **CURRENCY_TRIGGERS}.items():
         want[name] = table
         if name in present:
             have.add(name)

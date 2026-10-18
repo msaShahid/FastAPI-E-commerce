@@ -67,8 +67,48 @@ migration, so a migrated database lacks them. CI reports them via
 - Downgrading `b8d4f1a6c230` drops the two columns and therefore any assignments: back up first.
 - Open: `unit` is not checked against an official list (a professional decision).
 
+### Phase 2.4 tax-engine boundary (done; NO GST is calculated)
+- `app/modules/tax/engine.py`: checkout asks a `TaxEngine` for tax. An engine returns a validated
+  `TaxResult` (amount + audit snapshot) or **raises**; it can never return nothing or an implicit zero.
+  Engines: `NotConfiguredTaxEngine` (default; checkout 503), `FlatInterimTaxEngine` (the pre-GST
+  behaviour: one configured percentage on the merchandise subtotal; snapshot says
+  `gst_calculated: false`), `GstTaxEngine` (placeholder: readiness checks, then 503
+  `tax_engine_not_implemented`; it never returns a result).
+- Selection: `TAX_CALCULATION_ENABLED=true` -> GST engine (takes precedence); else a configured
+  `TAX_RATE_PERCENT` -> interim engine; else not configured. Default false/unset = checkout refuses.
+- Readiness (read-only) per cart line: missing classification, unapproved classification, no approved
+  rule effective on the date, ambiguous rule, unknown treatment -> 422 `tax_calculation_blocked`
+  (product ids + reasons). The "as of" date is the India date (UTC+05:30); whether the order date is the
+  right basis is a tax-professional decision.
+- Tax is decided before any stock change; failures roll back with no order and no stock mutation.
+- `orders.tax_snapshot` (JSONB, migration `c3d8a2e6f914`): engine, `gst_calculated`, rate, taxable value,
+  tax, rounding, per-line classification ids. Legacy orders keep NULL. Order totals reconcile
+  (total = subtotal + shipping + tax); shipping is not taxed by the interim engine.
+- The engine module only reads the tax master; product and checkout requests have no write path to it
+  (and approved rows are protected by database triggers).
+- Payment safeguards added: `LIVE_PAYMENTS_ENABLED` (default false) refuses live Stripe keys
+  (`sk_live_`/`rk_live_`) for creating payments and refunds (503 `live_payments_disabled`); test keys are
+  unaffected. Late payments (order no longer pending) and payments for unknown intents are written to the
+  audit log (`payment.late_unreconciled`, `payment.unmatched_success`), visible in `GET /audit-logs`.
+
+### Payment-readiness blockers (live payments must stay disabled)
+1. **Currency:** orders have no currency; payments are hard-coded `usd`, so an INR order would create a
+   USD intent. Needs `orders.currency`, payment currency taken from the order, a minor-unit table and
+   confirmation that the Stripe account supports INR. NOT fixed here (payment-currency phase).
+2. **Late payments:** now visible in the audit log but nothing acts on them (no refund, no fulfilment
+   policy). The stale-order job cancels orders without cancelling the Stripe intent, so a customer can pay
+   an order that was just cancelled. Needs the reservation/expiry phase and a business policy.
+3. **Admin status PATCH:** can still mark an order paid with no payment, refunded with no Stripe refund,
+   and cancel without restocking. Proposed fix (admin-status phase): remove paid/refunded from PATCH, route
+   cancellation through a service that restocks, refunds only via the refund endpoint.
+4. **Webhook:** no amount/currency check against the order; unrecognised events are dropped; refunds or
+   disputes made in the Stripe dashboard are not reconciled; refunds are two columns, not a table.
+5. **Guests cannot pay** (payments require an account).
+6. The interim tax engine is not a GST calculation; checkout totals are not tax-compliant until the GST engine.
+7. Known schema gap: the two XOR constraints (see above).
+
 ### Next
-Phase 2.4 (product assignment) then 2.4/2.5 need owner decisions: pricing mode, business
+Phase 2.5 (product assignment) then 2.4/2.5 need owner decisions: pricing mode, business
 registrations, approved classifications/rates, place of supply, shipping tax, rounding.
 
 ## Milestone 1: critical checkout defects (complete, awaiting review)

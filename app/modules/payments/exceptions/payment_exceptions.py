@@ -31,3 +31,11 @@ class PaymentInconsistentError(InvalidStateError):
 
     def __init__(self, message: str = "The payment does not match the order") -> None:
         super().__init__(message)
+
+
+
+class ReconciliationNotOpenError(InvalidStateError):
+    code = "reconciliation_not_open"
+
+    def __init__(self) -> None:
+        super().__init__("This reconciliation record does not exist or is already resolved")

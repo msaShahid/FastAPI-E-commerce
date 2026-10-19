@@ -2,7 +2,6 @@ from uuid import UUID
 
 from fastapi import APIRouter, Header, Request, status
 
-from app.modules.audit.dependencies.audit_deps import AuditServiceDep
 from app.modules.auth.dependencies.auth import AdminUser, CurrentUser
 from app.modules.payments.dependencies.payment_deps import PaymentServiceDep
 from app.modules.payments.schemas.payment import PaymentCreate, PaymentRead, RefundRead
@@ -37,42 +36,21 @@ async def create_payment(
 
 
 @payment_router.post(
-    "/{order_id}/refund", response_model=RefundRead, status_code=status.HTTP_200_OK
+    "/{order_id}/refund", response_model=RefundRead, status_code=status.HTTP_202_ACCEPTED
 )
-async def refund_payment(
+async def request_refund(
     order_id: UUID,
     admin: AdminUser,
     service: PaymentServiceDep,
-    audit_service: AuditServiceDep,
 ) -> RefundRead:
     """
-    Admin-only. Issues a real Stripe refund for the order's successful
-    payment and moves the order to `refunded` only once Stripe confirms
-    it -- see PaymentService.refund_payment.
+    Admin-only. REQUESTS a refund of the order's successful payment; it does not refund anything yet.
+    A background job asks the payment provider (with a retry-safe idempotency key), and the order is
+    marked `refunded` only after the provider CONFIRMS the refund. Poll GET /admin/refunds (or the
+    order) for the outcome. Asking again returns the same refund.
     """
-    payment, order = await service.refund_payment(
-        order_id=order_id, admin_user_id=admin.id
-    )
-
-    await audit_service.log(
-        actor_user_id=admin.id,
-        action="payment.refunded",
-        target_type="payment",
-        target_id=payment.id,
-        details={
-            "order_id": str(order.id),
-            "refunded_amount_cents": payment.refunded_amount_cents,
-            "provider_refund_id": payment.provider_refund_id,
-        },
-    )
-
-    return RefundRead(
-        payment_id=payment.id,
-        order_id=order.id,
-        status=payment.status,
-        refunded_amount_cents=payment.refunded_amount_cents,
-        provider_refund_id=payment.provider_refund_id,
-    )
+    refund, _created = await service.request_refund(order_id=order_id, admin_user_id=admin.id)
+    return RefundRead.model_validate(refund)
 
 
 @payment_router.post("/webhook", status_code=status.HTTP_200_OK)

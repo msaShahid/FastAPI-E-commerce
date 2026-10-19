@@ -10,23 +10,21 @@ from app.core.money import (
     get_currency,
     to_stripe_amount,
 )
+from app.core.payments.exceptions import PaymentProviderError
 from app.core.payments.interface import PaymentProvider, WebhookEvent
 from app.modules.audit.services.audit_service import AuditService
-from app.modules.orders.exceptions.order_exceptions import (
-    InvalidStatusTransitionError,
-    OrderNotFoundError,
-)
 from app.modules.orders.models.order import Order
 from app.modules.orders.services.order_service import OrderService
 from app.modules.payments.exceptions.payment_exceptions import (
     LivePaymentsDisabledError,
     OrderNotPayableError,
-    OrderNotRefundableError,
     PaymentInconsistentError,
 )
 from app.modules.payments.jobs import SEND_ORDER_CONFIRMATION, order_confirmation_dedupe_key
 from app.modules.payments.models.payment import Payment
 from app.modules.payments.repositories.payment_repository import PaymentRepository
+from app.modules.payments.services.lifecycle_service import OrderLifecycleService
+from app.shared.enums.lifecycle import ReconciliationKind
 from app.shared.enums.order_status import OrderStatus
 from app.shared.enums.payment_status import PaymentStatus
 
@@ -58,6 +56,8 @@ class PaymentService:
         provider: PaymentProvider,
         job_queue: JobQueue | None = None,
         audit: AuditService | None = None,
+        lifecycle: OrderLifecycleService | None = None,
+        commit=None,
     ) -> None:
         self.repository = repository
         self.order_service = order_service
@@ -68,6 +68,14 @@ class PaymentService:
         # Payment events that need a human (late payment, unmatched payment) are written to the
         # audit log so operations can list them via GET /audit-logs, not only to a log line.
         self.audit = audit
+        # Order/payment lifecycle operations (cancel, refund, mark paid) and the commit hook used to end
+        # a transaction BEFORE any provider call. Both None only in unit tests with in-memory fakes.
+        self.lifecycle = lifecycle
+        self._commit_hook = commit
+
+    async def _commit(self) -> None:
+        if self._commit_hook is not None:
+            await self._commit_hook()
 
     @staticmethod
     def _assert_live_payments_allowed() -> None:
@@ -85,33 +93,26 @@ class PaymentService:
             raise CurrencyNotPayableError(currency.code, "payment_currency_not_enabled")
         return currency
 
-    async def _flag_for_review(self, action: str, payment_id, details: dict) -> None:
+    async def _flag_for_review(
+        self, action: str, payment_id, details: dict, *, kind: ReconciliationKind | None = None,
+        order_id=None, provider_payment_id: str | None = None, dedupe_key: str | None = None,
+    ) -> None:
+        """Audit-logs the event and, when a `kind` is given, opens ONE reconciliation record for it."""
         if self.audit is not None:
             await self.audit.log(
                 actor_user_id=None, action=action, target_type="payment", target_id=payment_id, details=details
             )
+        if kind is not None and self.lifecycle is not None:
+            key = dedupe_key or f"{kind.value}:{payment_id or provider_payment_id}"
+            await self.lifecycle.reconcile(
+                kind, key, order_id=order_id, provider_payment_id=provider_payment_id or details.get("provider_payment_id"),
+                payment=None if payment_id is None else await self.repository.get_by_id(payment_id), details=details,
+            )
 
-    async def create_payment_for_order(
-        self, *, order_id: UUID, user_id: UUID
-    ) -> tuple[Payment, str]:
-        """
-        Paying for an order is always a self-service action: an admin
-        cannot start a payment on someone else's order (is_admin=False
-        is deliberate here, not a placeholder -- admins use a different
-        path for anything that touches somebody else's money).
-        """
-        self._assert_live_payments_allowed()
-        order = await self.order_service.get_order(
-            order_id=order_id, user_id=user_id, is_admin=False
-        )
-
-        # Lock the order row for the rest of this transaction so two
-        # concurrent requests for the same order (double-click, retry
-        # storm) can't both fall through the "no pending payment yet"
-        # check and each create their own Stripe intent. The second
-        # caller blocks here until the first transaction commits, then
-        # re-reads the now-current state.
-        order = await self.order_service.lock_order_for_update(order.id)
+    async def _plan_payment(self, order_id: UUID):
+        """Phase 1 (one short transaction): lock the order, validate everything, decide what to do, then
+        COMMIT so no lock is held while we talk to the payment provider."""
+        order = await self.order_service.lock_order_for_update(order_id)
         self._assert_order_payable(order)
 
         # The payment is built from the ORDER's own currency and total, never from a global
@@ -124,141 +125,111 @@ class PaymentService:
         existing_payments = await self.repository.list_for_order(order.id)
         if any(p.status == PaymentStatus.SUCCEEDED for p in existing_payments):
             raise OrderNotPayableError("This order has already been paid")
-
         reusable = next(
-            (
-                p
-                for p in existing_payments
-                if p.status in (PaymentStatus.PENDING, PaymentStatus.FAILED)
-            ),
-            None,
+            (p for p in existing_payments if p.status in (PaymentStatus.PENDING, PaymentStatus.FAILED)), None
         )
-        if reusable is not None:
-            if reusable.currency != currency.code or reusable.amount_cents != order.total_cents:
-                raise PaymentInconsistentError("The existing payment does not match the order's amount/currency")
-            intent = await self.provider.retrieve_payment_intent(
-                provider_payment_id=reusable.provider_payment_id
-            )
+        if reusable is not None and (
+            reusable.currency != currency.code or reusable.amount_cents != order.total_cents
+        ):
+            raise PaymentInconsistentError("The existing payment does not match the order's amount/currency")
+        plan = {
+            "currency": currency.code,
+            "stripe_amount": stripe_amount,
+            "total": order.total_cents,
+            "reuse_id": reusable.id if reusable else None,
+            "reuse_provider_id": reusable.provider_payment_id if reusable else None,
+            # One Stripe idempotency key per (order, attempt number): a retry or a concurrent request gets
+            # the SAME intent back instead of creating a second one.
+            "key": f"order:{order.id}:intent:{len(existing_payments)}",
+        }
+        await self._commit()
+        return plan
 
+    async def create_payment_for_order(
+        self, *, order_id: UUID, user_id: UUID
+    ) -> tuple[Payment, str]:
+        """
+        Paying for an order is always a self-service action: an admin cannot start a payment on
+        someone else's order (is_admin=False is deliberate here, not a placeholder).
+
+        Three phases, none of which holds a database transaction while waiting on the provider:
+        plan (locked, then committed) -> provider call -> re-lock, re-check, record.
+        """
+        self._assert_live_payments_allowed()
+        order = await self.order_service.get_order(order_id=order_id, user_id=user_id, is_admin=False)
+        plan = await self._plan_payment(order.id)
+
+        if plan["reuse_provider_id"] is not None:
+            intent = await self.provider.retrieve_payment_intent(provider_payment_id=plan["reuse_provider_id"])
+            locked = await self.order_service.lock_order_for_update(order.id)
+            self._assert_order_payable(locked)  # it may have been cancelled/paid while we asked the provider
+            reusable = await self.repository.get_by_id(plan["reuse_id"])
             if intent.status == "succeeded":
-                # Stripe says paid but our webhook hasn't landed yet (or
-                # was lost). Sync locally and refuse a second intent
-                # rather than risk double-charging the customer.
+                # Stripe says paid but our webhook hasn't landed yet (or was lost): refuse a second
+                # intent rather than risk double-charging; the webhook is what confirms payment.
                 if reusable.status != PaymentStatus.SUCCEEDED:
                     await self.repository.update_status(reusable, PaymentStatus.SUCCEEDED)
                 raise OrderNotPayableError("This order has already been paid")
-
             if intent.status in OPEN_INTENT_STATUSES:
-                # The existing intent is still payable -- reuse it
-                # instead of creating a second one the customer could
-                # also complete.
                 if reusable.status != PaymentStatus.PENDING:
                     await self.repository.update_status(reusable, PaymentStatus.PENDING)
                 return reusable, intent.client_secret
-
-            # Terminal on Stripe's side (e.g. canceled) and not already
-            # marked FAILED locally -- fall through and create a new one.
+            # Terminal on the provider's side (e.g. canceled): record it and create a fresh intent.
             if reusable.status != PaymentStatus.FAILED:
                 await self.repository.update_status(reusable, PaymentStatus.FAILED)
+            await self._commit()
 
-        # One Stripe idempotency key per (order, attempt number). A crash
-        # between "Stripe created the intent" and "we saved the Payment
-        # row" is recovered by retrying with the same key: Stripe hands
-        # back the *same* intent instead of creating an orphan. A later,
-        # genuinely new attempt (previous one recorded as FAILED above)
-        # gets a new key because the attempt count has moved on.
-        idempotency_key = f"order:{order.id}:intent:{len(existing_payments)}"
+        return await self._create_new_payment(order.id, plan)
 
-        intent = await self.provider.create_payment_intent(
-            amount_cents=stripe_amount,
-            currency=currency.code,
-            metadata={"order_id": str(order.id)},
-            idempotency_key=idempotency_key,
+    async def _create_new_payment(self, order_id: UUID, plan: dict) -> tuple[Payment, str]:
+        intent = await self.provider.create_payment_intent(  # no transaction is open here
+            amount_cents=plan["stripe_amount"],
+            currency=plan["currency"],
+            metadata={"order_id": str(order_id)},
+            idempotency_key=plan["key"],
         )
+        order = await self.order_service.lock_order_for_update(order_id)
+        try:
+            self._assert_order_payable(order)
+            if any(p.status == PaymentStatus.SUCCEEDED for p in await self.repository.list_for_order(order_id)):
+                raise OrderNotPayableError("This order has already been paid")
+        except OrderNotPayableError:
+            # The order was cancelled or paid while the intent was being created: that intent must not
+            # stay payable. Commit first so no lock is held while we cancel it at the provider.
+            await self._commit()
+            await self._cancel_orphan_intent(intent.provider_payment_id, order_id)
+            raise
+        existing = await self.repository.get_by_provider_payment_id(intent.provider_payment_id)
+        if existing is not None:  # a concurrent request got the same intent (same idempotency key)
+            return existing, intent.client_secret
         payment = await self.repository.create(
-            order_id=order.id,
+            order_id=order_id,
             provider_payment_id=intent.provider_payment_id,
-            amount_cents=order.total_cents,
-            currency=currency.code,
+            amount_cents=plan["total"],
+            currency=plan["currency"],
         )
         return payment, intent.client_secret
 
-    async def refund_payment(
-        self, *, order_id: UUID, admin_user_id: UUID
-    ) -> tuple[Payment, Order]:
-        """
-        Admin-only. Refunds the order's successful payment through Stripe
-        first, and only moves the order to REFUNDED once Stripe confirms
-        the refund -- the order's status must never claim money moved
-        when it didn't. Not reachable for an order that was never paid
-        (or one already fulfilled-and-refunded): see ALLOWED_TRANSITIONS.
-        """
-        self._assert_live_payments_allowed()
-        order = await self.order_service.get_by_id_unchecked(order_id)
-        if order is None:
-            raise OrderNotFoundError(order_id)
-
-        # Lock for the same reason create_payment_for_order does: without
-        # it, a concurrent second refund request for the same order could
-        # both pass the status/payment checks below before either one
-        # updates anything, and Stripe would be asked to refund the same
-        # PaymentIntent twice.
-        order = await self.order_service.lock_order_for_update(order.id)
-
-        if order.status not in (OrderStatus.PAID, OrderStatus.FULFILLED):
-            raise OrderNotRefundableError(
-                f"Cannot refund an order in status {order.status.value}"
+    async def _cancel_orphan_intent(self, provider_payment_id: str, order_id: UUID) -> None:
+        try:
+            await self.provider.cancel_payment_intent(
+                provider_payment_id=provider_payment_id, idempotency_key=f"cancel-orphan:{provider_payment_id}"
             )
-
-        payments = await self.repository.list_for_order(order.id)
-        succeeded_payment = next(
-            (p for p in payments if p.status == PaymentStatus.SUCCEEDED), None
-        )
-        if succeeded_payment is None:
-            raise OrderNotRefundableError("No successful payment found for this order")
-
-        # Refund in the ORIGINAL payment's currency and amount; if the order disagrees, refuse.
-        if order.currency is not None and order.currency != succeeded_payment.currency:
-            raise PaymentInconsistentError("The payment currency does not match the order currency")
-        refund_amount = to_stripe_amount(succeeded_payment.amount_cents, succeeded_payment.currency)
-
-        # One idempotency key per payment being refunded -- a retried
-        # request (client timeout, etc.) hits the same Stripe refund
-        # instead of issuing a second one.
-        idempotency_key = f"order:{order.id}:refund:{succeeded_payment.id}"
-
-        refund = await self.provider.create_refund(
-            provider_payment_id=succeeded_payment.provider_payment_id,
-            amount_cents=refund_amount,
-            currency=succeeded_payment.currency,
-            idempotency_key=idempotency_key,
-        )
-        if refund.amount_cents != refund_amount or refund.currency not in (None, succeeded_payment.currency):
-            # Money has moved, so the refund is recorded as the provider reports it; but a
-            # disagreement with what was requested needs a human.
+        except PaymentProviderError:
             await self._flag_for_review(
-                "payment.refund_mismatch",
-                succeeded_payment.id,
-                {
-                    "requested_amount": refund_amount,
-                    "requested_currency": succeeded_payment.currency,
-                    "refunded_amount": refund.amount_cents,
-                    "refunded_currency": refund.currency,
-                },
+                "payment.orphan_intent", None, {"provider_payment_id": provider_payment_id},
+                kind=ReconciliationKind.CANCEL_UNCERTAIN, order_id=order_id, provider_payment_id=provider_payment_id,
             )
+            await self._commit()
 
-        succeeded_payment = await self.repository.mark_refunded(
-            succeeded_payment,
-            provider_refund_id=refund.provider_refund_id,
-            refunded_amount_cents=refund.amount_cents,
-        )
-
-        updated_order = await self.order_service.update_status(
-            order_id=order.id,
-            new_status=OrderStatus.REFUNDED,
-            changed_by_user_id=admin_user_id,
-        )
-        return succeeded_payment, updated_order
+    async def request_refund(
+        self, *, order_id: UUID, admin_user_id: UUID, payment_id: UUID | None = None
+    ):
+        """Admin-only. Records that a refund was REQUESTED and queues it. Nothing has been refunded yet and
+        the order is not marked refunded: that only happens when the provider CONFIRMS the refund
+        (see OrderLifecycleService.apply_refund_state). Asking twice returns the same refund."""
+        self._assert_live_payments_allowed()
+        return await self.lifecycle.request_refund(order_id, admin_user_id, payment_id=payment_id)
 
     async def handle_webhook(self, *, payload: bytes, signature_header: str) -> None:
         event = self.provider.verify_and_parse_webhook(
@@ -285,6 +256,8 @@ class PaymentService:
             await self._handle_payment_succeeded(event)
         elif event.event_type == FAILED_EVENT:
             await self._handle_payment_failed(event.provider_payment_id)
+        elif event.event_type.startswith("refund."):
+            await self._handle_refund_event(event)
 
     async def _event_matches_payment(self, event: WebhookEvent, payment: Payment) -> bool:
         """Verifies the provider's amount and currency against OUR stored payment and order.
@@ -294,7 +267,9 @@ class PaymentService:
         """
         details = {"provider_payment_id": event.provider_payment_id, "payment_id": str(payment.id)}
         if event.amount is None or event.currency is None:
-            await self._flag_for_review("payment.unverifiable_success", payment.id, details)
+            await self._flag_for_review(
+                "payment.unverifiable_success", payment.id, details, kind=ReconciliationKind.UNVERIFIABLE_PAYMENT
+            )
             return False
         try:
             expected = to_stripe_amount(payment.amount_cents, payment.currency)
@@ -313,6 +288,7 @@ class PaymentService:
                     "received_amount_received": event.amount_received,
                     "received_currency": event.currency,
                 },
+                kind=ReconciliationKind.AMOUNT_MISMATCH,
             )
             return False
         order = await self.order_service.get_by_id_unchecked(payment.order_id)
@@ -323,6 +299,7 @@ class PaymentService:
                 "payment.order_mismatch",
                 payment.id,
                 {**details, "order_total": order.total_cents, "order_currency": order.currency},
+                kind=ReconciliationKind.ORDER_MISMATCH,
             )
             return False
         return True
@@ -331,50 +308,39 @@ class PaymentService:
         provider_payment_id = event.provider_payment_id
         payment = await self.repository.get_by_provider_payment_id(provider_payment_id)
         if payment is None:
-            logger.warning(
-                "payment_intent.succeeded for unknown provider_payment_id=%s",
-                provider_payment_id,
-            )
+            logger.warning("payment_intent.succeeded for unknown provider_payment_id=%s", provider_payment_id)
             await self._flag_for_review(
-                "payment.unmatched_success", None, {"provider_payment_id": provider_payment_id}
+                "payment.unmatched_success", None, {"provider_payment_id": provider_payment_id},
+                kind=ReconciliationKind.UNMATCHED_PAYMENT, provider_payment_id=provider_payment_id,
             )
             return
 
         if not await self._event_matches_payment(event, payment):
             return
 
+        # Lock the ORDER row before deciding anything: cancellation/expiry take the same lock, so a
+        # payment and a cancellation can never both act on the order's old state.
+        order = await self.order_service.repository.get_by_id_for_update(payment.order_id)
         if payment.status != PaymentStatus.SUCCEEDED:
-            await self.repository.update_status(payment, PaymentStatus.SUCCEEDED)
-
-        order = await self.order_service.get_by_id_unchecked(payment.order_id)
+            await self.repository.update_status(payment, PaymentStatus.SUCCEEDED)  # money WAS received
         if order is None:
-            logger.warning(
-                "payment %s succeeded but its order %s no longer exists",
-                payment.id,
-                payment.order_id,
+            logger.warning("payment %s succeeded but its order %s no longer exists", payment.id, payment.order_id)
+            await self._flag_for_review(
+                "payment.order_missing", payment.id, {"order_id": str(payment.order_id)},
+                kind=ReconciliationKind.ORDER_MISMATCH,
             )
             return
 
         if order.status != OrderStatus.PENDING:
-            # Money has been taken (Stripe confirms succeeded) for an
-            # order that is no longer PENDING -- e.g. it was cancelled,
-            # or a second intent for the same order also succeeded. The
-            # order will NOT be moved to PAID. This needs a human to
-            # look at it (likely a refund), so it must not disappear
-            # silently.
+            # Money has been taken for an order that can no longer be paid (cancelled/expired/already
+            # paid by another intent). It is NOT moved to PAID and nothing is fulfilled or refunded
+            # automatically: an administrator reconciles it (explicitly requesting a refund, or not).
             logger.warning(
-                "payment %s succeeded for order %s but order.status=%s "
-                "(not PENDING) -- order was NOT transitioned to PAID; "
-                "this likely needs a manual refund",
-                payment.id,
-                order.id,
-                order.status.value,
+                "payment %s succeeded for order %s in status %s: recorded for reconciliation",
+                payment.id, order.id, order.status.value,
             )
-            # Money was taken for an order that is not PENDING: record it for a human (no automatic
-            # refund or fulfilment is done; that policy is a later decision).
             await self._flag_for_review(
-                "payment.late_unreconciled",
-                payment.id,
+                "payment.late_unreconciled", payment.id,
                 {
                     "order_id": str(order.id),
                     "order_status": order.status.value,
@@ -382,34 +348,45 @@ class PaymentService:
                     "amount_cents": payment.amount_cents,
                     "currency": payment.currency,
                 },
+                kind=ReconciliationKind.LATE_PAYMENT,
             )
             return
 
-        try:
-            await self.order_service.update_status(
-                order_id=order.id,
-                new_status=OrderStatus.PAID,
-                changed_by_user_id=None,
-            )
-        except InvalidStatusTransitionError:
-            logger.warning(
-                "payment %s succeeded but order %s could not transition "
-                "%s -> paid",
-                payment.id,
-                order.id,
-                order.status.value,
-            )
+        if not await self.lifecycle.mark_paid(order, payment):
             return
-
         if self.job_queue is not None:
-            # Saved in this same transaction: the order is PAID and the email
-            # is queued, or (if the commit fails and Stripe re-delivers the
-            # webhook) neither happened yet.
+            # Saved in this same transaction: the order is PAID and the email is queued, or (if the
+            # commit fails and Stripe re-delivers the webhook) neither happened yet.
             await self.job_queue.enqueue(
                 SEND_ORDER_CONFIRMATION,
                 {"order_id": str(order.id)},
                 dedupe_key=order_confirmation_dedupe_key(order.id),
             )
+
+    async def _handle_refund_event(self, event: WebhookEvent) -> None:
+        """A provider refund event: applies the provider-reported state to OUR refund (idempotent).
+        A refund we did not request (e.g. made in the provider's dashboard) is recorded for review."""
+        refund = None
+        if event.provider_refund_id:
+            refund = await self.lifecycle.refunds.get_by_provider_refund_id(event.provider_refund_id)
+        if refund is None and event.provider_payment_id:
+            payment = await self.repository.get_by_provider_payment_id(event.provider_payment_id)
+            if payment is not None:
+                refund = await self.lifecycle.refunds.get_active_for_payment(payment.id)
+        if refund is None:
+            await self._flag_for_review(
+                "payment.unknown_refund", None,
+                {"provider_refund_id": event.provider_refund_id, "provider_payment_id": event.provider_payment_id,
+                 "amount": event.amount, "status": event.refund_status},
+                kind=ReconciliationKind.REFUND_MISMATCH, provider_payment_id=event.provider_payment_id,
+                dedupe_key=f"unknown_refund:{event.provider_refund_id}",
+            )
+            return
+        locked = await self.lifecycle.refunds.get(refund.id, for_update=True)
+        await self.lifecycle.apply_refund_state(
+            locked, status=event.refund_status, amount=event.amount, currency=event.currency,
+            provider_refund_id=event.provider_refund_id,
+        )
 
     async def _handle_payment_failed(self, provider_payment_id: str) -> None:
         payment = await self.repository.get_by_provider_payment_id(provider_payment_id)

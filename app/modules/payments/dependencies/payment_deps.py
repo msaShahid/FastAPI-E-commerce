@@ -35,7 +35,21 @@ def get_payment_service(
     db: DbSession,
     audit: AuditServiceDep,
 ) -> PaymentService:
-    return PaymentService(repository, order_service, provider, job_queue=JobQueue(db), audit=audit)
+    from app.modules.orders.repositories.order_repository import OrderRepository
+    from app.modules.payments.repositories.refund_repository import (
+        ReconciliationRepository,
+        RefundRepository,
+    )
+    from app.modules.payments.services.lifecycle_service import OrderLifecycleService
+    from app.modules.products.repositories.product_repository import ProductRepository
+
+    lifecycle = OrderLifecycleService(
+        OrderRepository(db), ProductRepository(db), repository, RefundRepository(db),
+        ReconciliationRepository(db), provider, audit=audit, job_queue=JobQueue(db), commit=db.commit,
+    )
+    return PaymentService(
+        repository, order_service, provider, job_queue=JobQueue(db), audit=audit, lifecycle=lifecycle, commit=db.commit
+    )
 
 
 PaymentServiceDep = Annotated[PaymentService, Depends(get_payment_service)]

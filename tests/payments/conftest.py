@@ -113,12 +113,23 @@ class FakePaymentRepository:
         payment.refunded_amount_cents = refunded_amount_cents
         return payment
 
-    async def claim_webhook_event(self, event_id: str) -> bool:
-        """Emulates INSERT ... ON CONFLICT DO NOTHING: True only the first time."""
-        if event_id in self.claimed_events:
+    async def claim_webhook_event(self, event) -> bool:
+        """Emulates the claim: True only the first time for a (provider, event id)."""
+        key = (event.provider, event.event_id)
+        if key in self.claimed_events:
             return False
-        self.claimed_events.add(event_id)
+        self.claimed_events.add(key)
         return True
+
+    async def finish_webhook_event(self, event, status: str) -> None:
+        self.finished_events = getattr(self, "finished_events", {})
+        self.finished_events[(event.provider, event.event_id)] = status
+
+    async def add_refunded_amount(self, payment, *, provider_refund_id, amount: int):
+        payment.refunded_amount_cents = (payment.refunded_amount_cents or 0) + amount
+        if payment.refunded_amount_cents >= payment.amount_cents:
+            payment.status = PaymentStatus.REFUNDED
+        return payment
 
 
 class FakePaymentProvider(PaymentProvider):

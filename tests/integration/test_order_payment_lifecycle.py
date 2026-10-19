@@ -675,13 +675,15 @@ async def test_pending_then_confirmed_by_webhook_and_failed_refunds_can_be_retri
     assert len(set(keys)) == 2  # the retry used a NEW key: a failed refund is not replayed
 
 
-async def test_a_refund_made_in_the_provider_dashboard_is_recorded_not_applied(client, admin_headers, category, provider, db_session):
+async def test_a_refund_made_in_the_provider_dashboard_is_recorded_but_never_changes_the_order(client, admin_headers, category, provider, db_session):
     h, o, p, pi = await paid_order(client, admin_headers, category, provider)
     assert (await hook(client, pi, kind="refund.created", refund_id="re_dash_1", refund_status="succeeded",
                        amount=o["total_cents"], currency="usd")).status_code == 200
-    assert await one(db_session, "SELECT status::text FROM orders WHERE id = :o", o=o["id"]) == "paid"
+    assert await one(db_session, "SELECT status::text FROM orders WHERE id = :o", o=o["id"]) == "paid"   # a business decision
+    assert await one(db_session, "SELECT origin FROM refunds") == "provider"                              # but the money fact is recorded
+    assert await one(db_session, "SELECT status::text FROM payments") == "refunded"
     kinds = [i["kind"] for i in (await client.get(f"{API}/admin/reconciliations", headers=admin_headers)).json()["items"]]
-    assert kinds == ["refund_mismatch"]
+    assert kinds == ["external_refund"]
 
 
 async def test_a_refund_amount_that_differs_from_the_request_is_flagged_even_when_confirmed(

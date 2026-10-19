@@ -25,7 +25,7 @@ from app.core.jobs.worker import (
     run_one,
     run_worker,
 )
-from app.core.payments.interface import PaymentProvider, WebhookEvent
+from app.core.payments.interface import PaymentIntentResult, PaymentProvider, WebhookEvent
 from app.modules.auth.models.user import User
 from app.modules.categories.models.category import Category
 from app.modules.orders.models.order import Order
@@ -453,6 +453,9 @@ class FakeProvider(PaymentProvider):
 
     async def create_payment_intent(self, **kwargs):
         raise NotImplementedError
+
+    async def cancel_payment_intent(self, *, provider_payment_id, idempotency_key):
+        return PaymentIntentResult(provider_payment_id, "secret", "canceled")
 
     async def retrieve_payment_intent(self, **kwargs):
         raise NotImplementedError

@@ -24,12 +24,9 @@ from app.modules.audit.models.audit_log import AuditLog
 from app.modules.auth.models.user import User
 from app.modules.cart.models.cart import Cart
 from app.modules.cart.models.cart_item import CartItem
-from app.modules.cart.repositories.cart_repository import CartRepository
 from app.modules.categories.models.category import Category
 from app.modules.orders.models.order import Order
 from app.modules.orders.models.order_item import OrderItem
-from app.modules.orders.repositories.order_repository import OrderRepository
-from app.modules.orders.services.order_service import OrderService
 from app.modules.products.models.product import Product
 from app.modules.products.repositories.product_repository import ProductRepository
 from app.shared.enums.order_status import OrderStatus
@@ -401,18 +398,17 @@ async def _stale_orders(db_session, *, orders: int, lines: int) -> None:
 
 
 async def _cancel_stale(test_session_factory) -> list:
+    """Runs the real expiry job (what the worker runs) for every stale pending order, one per transaction."""
+    from app.modules.payments.jobs import expire_order
+
     async with test_session_factory() as session:
-        service = OrderService(
-            OrderRepository(session), CartRepository(session), ProductRepository(session),
-            flat_shipping_cents=0,
-            tax_rate_percent=0,
-            currency="usd",
+        ids = (await session.execute(select(Order.id).where(Order.status == OrderStatus.PENDING))).scalars().all()
+    for order_id in ids:
+        await expire_order({"order_id": str(order_id)}, test_session_factory)
+    async with test_session_factory() as session:
+        return list(
+            (await session.execute(select(Order.id).where(Order.status == OrderStatus.CANCELLED))).scalars().all()
         )
-        cancelled = await service.cancel_stale_pending_orders(
-            older_than=datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=30)
-        )
-        await session.commit()
-    return cancelled
 
 
 async def test_stale_order_cancellation_cost_per_order_does_not_depend_on_its_lines(

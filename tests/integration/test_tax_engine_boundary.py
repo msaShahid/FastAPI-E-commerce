@@ -309,6 +309,9 @@ class FakeProvider(PaymentProvider):
         self.intent = {"amount": amount_cents, "currency": currency}
         return PaymentIntentResult("pi_test_1", "pi_test_1_secret", "requires_payment_method")
 
+    async def cancel_payment_intent(self, *, provider_payment_id, idempotency_key):
+        return PaymentIntentResult(provider_payment_id, "secret", "canceled")
+
     async def retrieve_payment_intent(self, *, provider_payment_id):
         return PaymentIntentResult(provider_payment_id, "secret", "requires_payment_method")
 
@@ -366,7 +369,7 @@ async def test_a_late_payment_is_recorded_for_review_without_changing_the_order(
     p = await product(client, admin_headers, category, "LATE")
     h, order_id = await _user_order(client, p["id"])
     assert (await client.post(f"{API}/payments", json={"order_id": order_id}, headers=h)).status_code == 201
-    await db_session.execute(text("UPDATE orders SET status = 'cancelled' WHERE id = :o"), {"o": order_id})
+    await db_session.execute(text("UPDATE orders SET status = 'cancelled', stock_released_at = now() WHERE id = :o"), {"o": order_id})
     await db_session.commit()
 
     body = json.dumps({"event_id": "evt_late", "type": "payment_intent.succeeded", "pi": "pi_test_1"})

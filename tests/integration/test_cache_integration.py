@@ -33,12 +33,9 @@ from app.core.cache import (
 )
 from app.core.config import get_settings
 from app.modules.auth.models.user import User
-from app.modules.cart.repositories.cart_repository import CartRepository
 from app.modules.categories.models.category import Category
 from app.modules.orders.models.order import Order
 from app.modules.orders.models.order_item import OrderItem
-from app.modules.orders.repositories.order_repository import OrderRepository
-from app.modules.orders.services.order_service import OrderService
 from app.modules.products.models.product import Product
 from app.modules.products.repositories.product_repository import ProductRepository
 from app.shared.enums.order_status import OrderStatus
@@ -332,7 +329,7 @@ async def test_a_real_checkout_invalidates_the_list(client, db_session, cache):
     assert after.json()["items"][0]["stock"] == 3
 
 
-async def test_stale_order_cancellation_invalidates_the_list(
+async def test_order_expiry_restock_invalidates_the_cached_product_list(
     client, db_session, test_session_factory, cache
 ):
     category = await _make_category(db_session)
@@ -378,21 +375,11 @@ async def test_stale_order_cancellation_invalidates_the_list(
 
     assert (await client.get(PRODUCTS_URL)).json()["items"][0]["stock"] == 3
 
-    # Exactly what scripts/cancel_stale_orders.py does.
-    async with test_session_factory() as session:
-        service = OrderService(
-            OrderRepository(session), CartRepository(session), ProductRepository(session),
-            flat_shipping_cents=0,
-            tax_rate_percent=0,
-            currency="usd",
-        )
-        cancelled = await service.cancel_stale_pending_orders(
-            older_than=datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=30)
-        )
-        await session.commit()
-        await flush_pending(session)
+    # The real expiry job (what the worker runs for each stale order): it must restock AND drop the cached list.
+    from app.modules.payments.jobs import expire_order
 
-    assert cancelled == [order.id]
+    await expire_order({"order_id": str(order.id)}, test_session_factory)
+
     assert (await client.get(PRODUCTS_URL)).json()["items"][0]["stock"] == 5
 
 

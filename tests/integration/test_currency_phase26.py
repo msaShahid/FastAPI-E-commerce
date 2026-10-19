@@ -40,6 +40,9 @@ class RecordingProvider(PaymentProvider):
         self.intents[pid] = {"amount": amount_cents, "currency": currency}
         return PaymentIntentResult(pid, f"{pid}_secret", "requires_payment_method")
 
+    async def cancel_payment_intent(self, *, provider_payment_id, idempotency_key):
+        return PaymentIntentResult(provider_payment_id, "secret", "canceled")
+
     async def retrieve_payment_intent(self, *, provider_payment_id):
         return PaymentIntentResult(provider_payment_id, "secret", "requires_payment_method")
 
@@ -136,7 +139,7 @@ async def test_store_currency_can_be_set_and_changed_before_any_order_and_is_aud
     assert (await set_store_currency(client, admin_headers, "jpy"))["minor_unit_exponent"] == 0
     kwd = await set_store_currency(client, admin_headers, "kwd")
     assert kwd["minor_unit_exponent"] == 3 and kwd["payment_verified"] is False
-    rows = (await db_session.execute(select(AuditLog).where(AuditLog.action == "store.currency_set"))).scalars().all()
+    rows = (await db_session.execute(select(AuditLog).where(AuditLog.action == "store.currency_set").order_by(AuditLog.id))).scalars().all()
     assert [(r.details["from"], r.details["to"]) for r in rows][:2] == [("usd", "inr"), ("inr", "jpy")]
 
 
@@ -318,6 +321,19 @@ async def test_the_mismatch_audit_entry_says_what_was_expected_and_received(clie
 
 
 # ------------------------------------------------------------------ refunds
+async def drain_jobs(session_factory, provider, monkeypatch):
+    """Runs queued background jobs exactly as the worker would (claim, run handler, complete/retry)."""
+    import app.jobs  # noqa: F401  (registers the handlers)
+    from app.core.jobs.worker import run_one
+    from app.modules.payments.dependencies import payment_deps
+
+    monkeypatch.setattr(payment_deps, "get_payment_provider", lambda: provider)
+    ran = 0
+    while await run_one(session_factory) and ran < 20:
+        ran += 1
+    return ran
+
+
 async def _paid_order(client, admin_headers, category, provider, db_session, code="usd", price=1999):
     await set_store_currency(client, admin_headers, code)
     p = await product(client, admin_headers, category, price, sku=f"REF-{code}")
@@ -328,11 +344,17 @@ async def _paid_order(client, admin_headers, category, provider, db_session, cod
 
 
 @pytest.mark.parametrize(("code", "price"), [("usd", 1999), ("jpy", 1100), ("inr", 250000)])
-async def test_refunds_use_the_original_payment_currency_and_amount(client, admin_headers, category, provider, db_session, code, price):
+async def test_refunds_use_the_original_payment_currency_and_amount(
+    client, admin_headers, category, provider, db_session, test_session_factory, monkeypatch, code, price
+):
     _, o = await _paid_order(client, admin_headers, category, provider, db_session, code, price)
     r = await client.post(f"{API}/payments/{o['id']}/refund", headers=admin_headers)
-    assert r.status_code == 200, r.text
+    assert r.status_code == 202, r.text
+    assert r.json()["status"] == "requested" and provider.refund_calls == []  # requested, NOT refunded yet
+    assert await order_status(db_session, o["id"]) == "paid"
+    await drain_jobs(test_session_factory, provider, monkeypatch)
     assert provider.refund_calls == [{"amount_cents": o["total_cents"], "currency": code}]
+    await db_session.rollback()
     assert await order_status(db_session, o["id"]) == "refunded"
 
 
@@ -349,12 +371,16 @@ async def test_a_refund_for_an_order_whose_currency_disagrees_with_its_payment_i
 
 
 async def test_a_refund_that_differs_from_what_was_requested_is_recorded_for_review(
-    client, admin_headers, category, provider, db_session
+    client, admin_headers, category, provider, db_session, test_session_factory, monkeypatch
 ):
     _, o = await _paid_order(client, admin_headers, category, provider, db_session)
     provider.refund_override = {"amount": o["total_cents"] - 1}
-    assert (await client.post(f"{API}/payments/{o['id']}/refund", headers=admin_headers)).status_code == 200
+    assert (await client.post(f"{API}/payments/{o['id']}/refund", headers=admin_headers)).status_code == 202
+    await drain_jobs(test_session_factory, provider, monkeypatch)
+    await db_session.rollback()
     assert "payment.refund_mismatch" in await audit_actions(db_session)
+    open_records = (await client.get(f"{API}/admin/reconciliations", headers=admin_headers)).json()["items"]
+    assert any(r["kind"] == "refund_mismatch" for r in open_records)
 
 
 # ------------------------------------------------------------------ database guards and the migration copy

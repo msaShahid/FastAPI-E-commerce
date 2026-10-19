@@ -24,6 +24,11 @@ from app.modules.orders.repositories.order_repository import OrderRepository
 from app.modules.orders.services.order_service import OrderService
 from app.modules.payments.models.payment import Payment
 from app.modules.payments.repositories.payment_repository import PaymentRepository
+from app.modules.payments.repositories.refund_repository import (
+    ReconciliationRepository,
+    RefundRepository,
+)
+from app.modules.payments.services.lifecycle_service import OrderLifecycleService
 from app.modules.payments.services.payment_service import SUCCEEDED_EVENT, PaymentService
 from app.modules.products.models.product import Product
 from app.modules.products.repositories.product_repository import ProductRepository
@@ -109,6 +114,10 @@ async def _deliver_webhook(session_factory, event: WebhookEvent):
                 currency="usd",
             ),
             provider=None,
+            lifecycle=OrderLifecycleService(
+                OrderRepository(session), ProductRepository(session), PaymentRepository(session),
+                RefundRepository(session), ReconciliationRepository(session), None, commit=session.commit,
+            ),
         )
         try:
             await payment_service.process_webhook_event(event)

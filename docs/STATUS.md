@@ -263,8 +263,47 @@ customer; (5) legacy orders with no currency (cannot be paid or refunded).
 5. Legacy orders (currency NULL) need an explicit decision.
 6. Not exercised against real Stripe (test mode) in this environment: only fakes, including timeouts/races.
 
+### Phase 2.8 webhook security, reconciliation, refunds/disputes, provider readiness (done; live payments disabled)
+**Webhook security.** Signatures are verified by Stripe's own library over the **raw, unmodified bytes** with its 5-minute
+replay tolerance (tests use real HMAC signatures through the real code: wrong secret, one changed byte, re-serialised
+JSON, stale timestamp and garbage headers are all rejected). A missing header is 400; a payload over 1 MB is 413.
+Secrets never appear in responses or logs (tested). **Bug fixed:** the Stripe SDK returns `StripeObject`s, which have no
+`.get`, so the parsing added in Phases 2.6-2.7 would have crashed every real webhook with a 500; fakes hid it. Events are
+now converted to plain dicts after verification.
+**Event states** (`processed_webhook_events`, key `(provider, event_id)`; no payload stored): `processed`, `ignored`
+(a type we do not act on: kept and listed at `GET /admin/webhook-events`, never silently dropped) and `failed`
+(handling raised: its transaction rolls back so nothing persists, the failure and attempt count are recorded in a
+separate transaction, and the provider's retry is recognised and processed). Duplicate and concurrent deliveries are
+claimed atomically, so effects happen once. Recovery after a crash is the same path: nothing committed, the provider retries.
+**Reconciliation.** Amount/currency are verified before any state change (Phase 2.6); unmatched, late, mismatched and
+unverifiable events open reconciliation records; out-of-order events are safe (a failure after success never downgrades
+a payment; a refund confirmation that beats our job means the job never asks the provider again).
+**Refunds.** The cumulative limit is enforced **in the database** (the refunds of a payment, in flight or confirmed, can
+never exceed its amount; the payment row is locked while checked). One refund started by NovaCart may be in flight per
+payment. A request now refunds what is still refundable. Refunds made at the provider (e.g. its dashboard) are recorded
+(`origin = provider`), keep `payments.refunded_amount_cents` true, and open an `external_refund` record; they never
+change the order (business decision). A payment becomes `refunded` only when fully refunded; the order only after our own
+provider-confirmed refund that completes it.
+**Disputes** (`charge.dispute.*`): recorded in `disputes` with explicit audited transitions
+(`open -> under_review -> won | lost | closed`; closed is final and enforced in the DB, so late/out-of-order events cannot
+reopen it and are acknowledged with 200). A dispute opens a `dispute_opened` record (and `dispute_lost` when lost) for a
+human; it changes NO order, stock or refund by itself. **Refunds are refused while a dispute is open** (422
+`payment_disputed`). Listed at `GET /admin/disputes`.
+**Provider readiness.** Every payment and event records its provider; webhook URLs are per provider
+(`/payments/webhooks/{provider}`, unknown = 404); provider-specific verification/parsing stays inside the provider class.
+Design for configurable providers (selection, credential storage, enable/disable, currencies, switching, rotation,
+webhooks) is in `docs/PAYMENT_PROVIDERS.md`. **Recommended phase to build it:** its own milestone after the lifecycle
+is verified on a real Stripe test account and the refund/late-payment policies are decided. Not built here.
+
+**Known gaps / blockers (live payments must stay disabled):** only Stripe is implemented; `payments.provider_payment_id`
+is still unique across providers (changes with the second provider); a payment event that arrives before its payment row
+exists is recorded as unmatched, not retried; partial refunds requested through NovaCart remain unsupported (business
+decision); disputes need a human response (no evidence submission); events other than payment, refund and dispute types
+are recorded but not acted on; nothing exercised against real Stripe test mode in this environment (only real signature
+verification and fakes for outbound calls); the two XOR constraints; legacy orders with no currency.
+
 ### Next
-Phase 2.8 (product assignment) then 2.4/2.5 need owner decisions: pricing mode, business
+Phase 2.9 (product assignment) then 2.4/2.5 need owner decisions: pricing mode, business
 registrations, approved classifications/rates, place of supply, shipping tax, rounding.
 
 ## Milestone 1: critical checkout defects (complete, awaiting review)

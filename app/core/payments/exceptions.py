@@ -13,3 +13,11 @@ class PaymentProviderError(UpstreamServiceError):
 
     def __init__(self, message: str = "The payment provider is unavailable") -> None:
         super().__init__(message)
+
+
+class PaymentProviderTimeoutError(PaymentProviderError):
+    """The provider did not answer in time. The request MAY have been processed: the outcome is
+    UNKNOWN, never assumed to be a failure. Callers must reconcile before acting."""
+
+    def __init__(self, message: str = "The payment provider did not respond in time") -> None:
+        super().__init__(message)

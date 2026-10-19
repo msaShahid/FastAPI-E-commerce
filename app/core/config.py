@@ -98,6 +98,17 @@ class Settings(BaseSettings):
     # never produces a tax amount. Takes precedence over TAX_RATE_PERCENT if both are set.
     tax_calculation_enabled: bool = False
 
+    # How long we wait for any single Stripe call. On expiry the outcome is UNKNOWN (the call may
+    # have been processed) and is reconciled, never treated as a failure.
+    stripe_timeout_seconds: float = Field(default=15.0, gt=0)
+
+    # --- Order/payment lifecycle ---
+    # How often the worker looks for unpaid orders past PENDING_ORDER_TIMEOUT_MINUTES. 0 disables the
+    # scheduler (then nothing expires orders: only do that for tests/maintenance).
+    order_expiry_sweep_interval_seconds: int = Field(default=60, ge=0)
+    # After this many failed attempts to learn a refund's outcome it becomes `uncertain` (needs a human).
+    refund_max_attempts: int = Field(default=3, ge=1)
+
     # Currencies this deployment's Stripe account is allowed to charge, comma separated
     # (e.g. "inr" or "usd,eur"). EMPTY by default, so payments are refused until the client
     # confirms in their own Stripe account which currencies it can actually charge. Only

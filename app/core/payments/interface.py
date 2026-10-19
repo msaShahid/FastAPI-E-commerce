@@ -20,6 +20,9 @@ class WebhookEvent:
     amount: int | None = None
     amount_received: int | None = None
     currency: str | None = None
+    # Refund events (event_type "refund.*"): provider_payment_id is the refunded PaymentIntent.
+    provider_refund_id: str | None = None
+    refund_status: str | None = None
 
 
 @dataclass
@@ -42,6 +45,17 @@ class PaymentProvider(ABC):
     async def create_payment_intent(
         self, *, amount_cents: int, currency: str, metadata: dict, idempotency_key: str
     ) -> PaymentIntentResult:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def cancel_payment_intent(
+        self, *, provider_payment_id: str, idempotency_key: str
+    ) -> PaymentIntentResult:
+        """Makes the intent unpayable and returns its FINAL provider status.
+
+        If it cannot be cancelled because it already succeeded (or was already cancelled), the real
+        status is returned, not an error. Raises PaymentProviderError/PaymentProviderTimeoutError
+        only when the outcome is genuinely unknown."""
         raise NotImplementedError
 
     @abstractmethod

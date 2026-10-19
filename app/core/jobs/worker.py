@@ -238,4 +238,9 @@ async def run_worker(
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(stop.wait(), timeout=config.jobs_poll_interval_seconds)
 
-    await asyncio.gather(*(loop() for _ in range(concurrency or config.jobs_concurrency)))
+    from app.core.jobs.schedule import run_scheduler
+
+    await asyncio.gather(
+        *(loop() for _ in range(concurrency or config.jobs_concurrency)),
+        run_scheduler(stop, session_factory, config),
+    )

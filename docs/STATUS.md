@@ -207,8 +207,64 @@ exponent.
 7. Known schema gap: the two XOR constraints.
 8. Legacy orders (currency NULL) need an explicit decision before they can be paid or refunded.
 
+### Phase 2.7 order and payment lifecycle integrity (done; live payments still disabled)
+**State transitions** (one service, `OrderLifecycleService`; the database re-enforces them with a trigger):
+`pending -> paid | cancelled`, `paid -> fulfilled | refunded`, `fulfilled -> refunded`; `cancelled` and `refunded` are
+final. `paid` needs a succeeded payment, `refunded` needs a provider-confirmed (succeeded) refund, `cancelled`
+needs its stock released: the database refuses anything else, even raw SQL. History rows carry actor and `reason`.
+- **Admin `PATCH /orders/{id}/status`** now accepts only `fulfilled` (from `paid`). `paid`, `refunded`, `cancelled`
+  and `pending` return 409 `status_change_not_allowed` with the correct route. (API change.)
+- **Cancel** `POST /orders/{id}/cancel` (owner or admin, unpaid orders only; paid orders: 409
+  `cancellation_not_allowed`, they are refunded). Guests cannot cancel (no cookie-based cancel yet).
+
+**Stock.** Reserved at checkout (decremented), released only by cancellation/expiry of an UNPAID order, exactly once
+(`orders.stock_released_at`: set in the same transaction as the cancel; the trigger forbids repeating or skipping
+it). A paid order's stock is never released by cancellation.
+
+**Cancellation/expiry flow (no DB transaction is held while waiting on Stripe).** Phase 1: lock, decide, commit.
+Phase 2: ask Stripe to cancel each open PaymentIntent. Phase 3: re-lock, re-check (a webhook may have won), then
+cancel + restock together. Provider says `succeeded` -> not cancelled (409 `payment_in_progress`); provider
+unreachable/timeout/unknown status -> NOT cancelled, stock stays reserved, a `cancel_uncertain` reconciliation
+record is opened (409 `cancellation_unconfirmed`) and the expiry job is retried.
+**Expiry.** The worker runs a scheduler: every `ORDER_EXPIRY_SWEEP_INTERVAL_SECONDS` (default 60; dedupe key per time
+bucket so several workers enqueue once) it queues `sweep_stale_orders`, which queues one `expire_order` job per order
+older than `PENDING_ORDER_TIMEOUT_MINUTES`. Jobs are durable, retried with backoff, and safe to run twice.
+`worker` is now a service in both compose files. `scripts/cancel_stale_orders.py` only queues a sweep (the old direct
+script/method that cancelled without asking Stripe was removed).
+**Monitoring.** `GET /api/v1/admin/lifecycle/health`: stale orders, oldest pending age, last sweep, `sweep_overdue`,
+open reconciliations, active refunds, failed jobs. Failed jobs stay visible in `background_jobs` (status `failed`).
+
+**Late and unmatched payments.** The webhook locks the order row before deciding. A payment for an order that can no
+longer be paid is recorded (payment `succeeded`, order untouched) in `payment_reconciliations` (once per problem,
+redeliveries deduplicated) plus the audit log. NOTHING is refunded or fulfilled automatically. An administrator
+lists `GET /admin/reconciliations`, then either `POST /admin/reconciliations/{id}/refund` (an explicit refund
+request) or `.../resolve` with a written note. Unmatched payments, amount mismatches, unverifiable events and
+dashboard-made refunds open records too.
+**Refunds.** `POST /payments/{order_id}/refund` now REQUESTS a refund (202, status `requested`; asking again returns
+the same refund; one active refund per payment by unique index). A job asks Stripe with an idempotency key (a retry
+or a crash never creates a second refund). Only a provider-confirmed `succeeded` marks the refund, payment and then
+the order refunded; `pending` waits for the provider's `refund.*` webhook; `failed` leaves the order paid and a new
+refund can be requested; repeated unknown outcomes become `uncertain` (+ reconciliation) after
+`REFUND_MAX_ATTEMPTS`. Full refunds only. (API change: was synchronous, 200.)
+**Stripe calls** are bounded by `STRIPE_TIMEOUT_SECONDS`; a timeout means "unknown", never "failed". Creating a
+payment no longer holds the order lock across Stripe: plan -> provider -> re-check; an intent created while the
+order was being cancelled is cancelled again.
+
+**Policies that need YOUR decision (safe defaults implemented):** (1) cancelling or self-service refunding a PAID
+order (now: blocked, admin-requested refund only); (2) late payments (now: manual reconciliation, never automatic);
+(3) partial refunds (now: unsupported); (4) the unpaid-order timeout (30 min) and whether expired orders email the
+customer; (5) legacy orders with no currency (cannot be paid or refunded).
+
+### Payment-readiness blockers after Phase 2.7 (live payments must stay disabled)
+1. Each client must enable their currency in `PAYMENT_CURRENCIES_ENABLED` after confirming their Stripe account.
+2. Webhook events other than payment_intent.succeeded/payment_failed and refund.* are ignored (e.g. disputes).
+3. Guests cannot pay or cancel; the interim tax engine is not GST-compliant.
+4. Known schema gap: the two XOR constraints.
+5. Legacy orders (currency NULL) need an explicit decision.
+6. Not exercised against real Stripe (test mode) in this environment: only fakes, including timeouts/races.
+
 ### Next
-Phase 2.7 (product assignment) then 2.4/2.5 need owner decisions: pricing mode, business
+Phase 2.8 (product assignment) then 2.4/2.5 need owner decisions: pricing mode, business
 registrations, approved classifications/rates, place of supply, shipping tax, rounding.
 
 ## Milestone 1: critical checkout defects (complete, awaiting review)

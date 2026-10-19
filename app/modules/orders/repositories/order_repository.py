@@ -215,7 +215,11 @@ class OrderRepository:
         return order
 
     async def update_status(
-        self, order: Order, new_status: OrderStatus, changed_by_user_id: UUID | None
+        self,
+        order: Order,
+        new_status: OrderStatus,
+        changed_by_user_id: UUID | None,
+        reason: str | None = None,
     ) -> Order:
         old_status = order.status
         order.status = new_status
@@ -225,6 +229,7 @@ class OrderRepository:
                 from_status=old_status,
                 to_status=new_status,
                 changed_by_user_id=changed_by_user_id,
+                reason=reason,
             )
         )
         await self.db.flush()

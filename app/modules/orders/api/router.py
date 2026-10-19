@@ -9,11 +9,19 @@ from app.modules.auth.dependencies.auth import AdminUser, CurrentUser, OptionalU
 from app.modules.cart.dependencies.cart_identity import GUEST_CART_COOKIE, CartOwnerDep
 from app.modules.orders.dependencies.order_deps import OrderServiceDep
 from app.modules.orders.exceptions.order_exceptions import (
+    CancellationUnconfirmedError,
     GuestEmailRequiredError,
+    PaymentInProgressError,
     PriceChangedError,
 )
-from app.modules.orders.schemas.order import CheckoutRequest, OrderRead, OrderStatusUpdate
+from app.modules.orders.schemas.order import (
+    CheckoutRequest,
+    OrderCancelRequest,
+    OrderRead,
+    OrderStatusUpdate,
+)
 from app.modules.orders.services.shipping import ShippingAddressInput
+from app.modules.payments.dependencies.lifecycle_deps import LifecycleServiceDep
 from app.shared.enums.order_status import OrderStatus
 from app.shared.enums.roles import UserRole
 from app.shared.pagination.schemas import PageParams, PaginatedResponse
@@ -140,17 +148,51 @@ async def get_order(
     return OrderRead.model_validate(order)
 
 
+@order_router.post("/{order_id}/cancel", response_model=OrderRead)
+async def cancel_order(
+    order_id: UUID,
+    current_user: CurrentUser,
+    service: OrderServiceDep,
+    lifecycle: LifecycleServiceDep,
+    payload: OrderCancelRequest | None = None,
+) -> OrderRead:
+    """
+    Cancels an UNPAID (pending) order: the customer who owns it, or an administrator. The payment is made
+    unpayable at the provider first, then the order is cancelled and its stock restocked together.
+
+    A paid order cannot be cancelled here (409 cancellation_not_allowed): it is refunded by an administrator.
+    If the provider cannot confirm the payment state the order is NOT cancelled (409 cancellation_unconfirmed)
+    and the attempt is reconciled. Cancelling twice is safe.
+    """
+    is_admin = current_user.role == UserRole.ADMIN
+    order = await service.get_order(order_id=order_id, user_id=current_user.id, is_admin=is_admin)  # access check
+    reason = (payload.reason if payload and payload.reason else
+              ("cancelled by an administrator" if is_admin else "cancelled by the customer"))
+    result = await lifecycle.cancel_order(
+        order.id, actor_user_id=current_user.id, source="admin" if is_admin else "customer", reason=reason
+    )
+    if result.outcome == "uncertain":
+        raise CancellationUnconfirmedError()
+    if result.outcome == "payment_in_progress":
+        raise PaymentInProgressError()
+    fresh = await service.get_order(order_id=order.id, user_id=current_user.id, is_admin=is_admin)
+    return OrderRead.model_validate(fresh)
+
+
 @order_router.patch("/{order_id}/status", response_model=OrderRead)
 async def update_order_status(
     order_id: UUID,
     payload: OrderStatusUpdate,
     admin: AdminUser,
+    lifecycle: LifecycleServiceDep,
     service: OrderServiceDep,
 ) -> OrderRead:
-
-    order = await service.update_status(
-        order_id=order_id,
-        new_status=payload.status,
-        changed_by_user_id=admin.id,
-    )
+    """
+    Administrator status change. Only `fulfilled` (from `paid`) is allowed. `paid`, `refunded` and `cancelled`
+    are refused (409 status_change_not_allowed) because setting them by hand would fabricate a payment, claim
+    an unconfirmed refund, or cancel without payment/stock handling: those go through the payment provider,
+    POST /payments/{order_id}/refund, and POST /orders/{order_id}/cancel.
+    """
+    await lifecycle.admin_change_status(order_id, payload.status, admin.id)
+    order = await service.get_order(order_id=order_id, user_id=admin.id, is_admin=True)
     return OrderRead.model_validate(order)

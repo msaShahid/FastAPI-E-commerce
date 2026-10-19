@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import Enum as SAEnum
-from sqlalchemy import ForeignKey
+from sqlalchemy import ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -35,6 +35,8 @@ class OrderStatusHistory(Base, TimestampMixin):
         nullable=False,
     )
 
+    # Why the status changed (e.g. "unpaid order expired"); the actor is changed_by_user_id (NULL = system).
+    reason: Mapped[str | None] = mapped_column(String(500), default=None)
     changed_by_user_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,

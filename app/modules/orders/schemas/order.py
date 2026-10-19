@@ -110,5 +110,9 @@ class OrderRead(BaseModel):
         }
 
 
+class OrderCancelRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=500)
+
+
 class OrderStatusUpdate(BaseModel):
     status: OrderStatus

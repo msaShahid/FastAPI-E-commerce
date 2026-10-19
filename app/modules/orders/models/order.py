@@ -1,8 +1,18 @@
 import uuid
+from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, Enum, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -77,6 +87,10 @@ class Order(Base, TimestampMixin):
     # currency when the order is created and immutable afterwards (database trigger). NULL on
     # orders created before currencies were recorded: their currency is unknown, not assumed.
     currency: Mapped[str | None] = mapped_column(String(3), default=None)
+    # When this order's reserved stock was put back. Set exactly once, in the same transaction as
+    # the cancellation (database trigger: cannot be repeated, undone, or skipped), so stock can
+    # never be restocked twice. NULL for orders that never released stock.
+    stock_released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     shipping_snapshot: Mapped[dict | None] = mapped_column(JSONB, default=None)
     # How tax_cents was decided: which engine, its inputs/outputs, and whether it is a GST
     # calculation (`gst_calculated`). Frozen with the order. NULL on legacy orders.

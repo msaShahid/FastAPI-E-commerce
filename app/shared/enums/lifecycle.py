@@ -30,6 +30,10 @@ class ReconciliationKind(enum.StrEnum):
     CANCEL_UNCERTAIN = "cancel_uncertain"            # could not confirm the intent is no longer payable
     REFUND_UNCERTAIN = "refund_uncertain"            # could not learn the refund outcome
     REFUND_MISMATCH = "refund_mismatch"              # refunded amount/currency differ from the request
+    EXTERNAL_REFUND = "external_refund"              # a refund made at the provider, recorded here
+    DISPUTE_OPENED = "dispute_opened"                # a chargeback needs a response
+    DISPUTE_LOST = "dispute_lost"                    # the dispute was lost: money left the account
+    UNMATCHED_DISPUTE = "unmatched_dispute"          # a dispute for a payment we have no record of
 
 
 class ReconciliationStatus(enum.StrEnum):

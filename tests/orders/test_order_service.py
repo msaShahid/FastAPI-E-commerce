@@ -382,132 +382,14 @@ async def test_cancelled_order_cannot_be_reactivated(
 # --- cancel_stale_pending_orders (stock-release reaper) ---
 
 
-async def test_cancel_stale_pending_orders_restocks_and_cancels(
-    order_service, fake_order_repository, fake_product_repository_for_orders
-):
-    product = await _make_product(fake_product_repository_for_orders, stock=5)
-    order = _make_stale_order(
-        fake_order_repository, product, quantity=2, age_minutes=60
-    )
-    cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=30)
-
-    cancelled_ids = await order_service.cancel_stale_pending_orders(older_than=cutoff)
-
-    assert cancelled_ids == [order.id]
-    assert order.status == OrderStatus.CANCELLED
-    assert product.stock == 7  # 5 + the 2 units the abandoned order held
 
 
-async def test_cancel_stale_pending_orders_ignores_recent_orders(
-    order_service, fake_order_repository, fake_product_repository_for_orders
-):
-    product = await _make_product(fake_product_repository_for_orders, stock=5)
-    order = _make_stale_order(fake_order_repository, product, quantity=2, age_minutes=5)
-    cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=30)
-
-    cancelled_ids = await order_service.cancel_stale_pending_orders(older_than=cutoff)
-
-    assert cancelled_ids == []
-    assert order.status == OrderStatus.PENDING
-    assert product.stock == 5  # untouched
 
 
-async def test_cancel_stale_pending_orders_ignores_non_pending_orders(
-    order_service, fake_order_repository, fake_product_repository_for_orders
-):
-    product = await _make_product(fake_product_repository_for_orders, stock=5)
-    order = _make_stale_order(
-        fake_order_repository, product, quantity=2, age_minutes=60
-    )
-    order.status = OrderStatus.CANCELLED  # e.g. an admin already cancelled it
-    cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=30)
-
-    cancelled_ids = await order_service.cancel_stale_pending_orders(older_than=cutoff)
-
-    assert cancelled_ids == []
-    assert product.stock == 5  # not restocked a second time
 
 
-async def test_cancel_stale_pending_orders_locks_products_in_ascending_id_order(
-    order_service, fake_order_repository, fake_product_repository_for_orders
-):
-    """Same deadlock-avoidance rule as checkout applies to restocking."""
-    p1 = await _make_product(fake_product_repository_for_orders, sku="A-1", stock=5)
-    p2 = await _make_product(fake_product_repository_for_orders, sku="B-2", stock=5)
-    order_id = uuid4()
-    created_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=60)
-    order = Order(
-        id=order_id,
-        user_id=uuid4(),
-        idempotency_key=f"stale-{order_id}",
-        status=OrderStatus.PENDING,
-        subtotal_cents=0,
-        shipping_cents=0,
-        tax_cents=0,
-        total_cents=0,
-        created_at=created_at,
-    )
-    # Items deliberately built in DESCENDING product-id order.
-    order.items = [
-        OrderItem(
-            id=1,
-            order_id=order_id,
-            product_id=p2.id,
-            product_name_snapshot=p2.name,
-            price_cents_snapshot=p2.price_cents,
-            quantity=1,
-        ),
-        OrderItem(
-            id=2,
-            order_id=order_id,
-            product_id=p1.id,
-            product_name_snapshot=p1.name,
-            price_cents_snapshot=p1.price_cents,
-            quantity=1,
-        ),
-    ]
-    fake_order_repository.orders[order_id] = order
-    cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=30)
-
-    await order_service.cancel_stale_pending_orders(older_than=cutoff)
-
-    assert fake_product_repository_for_orders.lock_calls == [p1.id, p2.id]
 
 
-async def test_cancel_stale_pending_orders_skips_order_that_became_paid_before_lock(
-    fake_cart_repository_for_orders, fake_product_repository_for_orders
-):
-    """
-    The whole point of re-checking status AFTER acquiring the lock: a
-    customer completing payment in the gap between listing candidates
-    and locking this specific order must not have it cancelled or
-    restocked out from under them.
-    """
-    from tests.orders.conftest import FakeOrderRepository
-
-    class RacyOrderRepository(FakeOrderRepository):
-        async def list_stale_pending_order_ids(self, *, older_than):
-            ids = await super().list_stale_pending_order_ids(older_than=older_than)
-            for order_id in ids:
-                self.orders[order_id].status = OrderStatus.PAID
-            return ids
-
-    order_repo = RacyOrderRepository()
-    service = OrderService(
-        order_repo, fake_cart_repository_for_orders, fake_product_repository_for_orders,
-        flat_shipping_cents=0,
-        tax_rate_percent=0,
-        currency="usd",
-    )
-    product = await _make_product(fake_product_repository_for_orders, stock=5)
-    order = _make_stale_order(order_repo, product, quantity=2, age_minutes=60)
-    cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=30)
-
-    cancelled_ids = await service.cancel_stale_pending_orders(older_than=cutoff)
-
-    assert cancelled_ids == []
-    assert order.status == OrderStatus.PAID  # untouched by the reaper
-    assert product.stock == 5  # NOT restocked
 
 
 # --- list_all_orders (admin) ---

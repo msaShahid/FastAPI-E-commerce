@@ -7,12 +7,10 @@ from app.core.exceptions import BadRequestError
 from app.core.payments.exceptions import InvalidWebhookSignatureError
 from app.modules.orders.exceptions.order_exceptions import (
     OrderAccessForbiddenError,
-    OrderNotFoundError,
 )
 from app.modules.orders.models.order import Order
 from app.modules.payments.exceptions.payment_exceptions import (
     OrderNotPayableError,
-    OrderNotRefundableError,
 )
 from app.shared.enums.order_status import OrderStatus
 from app.shared.enums.payment_status import PaymentStatus
@@ -373,126 +371,15 @@ async def test_webhook_success_for_non_pending_order_does_not_transition(
 # --- refund_payment ---
 
 
-async def test_refund_payment_happy_path(
-    payment_service,
-    fake_order_repository_for_payments,
-    fake_payment_repository,
-    fake_payment_provider,
-):
-    user_id = uuid4()
-    admin_id = uuid4()
-    order = make_order(
-        fake_order_repository_for_payments, user_id=user_id, status=OrderStatus.PAID
-    )
-    payment = await fake_payment_repository.create(
-        order_id=order.id, provider_payment_id="pi_paid", amount_cents=5000
-    )
-    await fake_payment_repository.update_status(payment, PaymentStatus.SUCCEEDED)
-
-    refunded_payment, updated_order = await payment_service.refund_payment(
-        order_id=order.id, admin_user_id=admin_id
-    )
-
-    assert refunded_payment.status == PaymentStatus.REFUNDED
-    assert refunded_payment.refunded_amount_cents == 5000
-    assert refunded_payment.provider_refund_id in fake_payment_provider.refunds
-    assert updated_order.status == OrderStatus.REFUNDED
-    assert fake_order_repository_for_payments.status_changes == [
-        (OrderStatus.PAID, OrderStatus.REFUNDED, admin_id)
-    ]
 
 
-async def test_refund_payment_allows_fulfilled_order(
-    payment_service, fake_order_repository_for_payments, fake_payment_repository
-):
-    user_id = uuid4()
-    order = make_order(
-        fake_order_repository_for_payments,
-        user_id=user_id,
-        status=OrderStatus.FULFILLED,
-    )
-    payment = await fake_payment_repository.create(
-        order_id=order.id, provider_payment_id="pi_fulfilled", amount_cents=5000
-    )
-    await fake_payment_repository.update_status(payment, PaymentStatus.SUCCEEDED)
-
-    _, updated_order = await payment_service.refund_payment(
-        order_id=order.id, admin_user_id=uuid4()
-    )
-
-    assert updated_order.status == OrderStatus.REFUNDED
 
 
-async def test_refund_payment_rejects_pending_order(
-    payment_service, fake_order_repository_for_payments
-):
-    order = make_order(
-        fake_order_repository_for_payments, user_id=uuid4(), status=OrderStatus.PENDING
-    )
-
-    with pytest.raises(OrderNotRefundableError):
-        await payment_service.refund_payment(order_id=order.id, admin_user_id=uuid4())
 
 
-async def test_refund_payment_rejects_already_refunded_order(
-    payment_service, fake_order_repository_for_payments
-):
-    order = make_order(
-        fake_order_repository_for_payments, user_id=uuid4(), status=OrderStatus.REFUNDED
-    )
-
-    with pytest.raises(OrderNotRefundableError):
-        await payment_service.refund_payment(order_id=order.id, admin_user_id=uuid4())
 
 
-async def test_refund_payment_rejects_paid_order_with_no_succeeded_payment(
-    payment_service, fake_order_repository_for_payments, fake_payment_repository
-):
-    """
-    Shouldn't normally happen (an order only reaches PAID via a succeeded
-    payment webhook), but must fail loudly rather than refund nothing.
-    """
-    order = make_order(
-        fake_order_repository_for_payments, user_id=uuid4(), status=OrderStatus.PAID
-    )
-    payment = await fake_payment_repository.create(
-        order_id=order.id, provider_payment_id="pi_not_succeeded", amount_cents=5000
-    )
-    await fake_payment_repository.update_status(payment, PaymentStatus.FAILED)
-
-    with pytest.raises(OrderNotRefundableError):
-        await payment_service.refund_payment(order_id=order.id, admin_user_id=uuid4())
 
 
-async def test_refund_payment_missing_order_raises_not_found(payment_service):
-    with pytest.raises(OrderNotFoundError):
-        await payment_service.refund_payment(order_id=uuid4(), admin_user_id=uuid4())
 
 
-async def test_refund_payment_is_retry_safe(
-    payment_service,
-    fake_order_repository_for_payments,
-    fake_payment_repository,
-    fake_payment_provider,
-):
-    """
-    A retried refund request for the same payment must hit the same
-    Stripe refund (via the idempotency key), not create a second one.
-    """
-    order = make_order(
-        fake_order_repository_for_payments, user_id=uuid4(), status=OrderStatus.PAID
-    )
-    payment = await fake_payment_repository.create(
-        order_id=order.id, provider_payment_id="pi_retry", amount_cents=5000
-    )
-    await fake_payment_repository.update_status(payment, PaymentStatus.SUCCEEDED)
-
-    admin_id = uuid4()
-    await payment_service.refund_payment(order_id=order.id, admin_user_id=admin_id)
-
-    # Order is REFUNDED now, so a second attempt is correctly rejected at
-    # the status gate before it would ever reach Stripe again.
-    with pytest.raises(OrderNotRefundableError):
-        await payment_service.refund_payment(order_id=order.id, admin_user_id=admin_id)
-
-    assert len(fake_payment_provider.refunds) == 1

@@ -13,6 +13,7 @@ from app.core.payments.interface import (
 from app.modules.orders.models.order import Order
 from app.modules.orders.services.order_service import OrderService
 from app.modules.payments.models.payment import Payment
+from app.modules.payments.services.lifecycle_service import OrderLifecycleService
 from app.modules.payments.services.payment_service import PaymentService
 from app.shared.enums.payment_status import PaymentStatus
 
@@ -38,11 +39,22 @@ class FakeOrderRepositoryForPayments:
         return self.orders.get(order_id)
 
     async def update_status(
-        self, order: Order, new_status, changed_by_user_id
+        self, order: Order, new_status, changed_by_user_id, reason=None
     ) -> Order:
         self.status_changes.append((order.status, new_status, changed_by_user_id))
         order.status = new_status
         return order
+
+
+class FakeReconciliationRepository:
+    def __init__(self) -> None:
+        self.records: dict[str, dict] = {}
+
+    async def record(self, *, kind, dedupe_key, **fields) -> bool:
+        if dedupe_key in self.records:
+            return False
+        self.records[dedupe_key] = {"kind": kind, **fields}
+        return True
 
 
 class FakePaymentRepository:
@@ -156,6 +168,9 @@ class FakePaymentProvider(PaymentProvider):
             status="requires_payment_method",
         )
 
+    async def cancel_payment_intent(self, *, provider_payment_id, idempotency_key):
+        return PaymentIntentResult(provider_payment_id, "secret", "canceled")
+
     async def retrieve_payment_intent(
         self, *, provider_payment_id: str
     ) -> PaymentIntentResult:
@@ -238,8 +253,12 @@ def fake_payment_provider() -> FakePaymentProvider:
 
 @pytest.fixture
 def payment_service(
-    fake_payment_repository, order_service_for_payments, fake_payment_provider
+    fake_payment_repository, order_service_for_payments, fake_payment_provider, fake_order_repository_for_payments
 ) -> PaymentService:
+    lifecycle = OrderLifecycleService(
+        fake_order_repository_for_payments, None, fake_payment_repository, None,
+        FakeReconciliationRepository(), fake_payment_provider,
+    )
     return PaymentService(
-        fake_payment_repository, order_service_for_payments, fake_payment_provider
+        fake_payment_repository, order_service_for_payments, fake_payment_provider, lifecycle=lifecycle
     )

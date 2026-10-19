@@ -23,6 +23,12 @@ class WebhookEvent:
     # Refund events (event_type "refund.*"): provider_payment_id is the refunded PaymentIntent.
     provider_refund_id: str | None = None
     refund_status: str | None = None
+    # Dispute events ("charge.dispute.*"): provider_payment_id is the disputed PaymentIntent (may be empty).
+    provider_dispute_id: str | None = None
+    dispute_status: str | None = None
+    dispute_reason: str | None = None
+    # Which provider sent it. Event ids are only unique per provider, so this scopes de-duplication.
+    provider: str = "stripe"
 
 
 @dataclass
@@ -34,6 +40,10 @@ class RefundResult:
 
 
 class PaymentProvider(ABC):
+    # Recorded on every payment and webhook event so they can be reconciled after provider settings change.
+    # The default exists because Stripe is the only provider today; every new provider sets its own name.
+    name: str = "stripe"
+
     def supports_currency(self, code: str) -> bool:
         """Whether payments in this currency are verified for the integration (see app/core/money.py)."""
         from app.core.money import CURRENCIES

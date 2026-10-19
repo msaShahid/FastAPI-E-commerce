@@ -17,6 +17,8 @@ from app.core.payments.interface import (
 
 
 class StripePaymentProvider(PaymentProvider):
+    name = "stripe"
+
     def __init__(self, *, secret_key: str, webhook_secret: str) -> None:
         self._webhook_secret = webhook_secret
         stripe.api_key = secret_key
@@ -119,9 +121,22 @@ class StripePaymentProvider(PaymentProvider):
         except (stripe.SignatureVerificationError, ValueError) as exc:
             raise InvalidWebhookSignatureError() from exc
 
+        # The SDK returns StripeObject (not a dict: no .get). Work on plain dicts from here on.
+        event = event.to_dict() if hasattr(event, "to_dict") else event
         obj = event["data"]["object"]
         currency = obj.get("currency")
         currency = currency.lower() if isinstance(currency, str) else None
+        if event["type"].startswith("charge.dispute."):
+            return WebhookEvent(
+                event_id=event["id"],
+                event_type=event["type"],
+                provider_payment_id=(obj.get("payment_intent") or ""),
+                amount=obj.get("amount"),
+                currency=currency,
+                provider_dispute_id=obj.get("id"),
+                dispute_status=obj.get("status"),
+                dispute_reason=obj.get("reason"),
+            )
         if event["type"].startswith("refund."):
             # The object is a Refund: its own id, and the PaymentIntent it refunds.
             return WebhookEvent(

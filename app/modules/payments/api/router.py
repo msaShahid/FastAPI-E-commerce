@@ -1,7 +1,9 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Header, Request, status
+from fastapi import APIRouter, Header, HTTPException, Request, status
 
+from app.core.exceptions import NotFoundError
+from app.core.payments.exceptions import InvalidWebhookSignatureError
 from app.modules.auth.dependencies.auth import AdminUser, CurrentUser
 from app.modules.payments.dependencies.payment_deps import PaymentServiceDep
 from app.modules.payments.schemas.payment import PaymentCreate, PaymentRead, RefundRead
@@ -53,18 +55,40 @@ async def request_refund(
     return RefundRead.model_validate(refund)
 
 
+MAX_WEBHOOK_BYTES = 1_000_000  # real provider events are a few KB; anything this large is not one
+
+
+async def _handle_webhook(request: Request, service: PaymentServiceDep, signature: str | None) -> dict:
+    """No auth: the provider calls this directly, authenticated ONLY by its signature over the exact raw bytes.
+    The body must be read raw: parsing and re-serialising JSON first would break verification."""
+    if not signature:
+        raise InvalidWebhookSignatureError()
+    payload = await request.body()
+    if len(payload) > MAX_WEBHOOK_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Webhook payload too large")
+    await service.handle_webhook(payload=payload, signature_header=signature)
+    return {"status": "ok"}
+
+
 @payment_router.post("/webhook", status_code=status.HTTP_200_OK)
 async def stripe_webhook(
     request: Request,
     service: PaymentServiceDep,
-    stripe_signature: str = Header(..., alias="Stripe-Signature"),
+    stripe_signature: str | None = Header(default=None, alias="Stripe-Signature"),
 ) -> dict:
-    """
-    No auth -- Stripe calls this directly, authenticated only by the
-    signature header. Must read the raw body: Stripe's signature is
-    computed over the exact bytes sent, so parsing/re-serializing JSON
-    first (as a Pydantic request body would) breaks verification.
-    """
-    payload = await request.body()
-    await service.handle_webhook(payload=payload, signature_header=stripe_signature)
-    return {"status": "ok"}
+    """Stripe's webhook (kept at this path for compatibility; same as /webhooks/stripe)."""
+    return await _handle_webhook(request, service, stripe_signature)
+
+
+@payment_router.post("/webhooks/{provider}", status_code=status.HTTP_200_OK)
+async def provider_webhook(
+    provider: str,
+    request: Request,
+    service: PaymentServiceDep,
+    stripe_signature: str | None = Header(default=None, alias="Stripe-Signature"),
+) -> dict:
+    """One webhook URL per provider. Only `stripe` exists today; a new provider adds its own verification
+    (inside its PaymentProvider) and signature header, never changes the shared lifecycle rules."""
+    if provider != "stripe":
+        raise NotFoundError("Unknown payment provider")
+    return await _handle_webhook(request, service, stripe_signature)

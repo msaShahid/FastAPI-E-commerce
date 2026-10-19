@@ -76,6 +76,7 @@ class OrderLifecycleService:
         audit: AuditService | None = None,
         job_queue: JobQueue | None = None,
         commit=None,
+        disputes=None,
     ) -> None:
         self.orders = orders
         self.products = products
@@ -86,6 +87,7 @@ class OrderLifecycleService:
         self.audit = audit
         self.job_queue = job_queue
         self._commit_hook = commit  # None in unit tests with in-memory fakes
+        self.disputes = disputes  # DisputeRepository; None only in unit tests that do not touch disputes
 
     # ------------------------------------------------------------ small helpers
     async def _commit(self) -> None:
@@ -231,7 +233,16 @@ class OrderLifecycleService:
             from app.modules.payments.exceptions.payment_exceptions import PaymentInconsistentError
 
             raise PaymentInconsistentError("The payment currency does not match the order currency")
-        amount = to_stripe_amount(payment.amount_cents, payment.currency)  # validates currency and amount
+        if self.disputes is not None and await self.disputes.has_open(payment.id):
+            from app.modules.payments.exceptions.payment_exceptions import PaymentDisputedError
+
+            raise PaymentDisputedError()
+        # Refund what is still refundable: never more than the payment, counting refunds in flight, confirmed,
+        # and any made at the provider. (Partial refunds requested through NovaCart remain a business decision.)
+        remaining = payment.amount_cents - await self.refunds.committed_amount(payment.id)
+        if remaining <= 0:
+            raise OrderNotRefundableError("This payment has already been fully refunded")
+        amount = to_stripe_amount(remaining, payment.currency)  # validates currency and amount
         attempt_number = await self.refunds.count_for_payment(payment.id)
         refund = await self.refunds.create(
             payment_id=payment.id, order_id=order.id, amount_cents=amount, currency=payment.currency,
@@ -319,10 +330,11 @@ class OrderLifecycleService:
     async def _confirm_refund(self, refund: Refund, provider_refund_id: str | None, amount: int | None) -> None:
         order = await self._lock_order(refund.order_id)
         payment = await self.payments.get_by_id(refund.payment_id)
-        await self.payments.mark_refunded(
-            payment, provider_refund_id=provider_refund_id or "", refunded_amount_cents=amount or refund.amount_cents
+        await self.payments.add_refunded_amount(
+            payment, provider_refund_id=provider_refund_id, amount=amount or refund.amount_cents
         )
-        if order.status in (OrderStatus.PAID, OrderStatus.FULFILLED):
+        fully_refunded = (payment.refunded_amount_cents or 0) >= payment.amount_cents
+        if refund.origin == "requested" and fully_refunded and order.status in (OrderStatus.PAID, OrderStatus.FULFILLED):
             await self.orders.update_status(order, OrderStatus.REFUNDED, None, "refund confirmed by the payment provider")
         await self._audit("refund.succeeded", "refund", refund.id, details={"order_id": str(order.id)})
 
@@ -384,3 +396,98 @@ class OrderLifecycleService:
         await self._audit("reconciliation.resolved", "payment_reconciliation", record.id, admin_user_id,
                           {"resolution": "refund_requested", "refund_id": str(refund.id)})
         return record, refund
+
+    # ------------------------------------------------------------ refunds made at the provider
+    async def record_external_refund(self, payment: Payment, *, provider_refund_id: str, amount: int | None,
+                                     currency: str | None) -> bool:
+        """A CONFIRMED refund that did not start in NovaCart (e.g. made in the provider's dashboard) is recorded so the
+        payment's refunded total is true and the cumulative limit holds. It never changes the order (that is a
+        business decision): an open reconciliation record tells a human. Returns whether it was recorded."""
+        from sqlalchemy.exc import IntegrityError
+
+        if await self.refunds.get_by_provider_refund_id(provider_refund_id) is not None:
+            return False
+        details = {"provider_refund_id": provider_refund_id, "amount": amount, "currency": currency,
+                   "payment_amount": payment.amount_cents, "payment_currency": payment.currency}
+        if amount is None or amount <= 0 or currency != payment.currency:
+            await self.reconcile(ReconciliationKind.REFUND_MISMATCH, f"external_refund_invalid:{provider_refund_id}",
+                                 payment=payment, details=details)
+            return False
+        try:
+            async with self.refunds.db.begin_nested():  # the cumulative trigger may refuse it
+                await self.refunds.create(
+                    payment_id=payment.id, order_id=payment.order_id, amount_cents=amount, currency=currency,
+                    status="succeeded", origin="provider", provider_refund_id=provider_refund_id,
+                    idempotency_key=f"provider:{provider_refund_id}",
+                )
+        except IntegrityError:
+            await self.reconcile(ReconciliationKind.REFUND_MISMATCH, f"external_refund_exceeds:{provider_refund_id}",
+                                 payment=payment, details={**details, "problem": "would exceed the payment amount"})
+            return False
+        await self.payments.add_refunded_amount(payment, provider_refund_id=provider_refund_id, amount=amount)
+        await self.reconcile(ReconciliationKind.EXTERNAL_REFUND, f"external_refund:{provider_refund_id}",
+                             payment=payment, details=details)
+        await self._audit("refund.external_recorded", "payment", payment.id, details=details)
+        return True
+
+    # ------------------------------------------------------------ disputes
+    async def apply_dispute_event(self, event) -> None:
+        """Records a provider dispute (chargeback) as explicit, audited transitions. It changes no order, stock or
+        refund; it opens a reconciliation record so a human responds. A closed dispute never reopens, so events that
+        arrive out of order are safe."""
+        payment = (
+            await self.payments.get_by_provider_payment_id(event.provider_payment_id)
+            if event.provider_payment_id else None
+        )
+        if payment is None or not event.provider_dispute_id:
+            await self.reconcile(
+                ReconciliationKind.UNMATCHED_DISPUTE, f"unmatched_dispute:{event.provider_dispute_id or event.event_id}",
+                provider_payment_id=event.provider_payment_id or None,
+                details={"provider_dispute_id": event.provider_dispute_id, "status": event.dispute_status,
+                         "amount": event.amount},
+            )
+            return
+        mapped = DISPUTE_STATUS_MAP.get(event.dispute_status or "", "open")  # unknown statuses need attention: open
+        terminal = mapped in ("won", "lost", "closed")
+        dispute = await self.disputes.get_by_provider_id(event.provider, event.provider_dispute_id, for_update=True)
+        if dispute is None:
+            dispute = await self.disputes.create(
+                provider=event.provider, provider_dispute_id=event.provider_dispute_id, payment_id=payment.id,
+                order_id=payment.order_id, amount_cents=event.amount or payment.amount_cents,
+                currency=event.currency or payment.currency, status=mapped, provider_status=event.dispute_status,
+                reason=event.dispute_reason, closed_at=datetime.now(UTC).replace(tzinfo=None) if terminal else None,
+            )
+            await self._audit("dispute.opened", "dispute", dispute.id, details={"status": mapped, "payment_id": str(payment.id)})
+            if not terminal:
+                await self.reconcile(ReconciliationKind.DISPUTE_OPENED, f"dispute_opened:{dispute.id}", payment=payment,
+                                     details={"dispute_id": str(dispute.id), "reason": event.dispute_reason,
+                                              "amount": dispute.amount_cents, "currency": dispute.currency})
+        elif dispute.status in ("won", "lost", "closed") or mapped == dispute.status:
+            return  # final, or nothing new: a late/duplicate/out-of-order event changes nothing
+        else:
+            before = dispute.status
+            dispute.status = mapped
+            dispute.provider_status = event.dispute_status
+            if terminal:
+                dispute.closed_at = datetime.now(UTC).replace(tzinfo=None)
+            await self.disputes.save(dispute)
+            await self._audit("dispute.status_changed", "dispute", dispute.id, details={"from": before, "to": mapped})
+        if mapped == "lost":
+            await self.reconcile(ReconciliationKind.DISPUTE_LOST, f"dispute_lost:{dispute.id}", payment=payment,
+                                 details={"dispute_id": str(dispute.id), "amount": dispute.amount_cents,
+                                          "currency": dispute.currency})
+            await self._audit("dispute.lost", "dispute", dispute.id)
+        elif mapped in ("won", "closed"):
+            await self._audit(f"dispute.{mapped}", "dispute", dispute.id)
+
+
+# Provider status -> our status. Statuses we do not recognise are treated as "open" (needs attention).
+DISPUTE_STATUS_MAP = {
+    "needs_response": "open",
+    "warning_needs_response": "open",
+    "under_review": "under_review",
+    "warning_under_review": "under_review",
+    "won": "won",
+    "lost": "lost",
+    "warning_closed": "closed",
+}

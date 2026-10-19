@@ -82,6 +82,7 @@ def _build_lifecycle(session):
     from app.modules.payments.dependencies.payment_deps import get_payment_provider
     from app.modules.payments.repositories.payment_repository import PaymentRepository
     from app.modules.payments.repositories.refund_repository import (
+        DisputeRepository,
         ReconciliationRepository,
         RefundRepository,
     )
@@ -92,6 +93,7 @@ def _build_lifecycle(session):
         OrderRepository(session), ProductRepository(session), PaymentRepository(session), RefundRepository(session),
         ReconciliationRepository(session), get_payment_provider(),
         audit=get_audit_service(get_audit_repository(session)), job_queue=JobQueue(session), commit=session.commit,
+        disputes=DisputeRepository(session),
     )
 
 

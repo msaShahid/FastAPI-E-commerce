@@ -39,3 +39,13 @@ class ReconciliationNotOpenError(InvalidStateError):
 
     def __init__(self) -> None:
         super().__init__("This reconciliation record does not exist or is already resolved")
+
+
+
+class PaymentDisputedError(InvalidStateError):
+    """A payment with an open dispute cannot be refunded here: the dispute must be resolved first."""
+
+    code = "payment_disputed"
+
+    def __init__(self) -> None:
+        super().__init__("This payment has an open dispute and cannot be refunded until it is resolved")

@@ -10,12 +10,16 @@ from app.core.jobs.models import BackgroundJob
 from app.modules.auth.dependencies.auth import AdminUser
 from app.modules.orders.models.order import Order
 from app.modules.payments.dependencies.lifecycle_deps import LifecycleServiceDep
+from app.modules.payments.dependencies.payment_deps import get_payment_repository
 from app.modules.payments.job_types import SWEEP_STALE_ORDERS
+from app.modules.payments.repositories.refund_repository import DisputeRepository
 from app.modules.payments.schemas.payment import (
+    DisputeRead,
     LifecycleHealth,
     ReconciliationRead,
     ReconciliationResolve,
     RefundRead,
+    WebhookEventRead,
 )
 from app.shared.enums.order_status import OrderStatus
 from app.shared.pagination.schemas import PageParams, PaginatedResponse
@@ -96,3 +100,25 @@ async def lifecycle_health(_admin: AdminUser, lifecycle: LifecycleServiceDep, db
         last_sweep_succeeded_at=last_sweep,
         sweep_overdue=overdue,
     )
+
+
+@lifecycle_router.get("/webhook-events", response_model=PaginatedResponse[WebhookEventRead])
+async def list_webhook_events(
+    _admin: AdminUser, db: DbSession, params: PageParams = Depends(), status_filter: str | None = None
+):
+    """Every accepted webhook and its outcome: `processed`, `ignored` (a type we do not act on, kept for
+    investigation) or `failed` (will be retried by the provider; `attempts` and `last_error` say why)."""
+    items, total = await get_payment_repository(db).list_webhook_events(
+        status=status_filter, offset=params.offset, limit=params.page_size
+    )
+    return PaginatedResponse(items=[WebhookEventRead.model_validate(i) for i in items], total=total,
+                             page=params.page, page_size=params.page_size)
+
+
+@lifecycle_router.get("/disputes", response_model=PaginatedResponse[DisputeRead])
+async def list_disputes(
+    _admin: AdminUser, db: DbSession, params: PageParams = Depends(), status_filter: str | None = None
+):
+    items, total = await DisputeRepository(db).list(status=status_filter, offset=params.offset, limit=params.page_size)
+    return PaginatedResponse(items=[DisputeRead.model_validate(i) for i in items], total=total,
+                             page=params.page, page_size=params.page_size)

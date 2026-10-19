@@ -35,20 +35,32 @@ def get_payment_service(
     db: DbSession,
     audit: AuditServiceDep,
 ) -> PaymentService:
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
     from app.modules.orders.repositories.order_repository import OrderRepository
     from app.modules.payments.repositories.refund_repository import (
+        DisputeRepository,
         ReconciliationRepository,
         RefundRepository,
     )
     from app.modules.payments.services.lifecycle_service import OrderLifecycleService
+    from app.modules.payments.webhook_recovery import record_failed_event
     from app.modules.products.repositories.product_repository import ProductRepository
 
     lifecycle = OrderLifecycleService(
         OrderRepository(db), ProductRepository(db), repository, RefundRepository(db),
         ReconciliationRepository(db), provider, audit=audit, job_queue=JobQueue(db), commit=db.commit,
+        disputes=DisputeRepository(db),
     )
+    # A failed webhook attempt is recorded through the SAME engine this request uses (never another database).
+    failure_sessions = async_sessionmaker(db.bind, expire_on_commit=False)
+
+    async def record_failure(event, error):
+        await record_failed_event(failure_sessions, event, error)
+
     return PaymentService(
-        repository, order_service, provider, job_queue=JobQueue(db), audit=audit, lifecycle=lifecycle, commit=db.commit
+        repository, order_service, provider, job_queue=JobQueue(db), audit=audit, lifecycle=lifecycle,
+        commit=db.commit, rollback=db.rollback, failure_recorder=record_failure,
     )
 
 

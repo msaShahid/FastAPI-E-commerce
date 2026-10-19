@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.payments.models.dispute import Dispute
 from app.modules.payments.models.refund import PaymentReconciliation, Refund
 from app.shared.enums.lifecycle import ACTIVE_REFUND_STATUSES
 
@@ -23,12 +24,25 @@ class RefundRepository:
         ).scalar_one_or_none()
 
     async def get_active_for_payment(self, payment_id: UUID, *, for_update: bool = False) -> Refund | None:
+        """The refund WE started that is still in flight (requested/pending/uncertain), if any."""
         query = select(Refund).where(
-            Refund.payment_id == payment_id, Refund.status.in_([s.value for s in ACTIVE_REFUND_STATUSES])
+            Refund.payment_id == payment_id,
+            Refund.origin == "requested",
+            Refund.status.in_(["requested", "pending", "uncertain"]),
         )
         if for_update:
             query = query.with_for_update().execution_options(populate_existing=True)
         return (await self.db.execute(query)).scalar_one_or_none()
+
+    async def committed_amount(self, payment_id: UUID) -> int:
+        """Sum of the payment's refunds that are in flight or confirmed (what the cumulative limit counts)."""
+        return (
+            await self.db.execute(
+                select(func.coalesce(func.sum(Refund.amount_cents), 0)).where(
+                    Refund.payment_id == payment_id, Refund.status.in_([s.value for s in ACTIVE_REFUND_STATUSES])
+                )
+            )
+        ).scalar_one()
 
     async def count_for_payment(self, payment_id: UUID) -> int:
         return (
@@ -113,3 +127,43 @@ class ReconciliationRepository:
     async def save(self, record: PaymentReconciliation) -> PaymentReconciliation:
         await self.db.flush()
         return record
+
+
+class DisputeRepository:
+    def __init__(self, db: AsyncSession) -> None:
+        self.db = db
+
+    async def get_by_provider_id(self, provider: str, provider_dispute_id: str, *, for_update: bool = False):
+        query = select(Dispute).where(Dispute.provider == provider, Dispute.provider_dispute_id == provider_dispute_id)
+        if for_update:
+            query = query.with_for_update().execution_options(populate_existing=True)
+        return (await self.db.execute(query)).scalar_one_or_none()
+
+    async def create(self, **fields) -> Dispute:
+        dispute = Dispute(**fields)
+        self.db.add(dispute)
+        await self.db.flush()
+        return dispute
+
+    async def save(self, dispute: Dispute) -> Dispute:
+        await self.db.flush()
+        return dispute
+
+    async def has_open(self, payment_id: UUID) -> bool:
+        return (
+            await self.db.execute(
+                select(func.count()).select_from(Dispute).where(
+                    Dispute.payment_id == payment_id, Dispute.status.in_(["open", "under_review"])
+                )
+            )
+        ).scalar_one() > 0
+
+    async def list(self, *, status: str | None, offset: int, limit: int):
+        conditions = [Dispute.status == status] if status else []
+        total = (await self.db.execute(select(func.count()).select_from(Dispute).where(*conditions))).scalar_one()
+        rows = (
+            await self.db.execute(
+                select(Dispute).where(*conditions).order_by(Dispute.created_at.desc()).offset(offset).limit(limit)
+            )
+        ).scalars().all()
+        return list(rows), total

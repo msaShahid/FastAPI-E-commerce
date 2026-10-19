@@ -58,6 +58,8 @@ class PaymentService:
         audit: AuditService | None = None,
         lifecycle: OrderLifecycleService | None = None,
         commit=None,
+        rollback=None,
+        failure_recorder=None,
     ) -> None:
         self.repository = repository
         self.order_service = order_service
@@ -72,6 +74,9 @@ class PaymentService:
         # a transaction BEFORE any provider call. Both None only in unit tests with in-memory fakes.
         self.lifecycle = lifecycle
         self._commit_hook = commit
+        # Used only when handling a webhook fails: end the failed transaction, then record the failure separately.
+        self._rollback_hook = rollback
+        self._failure_recorder = failure_recorder
 
     async def _commit(self) -> None:
         if self._commit_hook is not None:
@@ -207,6 +212,7 @@ class PaymentService:
             provider_payment_id=intent.provider_payment_id,
             amount_cents=plan["total"],
             currency=plan["currency"],
+            provider=self.provider.name,  # so the payment stays reconcilable if provider settings change later
         )
         return payment, intent.client_secret
 
@@ -235,7 +241,18 @@ class PaymentService:
         event = self.provider.verify_and_parse_webhook(
             payload=payload, signature_header=signature_header
         )
-        await self.process_webhook_event(event)
+        try:
+            await self.process_webhook_event(event)
+        except Exception as exc:
+            # Nothing this attempt did persists (its transaction rolls back); the provider will retry. Record the
+            # failed attempt in its own transaction so it is visible and the retry is recognised as a retry.
+            if self._rollback_hook is not None and self._failure_recorder is not None:
+                await self._rollback_hook()
+                try:
+                    await self._failure_recorder(event, exc)
+                except Exception:
+                    logger.exception("could not record the failed webhook event %s", event.event_id)
+            raise
 
     async def process_webhook_event(self, event: WebhookEvent) -> None:
         """
@@ -248,16 +265,22 @@ class PaymentService:
         without touching the payment or order -- there is no window
         where both duplicates pass a check and both run the handler.
         """
-        claimed = await self.repository.claim_webhook_event(event.event_id)
+        claimed = await self.repository.claim_webhook_event(event)
         if not claimed:
-            return
+            return  # a duplicate of an event already processed (or being processed)
 
+        handled = True
         if event.event_type == SUCCEEDED_EVENT:
             await self._handle_payment_succeeded(event)
         elif event.event_type == FAILED_EVENT:
             await self._handle_payment_failed(event.provider_payment_id)
         elif event.event_type.startswith("refund."):
             await self._handle_refund_event(event)
+        elif event.event_type.startswith("charge.dispute."):
+            await self.lifecycle.apply_dispute_event(event)
+        else:
+            handled = False  # a type we do not act on: kept as `ignored` so it can be investigated
+        await self.repository.finish_webhook_event(event, "processed" if handled else "ignored")
 
     async def _event_matches_payment(self, event: WebhookEvent, payment: Payment) -> bool:
         """Verifies the provider's amount and currency against OUR stored payment and order.
@@ -373,6 +396,13 @@ class PaymentService:
             payment = await self.repository.get_by_provider_payment_id(event.provider_payment_id)
             if payment is not None:
                 refund = await self.lifecycle.refunds.get_active_for_payment(payment.id)
+        if refund is None and event.refund_status == "succeeded" and event.provider_payment_id:
+            payment = await self.repository.get_by_provider_payment_id(event.provider_payment_id)
+            if payment is not None and event.provider_refund_id:
+                await self.lifecycle.record_external_refund(
+                    payment, provider_refund_id=event.provider_refund_id, amount=event.amount, currency=event.currency
+                )
+                return
         if refund is None:
             await self._flag_for_review(
                 "payment.unknown_refund", None,

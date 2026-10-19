@@ -28,11 +28,14 @@ class Refund(Base, TimestampMixin):
         CheckConstraint(
             "status IN ('requested', 'pending', 'succeeded', 'failed', 'uncertain')", name="ck_refunds_status"
         ),
+        CheckConstraint("origin IN ('requested', 'provider')", name="ck_refunds_origin"),
+        # One refund WE started may be in flight per payment. (Refunds made at the provider are recorded
+        # with origin 'provider'; the cumulative trigger keeps the total within the payment amount.)
         Index(
-            "ux_refunds_one_active_per_payment",
+            "ux_refunds_one_inflight_per_payment",
             "payment_id",
             unique=True,
-            postgresql_where=text("status IN ('requested', 'pending', 'succeeded', 'uncertain')"),
+            postgresql_where=text("origin = 'requested' AND status IN ('requested', 'pending', 'uncertain')"),
         ),
     )
 
@@ -49,6 +52,8 @@ class Refund(Base, TimestampMixin):
         ForeignKey("users.id", ondelete="SET NULL"), default=None
     )
     attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # requested = started through NovaCart; provider = made at the provider (e.g. its dashboard) and recorded.
+    origin: Mapped[str] = mapped_column(String(20), default="requested", server_default="requested")
     failure_reason: Mapped[str | None] = mapped_column(Text, default=None)
 
 

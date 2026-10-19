@@ -72,3 +72,35 @@ class LifecycleHealth(BaseModel):
     sweep_interval_seconds: int
     last_sweep_succeeded_at: datetime | None
     sweep_overdue: bool
+
+
+class WebhookEventRead(BaseModel):
+    """A provider webhook we accepted, and what happened to it. No payload is stored."""
+
+    provider: str
+    event_id: str
+    event_type: str | None
+    status: str
+    attempts: int
+    last_error: str | None
+    processed_at: datetime | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class DisputeRead(BaseModel):
+    id: UUID
+    provider: str
+    provider_dispute_id: str
+    payment_id: UUID
+    order_id: UUID
+    amount_cents: int
+    currency: str
+    status: str
+    provider_status: str | None
+    reason: str | None
+    closed_at: datetime | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

@@ -24,6 +24,29 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Runs the background jobs: payment-confirmation emails, refund execution, and the SCHEDULED order
+  # expiry sweep. Without it, unpaid orders never expire and refunds are never sent to the provider.
+  worker:
+    build:
+      context: .
+      args:
+        INSTALL_DEV: "true"
+    command: python -m scripts.run_worker
+    env_file:
+      - .env
+    environment:
+      PYTHONPATH: /code
+    volumes:
+      - ./app:/code/app
+      - ./scripts:/code/scripts
+      - ./media:/code/media
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
   db:
     image: postgres:16-alpine
     container_name: fastapi_ecommerce_db
@@ -54,7 +77,7 @@ services:
     tmpfs:
       - /var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U $${TEST_POSTGRES_USER} -d $${TEST_POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5

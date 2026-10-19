@@ -13,5 +13,19 @@ services:
       - media_prod:/code/media
     restart: always
 
+  # Required in production: the background-job worker (order expiry sweep, refund execution, emails).
+  worker:
+    build:
+      context: .
+      args:
+        INSTALL_DEV: "false"
+    container_name: fastapi_ecommerce_worker_prod
+    command: python -m scripts.run_worker
+    env_file:
+      - .env.production
+    volumes:
+      - media_prod:/code/media
+    restart: always
+
 volumes:
   media_prod:

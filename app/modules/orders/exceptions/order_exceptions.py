@@ -127,3 +127,52 @@ class PaymentInProgressError(ConflictError):
 
     def __init__(self) -> None:
         super().__init__("A payment for this order is already in progress or completed, so it cannot be cancelled")
+
+
+
+class CancelAndRefundNotAllowedError(ConflictError):
+    code = "cancel_and_refund_not_allowed"
+
+    def __init__(self, status: str) -> None:
+        hint = {
+            "pending": "An unpaid order is cancelled with POST /orders/{id}/cancel.",
+            "fulfilled": "A fulfilled order has shipped: refund it with POST /payments/{order_id}/refund (no automatic restock).",
+        }.get(status, "Only a paid, not yet fulfilled order can be cancelled with a refund.")
+        super().__init__(f"An order in status '{status}' cannot be cancelled with a refund. {hint}")
+
+
+
+class OrderCurrencyAlreadyKnownError(ConflictError):
+    code = "order_currency_known"
+
+    def __init__(self) -> None:
+        super().__init__("This order already has a recorded currency, which can never be changed")
+
+
+class CurrencyConflictsWithPaymentError(ConflictError):
+    code = "currency_conflicts_with_payment"
+
+    def __init__(self, payment_currency: str) -> None:
+        super().__init__(
+            f"A payment for this order was recorded in '{payment_currency}', which cannot be changed. "
+            "The order's currency cannot be established as anything else; review the records with the provider."
+        )
+
+
+
+class EvidenceNotSpecificToOrderError(InvalidStateError):
+    """The evidence does not demonstrably concern THIS order, so it cannot establish its currency."""
+
+    code = "evidence_not_specific_to_order"
+
+    def __init__(self, why: str) -> None:
+        super().__init__(f"The evidence cannot establish this order's currency: {why}. Left unresolved for manual review.")
+
+
+class StoreHistoryAmbiguousError(InvalidStateError):
+    """Store configuration history alone is not enough when it is ambiguous."""
+
+    code = "store_history_ambiguous"
+
+    def __init__(self, why: str) -> None:
+        super().__init__(f"Store history cannot establish this order's currency: {why}. Left unresolved for manual review.")

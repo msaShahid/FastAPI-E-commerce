@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
 
+from app.core.config import get_settings
 from app.core.money import StoreCurrencyNotConfiguredError, get_currency
 from app.modules.addresses.exceptions.address_exceptions import AddressNotFoundError
 from app.modules.addresses.repositories.address_repository import AddressRepository
@@ -95,7 +96,7 @@ class OrderService:
         """The store currency, or a 503: an order is never created without an explicit currency."""
         code = self.currency
         if code is None and self.store_repository is not None:
-            code = await self.store_repository.get_currency()
+            code = await self.store_repository.get_or_initialize_currency(get_settings().default_store_currency)
         if code is None:
             raise StoreCurrencyNotConfiguredError()
         return get_currency(code)

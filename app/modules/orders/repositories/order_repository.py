@@ -234,3 +234,29 @@ class OrderRepository:
         )
         await self.db.flush()
         return order
+
+    async def list_unknown_currency(self, *, offset: int, limit: int):
+        """Orders created before currencies were recorded (currency IS NULL), oldest first."""
+        total = (
+            await self.db.execute(select(func.count()).select_from(Order).where(Order.currency.is_(None)))
+        ).scalar_one()
+        rows = (
+            await self.db.execute(
+                select(Order).where(Order.currency.is_(None)).order_by(Order.created_at).offset(offset).limit(limit)
+            )
+        ).scalars().all()
+        return list(rows), total
+
+    async def list_currency_reviews(self, order_id):
+        from app.modules.orders.models.currency_remediation import OrderCurrencyRemediation
+
+        rows = await self.db.execute(
+            select(OrderCurrencyRemediation).where(OrderCurrencyRemediation.order_id == order_id)
+            .order_by(OrderCurrencyRemediation.created_at, OrderCurrencyRemediation.id)
+        )
+        return list(rows.scalars().all())
+
+    async def add_currency_remediation(self, record):
+        self.db.add(record)
+        await self.db.flush()
+        return record

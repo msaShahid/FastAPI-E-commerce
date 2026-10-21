@@ -432,7 +432,7 @@ class TaxService:
 
         # Payments are in the STORE's currency (INR is never assumed). It must be set, verified for
         # the payment integration, and enabled by the client for their Stripe account.
-        store_currency = await StoreRepository(self.repo.db).get_currency()
+        store_currency, _configured = await StoreRepository(self.repo.db).effective_currency(settings.default_store_currency)
         payment_blockers = []
         if store_currency is None:
             payment_blockers.append(ReadinessBlocker(

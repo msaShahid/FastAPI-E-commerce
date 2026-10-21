@@ -109,6 +109,11 @@ class Settings(BaseSettings):
     # After this many failed attempts to learn a refund's outcome it becomes `uncertain` (needs a human).
     refund_max_attempts: int = Field(default=3, ge=1)
 
+    # The currency a NEW store (one with no configured currency and no orders yet) starts with. INR by product
+    # decision, but only a default: an administrator can set another currency before the first order, and once a
+    # store has one it never changes silently. Must be a currency the platform supports (checked at startup).
+    default_store_currency: str = "inr"
+
     # Currencies this deployment's Stripe account is allowed to charge, comma separated
     # (e.g. "inr" or "usd,eur"). EMPTY by default, so payments are refused until the client
     # confirms in their own Stripe account which currencies it can actually charge. Only
@@ -218,6 +223,15 @@ class Settings(BaseSettings):
             currency = CURRENCIES.get(code)
             if currency is None or not currency.payment_verified:
                 raise ValueError(f"payment_currencies_enabled: '{code}' is not a currency verified for payments")
+        return self
+
+    @model_validator(mode="after")
+    def _default_store_currency_is_supported(self) -> "Settings":
+        from app.core.money import CURRENCIES
+
+        self.default_store_currency = self.default_store_currency.strip().lower()
+        if self.default_store_currency not in CURRENCIES:
+            raise ValueError(f"default_store_currency: '{self.default_store_currency}' is not a supported currency")
         return self
 
     def enabled_payment_currencies(self) -> set[str]:

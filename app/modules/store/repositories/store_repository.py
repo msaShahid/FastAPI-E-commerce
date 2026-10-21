@@ -1,4 +1,5 @@
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.orders.models.order import Order
@@ -22,3 +23,26 @@ class StoreRepository:
         else:
             row.currency = code
         await self.db.flush()
+
+    async def effective_currency(self, default: str) -> tuple[str | None, bool]:
+        """(currency, configured). A configured store uses its currency. A NEW store (nothing configured, no orders
+        yet) uses the default. A store that already has orders but no configured currency gets NO default: an
+        administrator must choose, because assuming one could silently misstate history."""
+        code = await self.get_currency()
+        if code is not None:
+            return code, True
+        if await self.any_orders():
+            return None, False
+        return default, False
+
+    async def get_or_initialize_currency(self, default: str) -> str | None:
+        """Like effective_currency, but PERSISTS the default for a new store, so it stays fixed from then on even if
+        the configured default later changes. Safe under concurrent first requests."""
+        code, configured = await self.effective_currency(default)
+        if code is None or configured:
+            return code
+        await self.db.execute(
+            pg_insert(StoreSettings).values(id=1, currency=code).on_conflict_do_nothing(index_elements=["id"])
+        )
+        await self.db.flush()
+        return await self.get_currency() or code

@@ -11,3 +11,8 @@ class StoreCurrencyRead(BaseModel):
     currency: str | None
     minor_unit_exponent: int | None
     payment_verified: bool | None
+    # False = this is the default for a store that has not chosen one (it becomes fixed at the first order).
+    configured: bool = False
+    # Why payments in this currency would be refused (checked against the platform's verified providers and the
+    # deployment's PAYMENT_CURRENCIES_ENABLED). Empty = no known obstacle.
+    warnings: list[str] = []

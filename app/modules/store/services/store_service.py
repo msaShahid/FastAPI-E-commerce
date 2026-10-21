@@ -1,3 +1,4 @@
+from app.core.config import get_settings
 from app.core.money import get_currency
 from app.modules.audit.services.audit_service import AuditService
 from app.modules.auth.models.user import User
@@ -12,12 +13,19 @@ class StoreService:
         self.audit = audit
 
     async def read_currency(self) -> StoreCurrencyRead:
-        code = await self.repo.get_currency()
+        settings = get_settings()
+        code, configured = await self.repo.effective_currency(settings.default_store_currency)
         if code is None:
             return StoreCurrencyRead(currency=None, minor_unit_exponent=None, payment_verified=None)
         currency = get_currency(code)
+        warnings = []
+        if not currency.payment_verified:
+            warnings.append(f"Payments in {currency.code} are not verified for the payment integration")
+        elif currency.code not in settings.enabled_payment_currencies():
+            warnings.append(f"{currency.code} is not in PAYMENT_CURRENCIES_ENABLED, so payments are refused")
         return StoreCurrencyRead(
-            currency=currency.code, minor_unit_exponent=currency.exponent, payment_verified=currency.payment_verified
+            currency=currency.code, minor_unit_exponent=currency.exponent, payment_verified=currency.payment_verified,
+            configured=configured, warnings=warnings,
         )
 
     async def set_currency(self, actor: User, code: str) -> StoreCurrencyRead:

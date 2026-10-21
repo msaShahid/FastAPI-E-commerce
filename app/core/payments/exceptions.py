@@ -6,6 +6,13 @@ class InvalidWebhookSignatureError(BadRequestError):
         super().__init__("Invalid webhook signature")
 
 
+class InvalidWebhookPayloadError(BadRequestError):
+    """The signature was valid but the event is not shaped like one we understand. Refused (400) without detail."""
+
+    def __init__(self) -> None:
+        super().__init__("Invalid webhook payload")
+
+
 class PaymentProviderError(UpstreamServiceError):
     """Stripe (or whichever provider) itself failed -- rate limited us,
     had an outage, rejected our API key, etc. Not the caller's fault,

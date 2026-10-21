@@ -16,6 +16,7 @@ from app.core.jobs.schedule import register_schedule  # noqa: E402
 from app.modules.payments.job_types import (  # noqa: E402
     EXECUTE_REFUND,
     EXPIRE_ORDER,
+    REPROCESS_DEFERRED_EVENTS,
     SWEEP_STALE_ORDERS,
     expire_order_dedupe_key,
 )
@@ -183,5 +184,82 @@ def get_provider():
     return get_payment_provider()
 
 
+@job_handler(REPROCESS_DEFERRED_EVENTS)
+async def reprocess_deferred_events(payload: dict, session_factory: async_sessionmaker[AsyncSession]) -> None:
+    """Scheduled. Re-applies webhook events that arrived before their payment record existed. BOUNDED: each event is
+    tried at most WEBHOOK_RECOVERY_MAX_ATTEMPTS times and only within WEBHOOK_RECOVERY_WINDOW_MINUTES of arriving, then it
+    is `expired` (its reconciliation record stays for a human). Idempotent and safe with several workers (SKIP LOCKED)."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.core.config import get_settings
+    from app.core.jobs.queue import JobQueue
+    from app.core.payments.interface import WebhookEvent
+    from app.modules.audit.dependencies.audit_deps import get_audit_repository, get_audit_service
+    from app.modules.cart.repositories.cart_repository import CartRepository
+    from app.modules.orders.services.order_service import OrderService
+    from app.modules.payments.dependencies.payment_deps import get_payment_provider
+    from app.modules.payments.repositories.payment_repository import PaymentRepository
+    from app.modules.payments.services.payment_service import PaymentService
+    from app.modules.products.repositories.product_repository import ProductRepository
+
+    settings = get_settings()
+    recovered = expired = retried = 0
+    async with session_factory() as session:
+        rows = await PaymentRepository(session).claim_due_deferred(limit=50)
+        audit = get_audit_service(get_audit_repository(session))
+        service = PaymentService(
+            PaymentRepository(session),
+            OrderService(OrderRepository(session), CartRepository(session), ProductRepository(session)),
+            get_payment_provider(), job_queue=JobQueue(session), audit=audit,
+            lifecycle=_build_lifecycle(session), commit=session.commit,
+        )
+        for row in rows:
+            now = datetime.now(UTC)
+            try:
+                async with session.begin_nested():  # one event's failure never affects the others
+                    if await service.repository.get_by_provider_payment_id(row.provider_payment_id) is None:
+                        row.attempts += 1
+                        if row.attempts >= settings.webhook_recovery_max_attempts or now >= row.expires_at:
+                            row.status, row.resolved_at = "expired", now
+                            row.last_reason = "gave up: the payment record never appeared within the recovery bounds"
+                            await audit.log(actor_user_id=None, action="webhook.deferred_event_expired",
+                                            target_type="webhook_event", target_id=row.event_id,
+                                            details={"provider": row.provider, "event_type": row.event_type,
+                                                     "attempts": row.attempts})
+                            expired += 1
+                        else:
+                            row.next_attempt_at = now + timedelta(seconds=max(settings.webhook_recovery_interval_seconds, 1))
+                            retried += 1
+                        continue
+                    await service.apply_deferred_event(WebhookEvent(
+                        row.event_id, row.event_type, row.provider_payment_id, row.amount, row.amount_received, row.currency,
+                        row.provider_refund_id, row.refund_status, row.provider_dispute_id, row.dispute_status,
+                        row.dispute_reason, row.provider,
+                    ))
+                    row.attempts += 1
+                    row.status, row.resolved_at = "recovered", now
+                    row.last_reason = "applied once the payment record appeared"
+                    for key in (f"unmatched_payment:{row.provider_payment_id}", f"unknown_refund:{row.provider_refund_id}",
+                                f"unmatched_dispute:{row.provider_dispute_id}"):
+                        await service.lifecycle.reconciliations.resolve_by_dedupe_key(
+                            key, "Recovered automatically: the payment record appeared and the event was applied")
+                    await audit.log(actor_user_id=None, action="webhook.deferred_event_recovered", target_type="webhook_event",
+                                    target_id=row.event_id, details={"provider": row.provider, "event_type": row.event_type})
+                    recovered += 1
+            except Exception as exc:  # recorded, counted, and still bounded by the attempt limit
+                await session.refresh(row)
+                row.attempts += 1
+                row.last_reason = f"{type(exc).__name__}: {exc}"[:300]
+                if row.attempts >= settings.webhook_recovery_max_attempts:
+                    row.status, row.resolved_at = "expired", now
+                else:
+                    row.next_attempt_at = now + timedelta(seconds=max(settings.webhook_recovery_interval_seconds, 1))
+                logger.warning("deferred event %s could not be applied: %s", row.event_id, type(exc).__name__)
+        await session.commit()
+    if rows:
+        logger.info("deferred webhook events: %d recovered, %d retried later, %d expired", recovered, retried, expired)
+
+
 # The worker itself schedules the expiry sweep (every ORDER_EXPIRY_SWEEP_INTERVAL_SECONDS; 0 disables it).
 register_schedule(SWEEP_STALE_ORDERS, lambda settings: settings.order_expiry_sweep_interval_seconds)
+register_schedule(REPROCESS_DEFERRED_EVENTS, lambda settings: settings.webhook_recovery_interval_seconds)

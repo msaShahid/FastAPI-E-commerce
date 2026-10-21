@@ -3,6 +3,7 @@
 SWEEP_STALE_ORDERS = "sweep_stale_orders"   # scheduled: finds unpaid orders past the timeout
 EXPIRE_ORDER = "expire_order"               # one per stale order: cancel safely
 EXECUTE_REFUND = "execute_refund"           # one per requested refund: talk to the provider
+REPROCESS_DEFERRED_EVENTS = "reprocess_deferred_events"  # scheduled: bounded recovery of early webhook events
 
 
 def expire_order_dedupe_key(order_id, bucket: int) -> str:

@@ -4,6 +4,7 @@ import stripe
 
 from app.core.config import get_settings
 from app.core.payments.exceptions import (
+    InvalidWebhookPayloadError,
     InvalidWebhookSignatureError,
     PaymentProviderError,
     PaymentProviderTimeoutError,
@@ -118,11 +119,22 @@ class StripePaymentProvider(PaymentProvider):
             event = stripe.Webhook.construct_event(
                 payload, signature_header, self._webhook_secret
             )
-        except (stripe.SignatureVerificationError, ValueError) as exc:
+        except stripe.SignatureVerificationError as exc:
             raise InvalidWebhookSignatureError() from exc
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
+            # Signed, but the body is not JSON / not a JSON object (the SDK can raise from deep inside): a 400, never a
+            # 500 the provider would retry for days. No detail is returned.
+            raise InvalidWebhookPayloadError() from exc
 
         # The SDK returns StripeObject (not a dict: no .get). Work on plain dicts from here on.
         event = event.to_dict() if hasattr(event, "to_dict") else event
+        try:
+            return self._parse_event(event)
+        except (KeyError, TypeError, AttributeError) as exc:  # validly signed, but not an event shape we understand
+            raise InvalidWebhookPayloadError() from exc
+
+    @staticmethod
+    def _parse_event(event: dict) -> WebhookEvent:
         obj = event["data"]["object"]
         currency = obj.get("currency")
         currency = currency.lower() if isinstance(currency, str) else None

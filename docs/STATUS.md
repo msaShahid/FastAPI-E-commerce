@@ -302,6 +302,43 @@ decision); disputes need a human response (no evidence submission); events other
 are recorded but not acted on; nothing exercised against real Stripe test mode in this environment (only real signature
 verification and fakes for outbound calls); the two XOR constraints; legacy orders with no currency.
 
+### Pre-2.9 review: INR default and the five payment-policy decisions (done; live payments disabled)
+Status found BEFORE the changes, and what was done:
+| Area | Found | Now |
+|---|---|---|
+| A. INR default | missing (unset store currency = checkout 503) | `DEFAULT_STORE_CURRENCY=inr`: a NEW store (no configured currency, no orders) uses it and it is persisted at the first order, so a later change of the default never alters the store. A store that already has orders but no configured currency gets NO default (503 until an admin chooses). Admin set/change existed (before the first order; locked after). The response now says `configured` and lists `warnings` (payments not verified / not enabled for that currency). Orders and payments already persist their own currency; nothing is converted. |
+| 1. Paid-order cancellation | partial (ordinary cancel and admin PATCH correctly refuse paid orders; no dedicated workflow; paid stock never returned) | `POST /admin/orders/{id}/cancel-and-refund` (admin; PAID, not fulfilled): requests a full refund; ONLY after the provider confirms it does the order become `refunded` and its stock return, exactly once. A fulfilled order is refunded with the plain refund endpoint (no automatic restock). Fulfilling is blocked while the cancelling refund is in flight. Open dispute blocks it. |
+| 2. Late payments | implemented (2.7/2.8) | unchanged; tested after EXPIRY too (reconciled, not reopened, not refunded, no second restock) |
+| 3. Partial refunds | mostly (cumulative DB limit, external partials recorded, dispute block) but NovaCart refunded "the remainder" after an external partial, i.e. initiated a partial refund | NovaCart initiates FULL refunds only; if part was already refunded it refuses (422 `partial_refund_not_supported`); the rest is completed at the provider and recorded. |
+| 4. Timeout | mostly (one setting, `PENDING_ORDER_TIMEOUT_MINUTES`, used by the sweep, the expiry job and the health report; no hard-coded copies) | the provider's per-intent cancel outcome is now recorded in the audit log; a payment that succeeds during cancel/expiry opens a `cancel_payment_succeeded` case (order not cancelled, stock kept, its webhook confirms it). |
+| 5. Legacy currency | payment blocked; refund NOT blocked; no report/remediation | refunds and cancel-and-refund are blocked too (422 `order_currency_unknown`). `GET /admin/orders/unknown-currency` reports them (with their payments' currencies and why those are not proof). `POST /admin/orders/{id}/establish-currency` records the currency with typed evidence (provider record, accounting record, store history reviewed) + a reference, audited, one-time, immutable afterwards, cannot contradict a recorded payment, converts nothing. The migration assigns NO currency to any order. |
+Not done / needs you: reporting by currency does not exist yet (nothing reads historical amounts across currencies);
+how to decide each legacy order's currency is an operational task for your records; customer self-service cancel of a
+paid order is not offered; the configurable provider system is still its own milestone.
+
+### Confirmed decisions (enforced and tested)
+**1. Paid-order cancellation is admin-only for the initial release.** A customer cannot cancel a paid order by any route:
+the ordinary cancel refuses paid orders for EVERYONE (including administrators), and the cancel-and-refund, refund and
+status endpoints require an administrator. An admin cancellation is `POST /admin/orders/{id}/cancel-and-refund`: it records
+who asked (`refunds.requested_by_user_id` and the audit actor), requests the refund, and only a provider-confirmed refund
+moves the order and returns stock (exactly once). **A future customer cancellation request must be a separate
+request-and-review workflow** (a customer submits a request; an administrator reviews it and then runs the procedure above):
+not built, and no endpoint lets a customer shortcut it.
+**2. Legacy currency evidence** (`POST /admin/orders/{id}/establish-currency`, report at `GET /admin/orders/unknown-currency`).
+Accepted evidence: provider record, accounting record, reviewed store history. Evidence must reliably establish the currency
+for THAT order:
+- a provider record must cite one of the order's own provider payment ids (an order with no payment has none to cite);
+- an accounting record must cite the order's id or one of its payment ids;
+- store history alone is accepted only when the reviewer attests it is unambiguous, it matches the store's current currency,
+  and no change of the store currency is on record; otherwise it is insufficient;
+- a payment already recorded for the order (immutable) must agree with the currency.
+Every review is recorded (`order_currency_remediations`): reviewer, time, evidence type and reference, DECISION
+(`established`, `unresolved_conflicting`, `unresolved_inconclusive`) and the remediation taken ("Order currency set to X" or
+"Left unresolved; manual review required: why"), plus an audit entry. Evidence that conflicts or is inconclusive is recorded
+and rejected: the currency stays unset, payments and refunds stay blocked, and the report shows `manual_review_required`.
+A reviewer can also record "unresolved" explicitly (reason + note). A later review with proper evidence can still establish
+it; only one `established` review per order, and a recorded currency never changes (database trigger). Nothing is converted.
+
 ### Next
 Phase 2.9 (product assignment) then 2.4/2.5 need owner decisions: pricing mode, business
 registrations, approved classifications/rates, place of supply, shipping tax, rounding.

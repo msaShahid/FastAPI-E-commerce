@@ -35,9 +35,6 @@ It protects against scripts and direct SQL, not against a superuser disabling tr
 Test cleanup uses TRUNCATE, which does not fire row triggers.
 
 ### Known schema gap (NOT fixed here, needs its own migration)
-`ck_orders_user_xor_guest` and `ck_carts_user_xor_guest` exist in the models but in no
-migration, so a migrated database lacks them. CI reports them via
-`scripts/check_schema_constraints.py` (allowlisted). Proposed fix, separate change:
 1. Pre-check on the real database: `SELECT count(*) FROM orders WHERE NOT (...)` and the same
    for carts. If any rows violate it, stop and review them; do not rewrite data silently.
 2. Migration adds both constraints as `NOT VALID` (instant, no table scan, no long lock),
@@ -105,7 +102,7 @@ migration, so a migrated database lacks them. CI reports them via
    disputes made in the Stripe dashboard are not reconciled; refunds are two columns, not a table.
 5. **Guests cannot pay** (payments require an account).
 6. The interim tax engine is not a GST calculation; checkout totals are not tax-compliant until the GST engine.
-7. Known schema gap: the two XOR constraints (see above).
+7. Known schema gap: the two XOR constraints (see above). **Closed in Phase 2.9.**
 
 ### Phase 2.5 per-client GST configuration (done; GST still NOT calculated)
 **Architecture / isolation.** The code has no tenant concept (no tenant/org columns or tables). The
@@ -204,7 +201,7 @@ exponent.
    columns, not a table; Stripe calls run inside the DB transaction without an explicit timeout.
 5. Guests cannot pay.
 6. The interim tax engine is not a GST calculation.
-7. Known schema gap: the two XOR constraints.
+7. Known schema gap: the two XOR constraints. **Closed in Phase 2.9.**
 8. Legacy orders (currency NULL) need an explicit decision before they can be paid or refunded.
 
 ### Phase 2.7 order and payment lifecycle integrity (done; live payments still disabled)
@@ -259,7 +256,7 @@ customer; (5) legacy orders with no currency (cannot be paid or refunded).
 1. Each client must enable their currency in `PAYMENT_CURRENCIES_ENABLED` after confirming their Stripe account.
 2. Webhook events other than payment_intent.succeeded/payment_failed and refund.* are ignored (e.g. disputes).
 3. Guests cannot pay or cancel; the interim tax engine is not GST-compliant.
-4. Known schema gap: the two XOR constraints.
+4. Known schema gap: the two XOR constraints. **Closed in Phase 2.9.**
 5. Legacy orders (currency NULL) need an explicit decision.
 6. Not exercised against real Stripe (test mode) in this environment: only fakes, including timeouts/races.
 
@@ -300,7 +297,7 @@ is still unique across providers (changes with the second provider); a payment e
 exists is recorded as unmatched, not retried; partial refunds requested through NovaCart remain unsupported (business
 decision); disputes need a human response (no evidence submission); events other than payment, refund and dispute types
 are recorded but not acted on; nothing exercised against real Stripe test mode in this environment (only real signature
-verification and fakes for outbound calls); the two XOR constraints; legacy orders with no currency.
+verification and fakes for outbound calls); the two XOR constraints (closed in Phase 2.9); legacy orders with no currency.
 
 ### Pre-2.9 review: INR default and the five payment-policy decisions (done; live payments disabled)
 Status found BEFORE the changes, and what was done:
@@ -339,8 +336,31 @@ and rejected: the currency stays unset, payments and refunds stay blocked, and t
 A reviewer can also record "unresolved" explicitly (reason + note). A later review with proper evidence can still establish
 it; only one `established` review per order, and a recorded currency never changes (database trigger). Nothing is converted.
 
+### Phase 2.9 payment readiness, reconciliation closure, production-safety audit (done; live payments disabled)
+Gap table (found by inspecting the repository, then closed):
+| Item | Found | Now |
+|---|---|---|
+| `ck_orders_user_xor_guest`, `ck_carts_user_xor_guest` | partially implemented: on the models (so test databases had them), in NO migration (a migrated database did not) | migration `d4b7e1a9c635` adds both (NOT VALID then VALIDATE). It first checks existing rows and **refuses, changing nothing**, if any violate them (lists ids; never deletes data or invents an owner; `python -m scripts.check_ownership_violations`). Skips a constraint that already exists. Semantics verified against the code (orders.user_id is RESTRICT, users are deactivated, carts cascade). The drift check now reports **0 known gaps**; CI no longer allowlists them. |
+| Event before its payment record | missing (recorded as unmatched only) | `deferred_webhook_events` (migration `e9a2c6f4b811`): identifiers/amount/currency/status only, never the payload. A scheduled worker job re-applies it through the SAME handlers once the payment exists. Bounded: `WEBHOOK_RECOVERY_INTERVAL_SECONDS` (60; 0 disables), `_MAX_ATTEMPTS` (5), `_WINDOW_MINUTES` (60); then `expired`, and the reconciliation record stays open. A recovered event closes its own record. A recovered payment for a cancelled order is only reconciled, never reopened. Idempotent and safe with concurrent workers. Listed at `GET /admin/webhook-events/deferred`. |
+| Signed but malformed webhook | partially implemented: invalid JSON was a 400, but a validly signed JSON array/odd shape was a **500** the provider would retry for days | all malformed shapes are a 400 `Invalid webhook payload` (no detail), nothing claimed |
+| Authorization of payment/refund/dispute/reconciliation/legacy-currency routes | implemented, insufficiently verified | one test over every privileged route: anonymous 401/403, customer 403 |
+| Public routes cannot alter a payment | implemented, insufficiently verified | test on the OpenAPI route table (the only payment writes are create-own, provider webhooks, admin refund request); GraphQL exposes only `update_user`/`deactivate_user` |
+| Secrets in responses/logs/audit | implemented, insufficiently verified | test scans API responses, audit records, webhook-event records and logs for the Stripe key and webhook secrets |
+| Stripe test-mode | not performed | runbook `docs/STRIPE_TESTMODE_VERIFICATION.md` and a guarded script (`scripts/stripe_testmode_check.py`: test keys only, explicit flag, live payments off). **NOT PERFORMED** (no credentials/network here). |
+Re-verified, unchanged: the five payment policies and the two clarifications (INR default, admin-only paid cancellation, late payments,
+full-refund-only with DB-enforced cumulative limit, 30-minute timeout, legacy-currency evidence and review) are in code and tests (Phases 2.6-pre-2.9).
+
+### Remaining blockers to enabling live payments
+1. **Stripe test-mode verification not performed** (outbound calls, real webhook events, expiry cancel, refunds): run the runbook.
+2. Each client must enable their currency in `PAYMENT_CURRENCIES_ENABLED` after confirming their Stripe account supports it.
+3. Legacy orders without a currency (if any) must be reviewed through the evidence process before they can be paid or refunded.
+4. Operational: the worker must run in production (expiry, refunds, recovery); no monitoring/alerting integration beyond `GET /admin/lifecycle/health`.
+5. Only Stripe exists; `payments.provider_payment_id` is still unique across providers (changes with the second provider); the configurable provider system is its own milestone.
+6. Disputes need a human response (no evidence submission); customer cancellation of a paid order is a future request-and-review workflow.
+7. An event that arrives after its recovery window expired is not applied automatically (a human reconciles it).
+
 ### Next
-Phase 2.9 (product assignment) then 2.4/2.5 need owner decisions: pricing mode, business
+Phase 3 (product assignment) then 2.4/2.5 need owner decisions: pricing mode, business
 registrations, approved classifications/rates, place of supply, shipping tax, rounding.
 
 ## Milestone 1: critical checkout defects (complete, awaiting review)

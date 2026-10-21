@@ -22,6 +22,7 @@ from app.modules.orders.models.currency_remediation import OrderCurrencyRemediat
 from app.modules.orders.models.order import Order  # noqa: F401
 from app.modules.orders.models.order_item import OrderItem  # noqa: F401
 from app.modules.orders.models.order_status_history import OrderStatusHistory  # noqa: F401
+from app.modules.payments.models.deferred_event import DeferredWebhookEvent  # noqa: F401
 from app.modules.payments.models.dispute import Dispute  # noqa: F401
 from app.modules.payments.models.payment import Payment  # noqa: F401
 from app.modules.payments.models.refund import PaymentReconciliation, Refund  # noqa: F401

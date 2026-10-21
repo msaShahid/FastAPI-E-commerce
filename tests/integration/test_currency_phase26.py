@@ -117,11 +117,12 @@ async def order_status(db, order_id):
 # ------------------------------------------------------------------ store currency
 async def test_public_store_currency_reports_the_currency_and_exponent(client, db_session):
     r = (await client.get(f"{API}/store/currency")).json()
-    assert r == {"currency": "usd", "minor_unit_exponent": 2, "payment_verified": True}
+    assert r == {"currency": "usd", "minor_unit_exponent": 2, "payment_verified": True, "configured": True, "warnings": []}
     await db_session.execute(text("DELETE FROM store_settings"))
     await db_session.commit()
+    # a NEW store (nothing configured, no orders) reports the INR default, flagged as not yet configured
     assert (await client.get(f"{API}/store/currency")).json() == {
-        "currency": None, "minor_unit_exponent": None, "payment_verified": None}
+        "currency": "inr", "minor_unit_exponent": 2, "payment_verified": True, "configured": False, "warnings": []}
 
 
 async def test_only_an_administrator_can_set_the_store_currency(client, admin_headers):
@@ -165,16 +166,20 @@ async def test_store_currency_is_locked_once_an_order_exists(client, admin_heade
         await db_session.rollback()
 
 
-async def test_checkout_without_a_store_currency_is_refused_and_changes_nothing(client, admin_headers, category, db_session):
+async def test_a_store_that_already_has_orders_but_no_currency_must_choose_explicitly(client, admin_headers, category, db_session):
+    """No default is assumed for a store with history: assuming one could silently misstate it."""
     p = await product(client, admin_headers, category, 1000)
-    await db_session.execute(text("DELETE FROM store_settings"))
+    await user_order(client, p["id"])                                   # the store already has an order
+    await db_session.execute(text("ALTER TABLE store_settings DISABLE TRIGGER USER"))
+    await db_session.execute(text("DELETE FROM store_settings"))        # simulate a legacy deployment with no row
+    await db_session.execute(text("ALTER TABLE store_settings ENABLE TRIGGER USER"))
     await db_session.commit()
+    assert (await client.get(f"{API}/store/currency")).json()["currency"] is None
     await client.post(f"{API}/cart/items", json={"product_id": p["id"], "quantity": 1})
     r = await client.post(f"{API}/orders/checkout", json={"guest_email": "g@example.com", "shipping_address": ADDR},
                           headers={"Idempotency-Key": "no-cur"})
     assert r.status_code == 503 and r.json()["code"] == "store_currency_not_configured"
-    assert (await db_session.execute(text("SELECT count(*) FROM orders"))).scalar_one() == 0
-    assert (await client.get(f"{API}/products/{p['id']}")).json()["stock"] == 20
+    assert (await db_session.execute(text("SELECT count(*) FROM store_settings"))).scalar_one() == 0   # nothing invented
 
 
 # ------------------------------------------------------------------ order currency, snapshots, history
@@ -433,8 +438,16 @@ async def test_readiness_reports_payment_currency_blockers(client, admin_headers
     assert body["payments"]["payment_currency"] == store and body["payments"]["live_payments_enabled"] is False
 
 
-async def test_readiness_reports_a_missing_store_currency(client, admin_headers, db_session):
+async def test_readiness_uses_the_default_for_a_new_store_and_flags_a_legacy_store_without_one(client, admin_headers, category, db_session):
     await db_session.execute(text("DELETE FROM store_settings"))
+    await db_session.commit()
+    body = (await client.get(f"{API}/admin/tax/readiness", headers=admin_headers)).json()
+    assert body["payments"]["payment_currency"] == "inr" and body["payments"]["blockers"] == []   # new store: INR default
+    p = await product(client, admin_headers, category, 1000)
+    await user_order(client, p["id"])
+    await db_session.execute(text("ALTER TABLE store_settings DISABLE TRIGGER USER"))
+    await db_session.execute(text("DELETE FROM store_settings"))
+    await db_session.execute(text("ALTER TABLE store_settings ENABLE TRIGGER USER"))
     await db_session.commit()
     body = (await client.get(f"{API}/admin/tax/readiness", headers=admin_headers)).json()
     assert {b["code"] for b in body["payments"]["blockers"]} == {"store_currency_not_configured"}

@@ -74,6 +74,18 @@ async def _clean_database(test_engine):
 
 
 
+@pytest.fixture
+def clean_settings_env(monkeypatch):
+    """For tests that build `Settings(...)` and assert its DEFAULTS: remove every setting from the process environment
+    first. A developer's real .env (e.g. FLAT_SHIPPING_CENTS=500 inside Docker) would otherwise leak in and break
+    tests that are about the defaults, not about that deployment's values."""
+    from app.core.config import Settings
+
+    for name in Settings.model_fields:
+        for key in {name, name.upper(), name.lower()}:
+            monkeypatch.delenv(key, raising=False)
+
+
 @pytest.fixture(autouse=True)
 def _checkout_pricing_configured_for_tests(monkeypatch):
     """

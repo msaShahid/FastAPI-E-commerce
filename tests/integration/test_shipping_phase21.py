@@ -49,14 +49,14 @@ def _settings(**overrides):
     return Settings(**{**base, **overrides})
 
 
-def test_threshold_without_a_basis_is_rejected_at_startup():
+def test_threshold_without_a_basis_is_rejected_at_startup(clean_settings_env):
     with pytest.raises(ValidationError, match="free_shipping_threshold_basis"):
         _settings(free_shipping_threshold_cents=5000)
     ok = _settings(free_shipping_threshold_cents=5000, free_shipping_threshold_basis="subtotal")
     assert ok.free_shipping_threshold_basis == "subtotal"
 
 
-def test_shipping_settings_default_to_unset_never_to_a_value():
+def test_shipping_settings_default_to_unset_never_to_a_value(clean_settings_env):
     s = _settings()
     assert s.flat_shipping_cents is None
     assert s.free_shipping_threshold_cents is None

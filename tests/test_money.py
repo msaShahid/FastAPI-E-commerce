@@ -107,7 +107,7 @@ def _settings(**over):
     return Settings(**{**base, **over})
 
 
-def test_payment_currencies_default_to_none_and_only_verified_ones_are_accepted():
+def test_payment_currencies_default_to_none_and_only_verified_ones_are_accepted(clean_settings_env):
     assert _settings().enabled_payment_currencies() == set()
     assert _settings(payment_currencies_enabled="INR, usd").enabled_payment_currencies() == {"inr", "usd"}
     with pytest.raises(ValidationError):

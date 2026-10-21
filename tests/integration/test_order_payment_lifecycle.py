@@ -361,7 +361,7 @@ async def test_stale_unpaid_orders_expire_through_the_scheduled_sweep_safely(
     await pay(client, h, stale["id"])
     await make_stale(db_session, stale["id"])
     await make_stale(db_session, paid["id"])  # old, but PAID: must be left alone
-    assert await enqueue_due(test_session_factory, get_settings()) == [SWEEP_STALE_ORDERS]
+    assert SWEEP_STALE_ORDERS in await enqueue_due(test_session_factory, get_settings())   # (other scheduled jobs may be due too)
     await jobs(test_session_factory)
     states = {r[0]: r[1] for r in (await db_session.execute(text("SELECT id::text, status::text FROM orders"))).all()}
     assert (states[stale["id"]], states[fresh["id"]], states[paid["id"]]) == ("cancelled", "pending", "paid")
@@ -430,10 +430,14 @@ async def test_the_scheduler_enqueues_the_sweep_once_per_interval_and_can_be_dis
     settings = get_settings()
     monkeypatch.setattr(settings, "order_expiry_sweep_interval_seconds", 3600)
     first = await asyncio.gather(*[enqueue_due(test_session_factory, settings) for _ in range(5)])  # five workers at once
-    assert sum(len(x) for x in first) == 1
+    assert sum(x.count(SWEEP_STALE_ORDERS) for x in first) == 1          # once, however many workers tick at once
     assert await one(db_session, "SELECT count(*) FROM background_jobs WHERE job_type = :t", t=SWEEP_STALE_ORDERS) == 1
+    # every scheduled job has the same once-per-interval guarantee (the deferred-event recovery job too)
+    assert sum(x.count("reprocess_deferred_events") for x in first) == 1
     monkeypatch.setattr(settings, "order_expiry_sweep_interval_seconds", 0)
-    assert await enqueue_due(test_session_factory, settings) == []  # 0 = disabled
+    assert SWEEP_STALE_ORDERS not in await enqueue_due(test_session_factory, settings)  # 0 = disabled
+    monkeypatch.setattr(settings, "webhook_recovery_interval_seconds", 0)
+    assert await enqueue_due(test_session_factory, settings) == []                      # both disabled: nothing is enqueued
 
 
 async def test_the_scheduler_loop_runs_and_stops_cleanly(client, test_session_factory, db_session, monkeypatch):

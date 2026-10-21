@@ -229,13 +229,15 @@ class PaymentService:
             await self._commit()
 
     async def request_refund(
-        self, *, order_id: UUID, admin_user_id: UUID, payment_id: UUID | None = None
+        self, *, order_id: UUID, admin_user_id: UUID, payment_id: UUID | None = None, cancels_order: bool = False
     ):
         """Admin-only. Records that a refund was REQUESTED and queues it. Nothing has been refunded yet and
         the order is not marked refunded: that only happens when the provider CONFIRMS the refund
         (see OrderLifecycleService.apply_refund_state). Asking twice returns the same refund."""
         self._assert_live_payments_allowed()
-        return await self.lifecycle.request_refund(order_id, admin_user_id, payment_id=payment_id)
+        return await self.lifecycle.request_refund(
+            order_id, admin_user_id, payment_id=payment_id, cancels_order=cancels_order
+        )
 
     async def handle_webhook(self, *, payload: bytes, signature_header: str) -> None:
         event = self.provider.verify_and_parse_webhook(

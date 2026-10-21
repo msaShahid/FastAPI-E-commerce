@@ -34,6 +34,18 @@ class RefundRepository:
             query = query.with_for_update().execution_options(populate_existing=True)
         return (await self.db.execute(query)).scalar_one_or_none()
 
+    async def has_cancelling_refund(self, order_id: UUID) -> bool:
+        """A cancel-with-refund for this order that is still in flight."""
+        return (
+            await self.db.execute(
+                select(func.count()).select_from(Refund).where(
+                    Refund.order_id == order_id,
+                    Refund.cancels_order.is_(True),
+                    Refund.status.in_(["requested", "pending", "uncertain"]),
+                )
+            )
+        ).scalar_one() > 0
+
     async def committed_amount(self, payment_id: UUID) -> int:
         """Sum of the payment's refunds that are in flight or confirmed (what the cumulative limit counts)."""
         return (

@@ -1,7 +1,18 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DDL, CheckConstraint, ForeignKey, Index, Integer, String, Text, event, text
+from sqlalchemy import (
+    DDL,
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    event,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -52,6 +63,9 @@ class Refund(Base, TimestampMixin):
         ForeignKey("users.id", ondelete="SET NULL"), default=None
     )
     attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # True for the paid-order cancellation workflow: when this refund is provider-confirmed and completes the
+    # refund of a PAID (not fulfilled) order, the order's reserved stock is released exactly once.
+    cancels_order: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     # requested = started through NovaCart; provider = made at the provider (e.g. its dashboard) and recorded.
     origin: Mapped[str] = mapped_column(String(20), default="requested", server_default="requested")
     failure_reason: Mapped[str | None] = mapped_column(Text, default=None)

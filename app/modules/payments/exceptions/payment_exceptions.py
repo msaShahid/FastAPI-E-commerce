@@ -1,4 +1,9 @@
-from app.core.exceptions import InvalidStateError, NotFoundError, ServiceUnavailableError
+from app.core.exceptions import (
+    ConflictError,
+    InvalidStateError,
+    NotFoundError,
+    ServiceUnavailableError,
+)
 
 
 class PaymentNotFoundError(NotFoundError):
@@ -49,3 +54,39 @@ class PaymentDisputedError(InvalidStateError):
 
     def __init__(self) -> None:
         super().__init__("This payment has an open dispute and cannot be refunded until it is resolved")
+
+
+
+class OrderCurrencyUnknownError(InvalidStateError):
+    """An order created before currencies were recorded: no payment or refund until its currency is established."""
+
+    code = "order_currency_unknown"
+
+    def __init__(self) -> None:
+        super().__init__(
+            "This order has no recorded currency, so it cannot be refunded or paid. An administrator must "
+            "establish its currency from reliable records first (GET /admin/orders/unknown-currency)."
+        )
+
+
+class PartialRefundNotSupportedError(InvalidStateError):
+    """NovaCart initiates FULL refunds only. A partial refund that already exists (made at the provider) is recorded,
+    but the remainder is completed where it was started."""
+
+    code = "partial_refund_not_supported"
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Part of this payment has already been refunded at the provider. NovaCart initiates full refunds only: "
+            "complete the remaining refund in the provider's dashboard, where it will be recorded here."
+        )
+
+
+class RefundAlreadyRequestedError(ConflictError):
+    code = "refund_already_requested"
+
+    def __init__(self, cancelling: bool) -> None:
+        super().__init__(
+            "A refund for this payment is already in progress"
+            + (" without cancelling the order" if not cancelling else " as part of a cancellation")
+        )

@@ -7,18 +7,24 @@ from sqlalchemy import func, select
 from app.core.config import get_settings
 from app.core.database import DbSession
 from app.core.jobs.models import BackgroundJob
+from app.modules.audit.dependencies.audit_deps import AuditServiceDep
 from app.modules.auth.dependencies.auth import AdminUser
 from app.modules.orders.models.order import Order
+from app.modules.orders.repositories.order_repository import OrderRepository
+from app.modules.orders.services.currency_remediation import OrderCurrencyRemediationService
 from app.modules.payments.dependencies.lifecycle_deps import LifecycleServiceDep
-from app.modules.payments.dependencies.payment_deps import get_payment_repository
+from app.modules.payments.dependencies.payment_deps import PaymentServiceDep, get_payment_repository
 from app.modules.payments.job_types import SWEEP_STALE_ORDERS
 from app.modules.payments.repositories.refund_repository import DisputeRepository
 from app.modules.payments.schemas.payment import (
     DisputeRead,
+    EstablishCurrencyRequest,
+    EstablishCurrencyResult,
     LifecycleHealth,
     ReconciliationRead,
     ReconciliationResolve,
     RefundRead,
+    UnknownCurrencyOrderRead,
     WebhookEventRead,
 )
 from app.shared.enums.order_status import OrderStatus
@@ -122,3 +128,48 @@ async def list_disputes(
     items, total = await DisputeRepository(db).list(status=status_filter, offset=params.offset, limit=params.page_size)
     return PaginatedResponse(items=[DisputeRead.model_validate(i) for i in items], total=total,
                              page=params.page, page_size=params.page_size)
+
+
+def _remediation(db, audit) -> OrderCurrencyRemediationService:
+    from app.modules.payments.repositories.payment_repository import PaymentRepository
+
+    return OrderCurrencyRemediationService(OrderRepository(db), PaymentRepository(db), audit)
+
+
+@lifecycle_router.get("/orders/unknown-currency", response_model=PaginatedResponse[UnknownCurrencyOrderRead])
+async def list_orders_with_unknown_currency(
+    _admin: AdminUser, db: DbSession, audit: AuditServiceDep, params: PageParams = Depends()
+):
+    """Legacy orders created before currencies were recorded. Nothing is assumed: payments and refunds on them are
+    blocked until an administrator establishes the currency from reliable records."""
+    rows, total = await _remediation(db, audit).report(offset=params.offset, limit=params.page_size)
+    return PaginatedResponse(items=[UnknownCurrencyOrderRead.model_validate(r) for r in rows], total=total,
+                             page=params.page, page_size=params.page_size)
+
+
+@lifecycle_router.post("/orders/{order_id}/establish-currency", response_model=EstablishCurrencyResult)
+async def establish_order_currency(
+    order_id: UUID, payload: EstablishCurrencyRequest, admin: AdminUser, db: DbSession, audit: AuditServiceDep
+):
+    """A reviewer's decision on a legacy order, recorded with the evidence, reviewer, time and remediation (audited).
+    Evidence that conflicts, is not specific to the order, or is ambiguous leaves the currency UNRESOLVED (the attempt
+    is recorded and the order stays flagged for manual review). It converts nothing."""
+    record = await _remediation(db, audit).review(
+        order_id, admin.id, decision=payload.decision, currency=payload.currency, evidence_type=payload.evidence_type,
+        evidence_reference=payload.evidence_reference, note=payload.note, reason=payload.reason,
+        store_history_unambiguous=payload.store_history_unambiguous,
+    )
+    return EstablishCurrencyResult(
+        order_id=record.order_id, decision=record.decision, currency=record.currency, evidence_type=record.evidence_type,
+        evidence_reference=record.evidence_reference, remediation=record.remediation,
+        reviewer_user_id=record.established_by_user_id, reviewed_at=record.created_at,
+    )
+
+
+@lifecycle_router.post("/orders/{order_id}/cancel-and-refund", response_model=RefundRead, status_code=status.HTTP_202_ACCEPTED)
+async def cancel_paid_order_with_refund(order_id: UUID, admin: AdminUser, payments: PaymentServiceDep):
+    """The dedicated workflow for cancelling a PAID (not yet fulfilled) order. It REQUESTS a full refund; the order is
+    only marked refunded, and its stock released exactly once, after the provider CONFIRMS the refund. Until then
+    nothing changes. A fulfilled order is refunded with POST /payments/{order_id}/refund (no automatic restock)."""
+    refund, _created = await payments.request_refund(order_id=order_id, admin_user_id=admin.id, cancels_order=True)
+    return RefundRead.model_validate(refund)

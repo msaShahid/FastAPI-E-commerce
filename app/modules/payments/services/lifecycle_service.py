@@ -137,6 +137,10 @@ class OrderLifecycleService:
             return order  # a retry changes nothing
         if order.status != OrderStatus.PAID:
             raise InvalidStatusTransitionError(order.status.value, OrderStatus.FULFILLED.value)
+        if await self.refunds.has_cancelling_refund(order.id):
+            from app.modules.orders.exceptions.order_exceptions import StatusChangeNotAllowedError
+
+            raise StatusChangeNotAllowedError("A cancellation with refund is in progress for this order, so it cannot be fulfilled")
         await self.orders.update_status(order, OrderStatus.FULFILLED, admin_user_id, "marked fulfilled by an administrator")
         await self._audit("order.fulfilled", "order", order.id, admin_user_id)
         return order
@@ -161,6 +165,7 @@ class OrderLifecycleService:
 
         uncertain: list[str] = []
         completed = False
+        outcomes: list[dict] = []  # what the PROVIDER said about each intent (never assumed from our side)
         for payment_id, provider_payment_id in to_cancel:
             try:
                 result = await self.provider.cancel_payment_intent(
@@ -168,12 +173,20 @@ class OrderLifecycleService:
                 )
             except PaymentProviderError:  # includes a timeout: the outcome is UNKNOWN
                 uncertain.append(provider_payment_id)
+                outcomes.append({"provider_payment_id": provider_payment_id, "outcome": "unknown"})
                 continue
+            outcomes.append({"provider_payment_id": provider_payment_id, "outcome": result.status})
             if result.status == "succeeded":
                 completed = True
             elif result.status != "canceled":
                 uncertain.append(provider_payment_id)  # e.g. still processing: cannot be made unpayable
         if completed:
+            # The provider took the money while we were cancelling: the order is NOT cancelled; a human is told.
+            await self.reconcile(
+                ReconciliationKind.CANCEL_PAYMENT_SUCCEEDED, f"cancel_payment_succeeded:{order_id}", order_id=order_id,
+                details={"source": source, "provider_outcomes": outcomes},
+            )
+            await self._commit()
             return CancelResult("payment_in_progress", order)
         if uncertain:
             await self.reconcile(
@@ -195,26 +208,45 @@ class OrderLifecycleService:
             if payment.status == PaymentStatus.PENDING:
                 await self.payments.update_status(payment, PaymentStatus.FAILED)  # its intent is now cancelled
         await self._release_stock_and_cancel(order, actor_user_id, reason)
-        await self._audit("order.cancelled", "order", order.id, actor_user_id, {"source": source, "reason": reason})
+        await self._audit("order.cancelled", "order", order.id, actor_user_id,
+                          {"source": source, "reason": reason, "provider_outcomes": outcomes})
         return CancelResult("cancelled", order)
 
+    async def _restock_once(self, order: Order) -> bool:
+        """Puts the order's reserved stock back, exactly once (row lock AND stock_released_at, which the database
+        also refuses to repeat). Returns whether stock was released now."""
+        if order.stock_released_at is not None:
+            return False
+        locked = await self.products.get_many_for_update([item.product_id for item in order.items])
+        restock: dict[int, int] = {}
+        for item in order.items:
+            if item.product_id in locked:  # a deleted product has nothing to restock
+                restock[item.product_id] = restock.get(item.product_id, 0) + item.quantity
+        await self.products.adjust_stock_many(locked, restock)
+        order.stock_released_at = datetime.now(UTC)
+        return True
+
     async def _release_stock_and_cancel(self, order: Order, actor_user_id, reason: str) -> None:
-        """Restock exactly once (guarded by the row lock AND stock_released_at) and cancel together."""
-        if order.stock_released_at is None:
-            locked = await self.products.get_many_for_update([item.product_id for item in order.items])
-            restock: dict[int, int] = {}
-            for item in order.items:
-                if item.product_id in locked:  # a deleted product has nothing to restock
-                    restock[item.product_id] = restock.get(item.product_id, 0) + item.quantity
-            await self.products.adjust_stock_many(locked, restock)
-            order.stock_released_at = datetime.now(UTC)
+        """Restock exactly once and cancel together."""
+        await self._restock_once(order)
         await self.orders.update_status(order, OrderStatus.CANCELLED, actor_user_id, reason)
 
     # ------------------------------------------------------------ refunds
-    async def request_refund(self, order_id: UUID, requested_by_user_id: UUID, *, payment_id: UUID | None = None) -> tuple[Refund, bool]:
+    async def request_refund(self, order_id: UUID, requested_by_user_id: UUID, *, payment_id: UUID | None = None,
+                             cancels_order: bool = False) -> tuple[Refund, bool]:
         """Records that a refund was REQUESTED and queues its execution. Nothing is refunded yet and the
         order is NOT marked refunded. Returns (refund, created); asking twice returns the same refund."""
         order = await self._lock_order(order_id)
+        if order.currency is None:
+            from app.modules.payments.exceptions.payment_exceptions import OrderCurrencyUnknownError
+
+            raise OrderCurrencyUnknownError()  # never guess a currency for a legacy order
+        if cancels_order and order.status != OrderStatus.PAID:
+            from app.modules.orders.exceptions.order_exceptions import (
+                CancelAndRefundNotAllowedError,
+            )
+
+            raise CancelAndRefundNotAllowedError(order.status.value)
         payments = await self.payments.list_for_order(order.id)
         if payment_id is None:
             if order.status not in (OrderStatus.PAID, OrderStatus.FULFILLED):
@@ -228,6 +260,12 @@ class OrderLifecycleService:
             raise OrderNotRefundableError("No successful payment found for this order")
         existing = await self.refunds.get_active_for_payment(payment.id)
         if existing is not None:
+            if existing.cancels_order != cancels_order:
+                from app.modules.payments.exceptions.payment_exceptions import (
+                    RefundAlreadyRequestedError,
+                )
+
+                raise RefundAlreadyRequestedError(existing.cancels_order)
             return existing, False
         if order.currency is not None and order.currency != payment.currency:
             from app.modules.payments.exceptions.payment_exceptions import PaymentInconsistentError
@@ -237,22 +275,33 @@ class OrderLifecycleService:
             from app.modules.payments.exceptions.payment_exceptions import PaymentDisputedError
 
             raise PaymentDisputedError()
-        # Refund what is still refundable: never more than the payment, counting refunds in flight, confirmed,
-        # and any made at the provider. (Partial refunds requested through NovaCart remain a business decision.)
-        remaining = payment.amount_cents - await self.refunds.committed_amount(payment.id)
-        if remaining <= 0:
+        # NovaCart initiates FULL refunds only (a business decision). If any part was already refunded (e.g. at the
+        # provider), nothing more is initiated here: that remainder is completed where it started and recorded.
+        committed = await self.refunds.committed_amount(payment.id)
+        if committed >= payment.amount_cents:
             raise OrderNotRefundableError("This payment has already been fully refunded")
-        amount = to_stripe_amount(remaining, payment.currency)  # validates currency and amount
+        if committed > 0:
+            from app.modules.payments.exceptions.payment_exceptions import (
+                PartialRefundNotSupportedError,
+            )
+
+            raise PartialRefundNotSupportedError()
+        amount = to_stripe_amount(payment.amount_cents, payment.currency)  # validates currency and amount
         attempt_number = await self.refunds.count_for_payment(payment.id)
         refund = await self.refunds.create(
             payment_id=payment.id, order_id=order.id, amount_cents=amount, currency=payment.currency,
             idempotency_key=f"refund:{payment.id}:{attempt_number}", requested_by_user_id=requested_by_user_id,
+            cancels_order=cancels_order,
         )
         if self.job_queue is not None:
             await self.job_queue.enqueue(EXECUTE_REFUND, {"refund_id": str(refund.id)},
                                          dedupe_key=execute_refund_dedupe_key(refund.id))
         await self._audit("refund.requested", "refund", refund.id, requested_by_user_id,
-                          {"order_id": str(order.id), "amount": amount, "currency": payment.currency})
+                          {"order_id": str(order.id), "amount": amount, "currency": payment.currency,
+                           "cancels_order": cancels_order})
+        if cancels_order:
+            await self._audit("order.cancel_refund_requested", "order", order.id, requested_by_user_id,
+                              {"refund_id": str(refund.id)})
         return refund, True
 
     async def begin_refund_attempt(self, refund_id: UUID) -> RefundAttempt | None:
@@ -335,7 +384,11 @@ class OrderLifecycleService:
         )
         fully_refunded = (payment.refunded_amount_cents or 0) >= payment.amount_cents
         if refund.origin == "requested" and fully_refunded and order.status in (OrderStatus.PAID, OrderStatus.FULFILLED):
+            was_fulfilled = order.status == OrderStatus.FULFILLED
             await self.orders.update_status(order, OrderStatus.REFUNDED, None, "refund confirmed by the payment provider")
+            if refund.cancels_order and not was_fulfilled:
+                # A cancellation with refund: only now that the provider CONFIRMED the refund is stock released.
+                await self._restock_once(order)
         await self._audit("refund.succeeded", "refund", refund.id, details={"order_id": str(order.id)})
 
     # ------------------------------------------------------------ admin status changes

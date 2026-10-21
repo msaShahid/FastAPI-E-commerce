@@ -18,6 +18,7 @@ from app.modules.auth.models.user import User  # noqa: F401
 from app.modules.cart.models.cart import Cart  # noqa: F401
 from app.modules.cart.models.cart_item import CartItem  # noqa: F401
 from app.modules.categories.models.category import Category  # noqa: F401
+from app.modules.orders.models.currency_remediation import OrderCurrencyRemediation  # noqa: F401
 from app.modules.orders.models.order import Order  # noqa: F401
 from app.modules.orders.models.order_item import OrderItem  # noqa: F401
 from app.modules.orders.models.order_status_history import OrderStatusHistory  # noqa: F401

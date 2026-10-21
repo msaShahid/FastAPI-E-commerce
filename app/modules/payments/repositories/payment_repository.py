@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.payments.models.deferred_event import DeferredWebhookEvent
 from app.modules.payments.models.payment import Payment
 from app.modules.payments.models.webhook_event import ProcessedWebhookEvent
 from app.shared.enums.payment_status import PaymentStatus
@@ -121,3 +122,50 @@ class PaymentRepository:
             payment.status = PaymentStatus.REFUNDED
         await self.db.flush()
         return payment
+
+    async def defer_event(self, event, *, window_minutes: int, interval_seconds: int, reason: str) -> bool:
+        """Keeps a verified event about an UNKNOWN payment for bounded recovery. Idempotent per (provider, event id).
+        Stores identifiers only: never the payload. Returns whether a new record was created."""
+        from datetime import timedelta
+
+        now = datetime.now(UTC)
+        stmt = (
+            pg_insert(DeferredWebhookEvent)
+            .values(
+                provider=event.provider, event_id=event.event_id, event_type=event.event_type,
+                provider_payment_id=event.provider_payment_id, amount=event.amount, amount_received=event.amount_received,
+                currency=event.currency, provider_refund_id=event.provider_refund_id, refund_status=event.refund_status,
+                provider_dispute_id=event.provider_dispute_id, dispute_status=event.dispute_status,
+                dispute_reason=event.dispute_reason, status="pending", attempts=0,
+                next_attempt_at=now + timedelta(seconds=max(interval_seconds, 1)),
+                expires_at=now + timedelta(minutes=window_minutes), last_reason=reason[:300],
+            )
+            .on_conflict_do_nothing(constraint="uq_deferred_events_provider_event")
+            .returning(DeferredWebhookEvent.id)
+        )
+        created = (await self.db.execute(stmt)).scalar_one_or_none() is not None
+        await self.db.flush()
+        return created
+
+    async def claim_due_deferred(self, *, limit: int):
+        """Due, still-pending events, locked so concurrent workers never take the same one (SKIP LOCKED)."""
+        rows = await self.db.execute(
+            select(DeferredWebhookEvent)
+            .where(DeferredWebhookEvent.status == "pending", DeferredWebhookEvent.next_attempt_at <= datetime.now(UTC))
+            .order_by(DeferredWebhookEvent.next_attempt_at)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+            .execution_options(populate_existing=True)
+        )
+        return list(rows.scalars().all())
+
+    async def list_deferred(self, *, status: str | None, offset: int, limit: int):
+        conditions = [DeferredWebhookEvent.status == status] if status else []
+        total = (await self.db.execute(select(func.count()).select_from(DeferredWebhookEvent).where(*conditions))).scalar_one()
+        rows = (
+            await self.db.execute(
+                select(DeferredWebhookEvent).where(*conditions)
+                .order_by(DeferredWebhookEvent.created_at.desc()).offset(offset).limit(limit)
+            )
+        ).scalars().all()
+        return list(rows), total

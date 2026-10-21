@@ -174,3 +174,21 @@ class EstablishCurrencyResult(BaseModel):
     remediation: str | None
     reviewer_user_id: UUID | None = None
     reviewed_at: datetime | None = None
+
+
+class DeferredEventRead(BaseModel):
+    """A verified event kept for bounded recovery. Identifiers only: no payload is stored."""
+
+    provider: str
+    event_id: str
+    event_type: str
+    provider_payment_id: str
+    status: str
+    attempts: int
+    next_attempt_at: datetime
+    expires_at: datetime
+    last_reason: str | None
+    resolved_at: datetime | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

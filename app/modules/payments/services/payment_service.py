@@ -279,7 +279,7 @@ class PaymentService:
         elif event.event_type.startswith("refund."):
             await self._handle_refund_event(event)
         elif event.event_type.startswith("charge.dispute."):
-            await self.lifecycle.apply_dispute_event(event)
+            await self._handle_dispute_event(event)
         else:
             handled = False  # a type we do not act on: kept as `ignored` so it can be investigated
         await self.repository.finish_webhook_event(event, "processed" if handled else "ignored")
@@ -338,6 +338,7 @@ class PaymentService:
                 "payment.unmatched_success", None, {"provider_payment_id": provider_payment_id},
                 kind=ReconciliationKind.UNMATCHED_PAYMENT, provider_payment_id=provider_payment_id,
             )
+            await self._defer_event(event, "no payment record for this provider payment id yet")
             return
 
         if not await self._event_matches_payment(event, payment):
@@ -388,6 +389,37 @@ class PaymentService:
                 dedupe_key=order_confirmation_dedupe_key(order.id),
             )
 
+    async def _handle_dispute_event(self, event: WebhookEvent) -> None:
+        await self.lifecycle.apply_dispute_event(event)
+        await self._defer_if_payment_unknown(event, "dispute event for a payment we have no record of yet")
+
+    async def _defer_if_payment_unknown(self, event: WebhookEvent, reason: str) -> None:
+        if event.provider_payment_id and await self.repository.get_by_provider_payment_id(event.provider_payment_id) is None:
+            await self._defer_event(event, reason)
+
+    async def _defer_event(self, event: WebhookEvent, reason: str) -> None:
+        """Keeps the event (identifiers only) so the worker can re-apply it, within bounds, once its payment exists."""
+        if not event.provider_payment_id:
+            return
+        settings = get_settings()
+        if settings.webhook_recovery_interval_seconds <= 0:
+            return  # recovery disabled: the reconciliation record opened for it is the only trace
+        await self.repository.defer_event(
+            event, window_minutes=settings.webhook_recovery_window_minutes,
+            interval_seconds=settings.webhook_recovery_interval_seconds, reason=reason,
+        )
+
+    async def apply_deferred_event(self, event: WebhookEvent) -> None:
+        """Re-applies a deferred event through the SAME handlers as a live delivery (so every rule applies: amount and
+        currency verification, late payments for cancelled orders are only reconciled, refund limits, dispute finality).
+        The caller has already established that the payment record exists and holds the row lock."""
+        if event.event_type == SUCCEEDED_EVENT:
+            await self._handle_payment_succeeded(event)
+        elif event.event_type.startswith("refund."):
+            await self._handle_refund_event(event)
+        elif event.event_type.startswith("charge.dispute."):
+            await self.lifecycle.apply_dispute_event(event)
+
     async def _handle_refund_event(self, event: WebhookEvent) -> None:
         """A provider refund event: applies the provider-reported state to OUR refund (idempotent).
         A refund we did not request (e.g. made in the provider's dashboard) is recorded for review."""
@@ -406,6 +438,7 @@ class PaymentService:
                 )
                 return
         if refund is None:
+            await self._defer_if_payment_unknown(event, "refund event for a payment we have no record of yet")
             await self._flag_for_review(
                 "payment.unknown_refund", None,
                 {"provider_refund_id": event.provider_refund_id, "provider_payment_id": event.provider_payment_id,

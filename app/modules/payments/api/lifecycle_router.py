@@ -17,6 +17,7 @@ from app.modules.payments.dependencies.payment_deps import PaymentServiceDep, ge
 from app.modules.payments.job_types import SWEEP_STALE_ORDERS
 from app.modules.payments.repositories.refund_repository import DisputeRepository
 from app.modules.payments.schemas.payment import (
+    DeferredEventRead,
     DisputeRead,
     EstablishCurrencyRequest,
     EstablishCurrencyResult,
@@ -173,3 +174,16 @@ async def cancel_paid_order_with_refund(order_id: UUID, admin: AdminUser, paymen
     nothing changes. A fulfilled order is refunded with POST /payments/{order_id}/refund (no automatic restock)."""
     refund, _created = await payments.request_refund(order_id=order_id, admin_user_id=admin.id, cancels_order=True)
     return RefundRead.model_validate(refund)
+
+
+@lifecycle_router.get("/webhook-events/deferred", response_model=PaginatedResponse[DeferredEventRead])
+async def list_deferred_webhook_events(
+    _admin: AdminUser, db: DbSession, params: PageParams = Depends(), status_filter: str | None = None
+):
+    """Events that arrived before their payment record and are being retried within bounds (`pending`), were applied
+    when it appeared (`recovered`), or gave up (`expired`: its reconciliation record is for a human)."""
+    items, total = await get_payment_repository(db).list_deferred(
+        status=status_filter, offset=params.offset, limit=params.page_size
+    )
+    return PaginatedResponse(items=[DeferredEventRead.model_validate(i) for i in items], total=total,
+                             page=params.page, page_size=params.page_size)

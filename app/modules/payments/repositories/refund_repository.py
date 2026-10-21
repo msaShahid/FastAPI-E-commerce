@@ -129,6 +129,20 @@ class ReconciliationRepository:
         ).scalars().all()
         return list(rows), total
 
+    async def resolve_by_dedupe_key(self, dedupe_key: str, note: str) -> bool:
+        """Closes an OPEN record the system recovered by itself (no human actor), with a note saying so."""
+        from datetime import UTC, datetime
+
+        from sqlalchemy import update
+
+        result = await self.db.execute(
+            update(PaymentReconciliation)
+            .where(PaymentReconciliation.dedupe_key == dedupe_key, PaymentReconciliation.status == "open")
+            .values(status="resolved", resolution="no_action_needed", resolution_note=note,
+                    resolved_at=datetime.now(UTC).replace(tzinfo=None))
+        )
+        return result.rowcount > 0
+
     async def count_open(self) -> int:
         return (
             await self.db.execute(

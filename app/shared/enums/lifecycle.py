@@ -28,6 +28,7 @@ class ReconciliationKind(enum.StrEnum):
     UNVERIFIABLE_PAYMENT = "unverifiable_payment"    # the event carried no amount/currency
     ORDER_MISMATCH = "order_mismatch"                # payment and order disagree
     CANCEL_UNCERTAIN = "cancel_uncertain"            # could not confirm the intent is no longer payable
+    CANCEL_PAYMENT_SUCCEEDED = "cancel_payment_succeeded"  # the provider reported success while we were cancelling
     REFUND_UNCERTAIN = "refund_uncertain"            # could not learn the refund outcome
     REFUND_MISMATCH = "refund_mismatch"              # refunded amount/currency differ from the request
     EXTERNAL_REFUND = "external_refund"              # a refund made at the provider, recorded here

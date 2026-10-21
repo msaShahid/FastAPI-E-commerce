@@ -106,6 +106,13 @@ class Settings(BaseSettings):
     # How often the worker looks for unpaid orders past PENDING_ORDER_TIMEOUT_MINUTES. 0 disables the
     # scheduler (then nothing expires orders: only do that for tests/maintenance).
     order_expiry_sweep_interval_seconds: int = Field(default=60, ge=0)
+    # Webhook events that arrive BEFORE their payment record exists are kept (identifiers only, never the payload) and
+    # retried, within bounds: every INTERVAL seconds (0 disables recovery), at most MAX_ATTEMPTS times, and only for WINDOW
+    # minutes after the event arrived. After that the event is `expired` and its reconciliation record stays for a human.
+    webhook_recovery_interval_seconds: int = Field(default=60, ge=0)
+    webhook_recovery_window_minutes: int = Field(default=60, ge=1)
+    webhook_recovery_max_attempts: int = Field(default=5, ge=1)
+
     # After this many failed attempts to learn a refund's outcome it becomes `uncertain` (needs a human).
     refund_max_attempts: int = Field(default=3, ge=1)
 

@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import Cookie, Depends, Response
 
-from app.core.config import get_settings
+from app.core.config import HARDENED_ENVIRONMENTS, get_settings
 from app.modules.auth.dependencies.auth import OptionalUser
 
 GUEST_CART_COOKIE = "guest_cart_token"
@@ -53,7 +53,7 @@ async def get_cart_owner(
             value=token,
             httponly=True,
             samesite="lax",
-            secure=settings.environment == "production",
+            secure=settings.environment in HARDENED_ENVIRONMENTS,
             max_age=settings.guest_cart_cookie_max_age_days * 24 * 60 * 60,
         )
 

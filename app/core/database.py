@@ -48,7 +48,7 @@ def build_engine(config: Settings) -> AsyncEngine:
     """
     return create_async_engine(
         config.database_url,
-        echo=config.environment == "development",
+        echo=config.db_echo,
         pool_size=config.db_pool_size,
         max_overflow=config.db_max_overflow,
         pool_timeout=config.db_pool_timeout,

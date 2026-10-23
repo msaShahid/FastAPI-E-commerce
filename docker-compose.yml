@@ -4,6 +4,10 @@ services:
       context: .
       args:
         INSTALL_DEV: "true"
+    # Development only: reload on code changes. The image itself (and the production compose file) never reloads.
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--proxy-headers"]
+    # Development only: bind-mounted source/media from Windows or Linux hosts must stay writable. Production runs non-root.
+    user: "0:0"
     ports:
       - "8000:8000"
     env_file:
@@ -32,6 +36,9 @@ services:
       args:
         INSTALL_DEV: "true"
     command: python -m scripts.run_worker
+    user: "0:0"  # development only, see the api service
+    healthcheck:
+      disable: true  # the worker serves no HTTP (the image's health check is for the API)
     env_file:
       - .env
     environment:

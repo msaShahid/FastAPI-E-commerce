@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     db_pool_timeout: int = Field(default=10, ge=1)      # seconds to wait for a free connection
     db_pool_recycle: int = Field(default=1800, ge=-1)   # replace connections older than this (s); -1 = never
     db_pool_pre_ping: bool = True                       # test a connection before using it
+    # Log every SQL statement WITH its bound parameters (customer data, hashes). Off by default; an explicit local-debugging
+    # switch, deliberately independent of ENVIRONMENT so a mislabelled environment can never turn it on.
+    db_echo: bool = False
 
     # Set to true ONLY if DATABASE_URL goes through a transaction-mode
     # connection pooler (PgBouncer, including a provider's "-pooler" endpoint)

@@ -1,16 +1,58 @@
+# Single-host PRODUCTION template. Copy .env.production.example to .env.production and fill it with real values first:
+# the application refuses to start in production with placeholder secrets.
+#
+#   docker compose -f docker-compose.prod.yml build
+#   docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate     # schema changes: a deliberate deploy step
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# The API listens on 127.0.0.1:8000 only: put a TLS-terminating reverse proxy in front and set FORWARDED_ALLOW_IPS to its address.
+# db and redis publish NO ports. Remove the db/redis services (and the depends_on entries) if you use managed ones.
 services:
+  db:
+    image: postgres:16-alpine
+    env_file:
+      - .env.production        # POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data_prod:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: always
+
   api:
     build:
       context: .
       args:
         INSTALL_DEV: "false"
-    container_name: fastapi_ecommerce_prod
-    ports:
-      - "8000:8000"
     env_file:
       - .env.production
+    ports:
+      - "127.0.0.1:8000:8000"
     volumes:
       - media_prod:/code/media
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     restart: always
 
   # Required in production: the background-job worker (order expiry sweep, refund execution, emails).
@@ -19,13 +61,44 @@ services:
       context: .
       args:
         INSTALL_DEV: "false"
-    container_name: fastapi_ecommerce_worker_prod
     command: python -m scripts.run_worker
     env_file:
       - .env.production
     volumes:
       - media_prod:/code/media
+    healthcheck:
+      disable: true  # serves no HTTP; watch GET /api/v1/admin/lifecycle/health (sweep_overdue, failed_jobs) instead
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     restart: always
+
+  # Not started by `up`: run it on purpose when deploying a release that has migrations.
+  migrate:
+    profiles: ["migrate"]
+    build:
+      context: .
+      args:
+        INSTALL_DEV: "false"
+    command: ["alembic", "upgrade", "head"]
+    env_file:
+      - .env.production
+    depends_on:
+      db:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: "no"
 
 volumes:
   media_prod:
+  postgres_data_prod:
+  redis_data_prod:

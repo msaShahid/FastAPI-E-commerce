@@ -359,6 +359,17 @@ full-refund-only with DB-enforced cumulative limit, 30-minute timeout, legacy-cu
 6. Disputes need a human response (no evidence submission); customer cancellation of a paid order is a future request-and-review workflow.
 7. An event that arrives after its recovery window expired is not applied automatically (a human reconciles it).
 
+### Phase 2.10 configurable payment providers (backend; live payments disabled)
+Design, API contract, secret-storage approach and its limits, tenancy statement and verification status: `docs/PAYMENT_PROVIDERS.md`.
+- Migration `f1c5d8b2a704`: `payment_provider_configs` (encrypted credentials; DB constraints: one per provider+mode, one preferred and only if enabled,
+  enabled needs valid credentials, live-enabled needs verified webhook + sandbox/production attestations) and `payments.provider_config_id`,
+  `payments.provider_reference` (NULL for existing payments = environment-configured Stripe; nothing is created or enabled by the migration).
+- Provider selection has no failover; each payment is reconciled, refunded and cancelled through the configuration that created it (also when disabled).
+- Webhooks verify against the named provider's own stored secrets; events and lookups are provider-scoped; an event verified by one configuration cannot apply to another's payment.
+- Stripe adapter no longer sets a global `stripe.api_key` (per-instance key on every call). Razorpay adapter added (mocked-HTTP tested only).
+- Environment: `PROVIDER_SECRETS_KEY`, `PROVIDER_SECRETS_KEY_ID`, `PROVIDER_SECRETS_PREVIOUS_KEYS` (see `.env.example`).
+**Not verified against any real provider. Not production-ready. Live payments remain disabled.**
+
 ### Next
 Phase 3 (product assignment) then 2.4/2.5 need owner decisions: pricing mode, business
 registrations, approved classifications/rates, place of supply, shipping tax, rounding.

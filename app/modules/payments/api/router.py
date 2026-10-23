@@ -5,6 +5,7 @@ from fastapi import APIRouter, Header, HTTPException, Request, status
 from app.core.exceptions import NotFoundError
 from app.core.payments.exceptions import InvalidWebhookSignatureError
 from app.core.payments.registry import get_spec
+from app.core.rate_limit import limiter, payment_limit
 from app.modules.auth.dependencies.auth import AdminUser, OptionalUser
 from app.modules.cart.dependencies.cart_identity import guest_payment_cookie_name
 from app.modules.payments.dependencies.payment_deps import PaymentServiceDep
@@ -14,6 +15,7 @@ payment_router = APIRouter(prefix="/payments", tags=["payments"])
 
 
 @payment_router.post("", response_model=PaymentRead, status_code=status.HTTP_201_CREATED)
+@limiter.limit(payment_limit)
 async def create_payment(
     payload: PaymentCreate,
     request: Request,

@@ -1,5 +1,6 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Request, status
 
+from app.core.rate_limit import cart_limit, limiter
 from app.modules.cart.dependencies.cart_deps import CartServiceDep
 from app.modules.cart.dependencies.cart_identity import CartOwnerDep
 from app.modules.cart.models.cart import Cart
@@ -42,8 +43,9 @@ async def get_cart(owner: CartOwnerDep, service: CartServiceDep) -> CartRead:
 @cart_router.post(
     "/items", response_model=CartRead, status_code=status.HTTP_201_CREATED
 )
+@limiter.limit(cart_limit)
 async def add_item(
-    payload: CartItemCreate, owner: CartOwnerDep, service: CartServiceDep
+    request: Request, payload: CartItemCreate, owner: CartOwnerDep, service: CartServiceDep
 ) -> CartRead:
     cart = await service.add_item(
         user_id=owner.user_id,

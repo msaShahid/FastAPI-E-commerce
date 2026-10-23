@@ -15,6 +15,7 @@ from fastapi import (
 from fastapi.responses import JSONResponse
 
 from app.core.config import HARDENED_ENVIRONMENTS, get_settings
+from app.core.rate_limit import checkout_limit, limiter
 from app.core.request_context import get_request_id
 from app.modules.auth.dependencies.auth import AdminUser, CurrentUser, OptionalUser
 from app.modules.cart.dependencies.cart_identity import (
@@ -59,6 +60,7 @@ order_router = APIRouter(prefix="/orders", tags=["orders"])
         503: {"description": "Shipping/tax are not configured; checkout is disabled."},
     },
 )
+@limiter.limit(checkout_limit)
 async def checkout(
     request: Request,
     response: Response,

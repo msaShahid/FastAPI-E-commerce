@@ -6,7 +6,8 @@ import pathlib
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select, text
+from _store_currency import reset_store_currency
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 
 from app.core.config import get_settings
@@ -80,6 +81,7 @@ async def product(client, h, category, price, sku="CUR-1", stock=20):
 
 
 async def set_store_currency(client, h, code):
+    await reset_store_currency(code.lower())  # the application cannot change a set currency: re-initialise the order-free store
     r = await client.put(f"{API}/store/currency", json={"currency": code}, headers=h)
     assert r.status_code == 200, r.text
     return r.json()
@@ -135,13 +137,46 @@ async def test_only_an_administrator_can_set_the_store_currency(client, admin_he
                              headers={"Authorization": f"Bearer {tok}"})).status_code == 403
 
 
-async def test_store_currency_can_be_set_and_changed_before_any_order_and_is_audited(client, admin_headers, db_session):
-    assert (await set_store_currency(client, admin_headers, "INR"))["currency"] == "inr"
-    assert (await set_store_currency(client, admin_headers, "jpy"))["minor_unit_exponent"] == 0
-    kwd = await set_store_currency(client, admin_headers, "kwd")
-    assert kwd["minor_unit_exponent"] == 3 and kwd["payment_verified"] is False
-    rows = (await db_session.execute(select(AuditLog).where(AuditLog.action == "store.currency_set").order_by(AuditLog.id))).scalars().all()
-    assert [(r.details["from"], r.details["to"]) for r in rows][:2] == [("usd", "inr"), ("inr", "jpy")]
+async def test_store_currency_is_chosen_once_at_setup_audited_and_then_fixed(client, admin_headers, db_session):
+    """Policy: chosen during initial setup, fixed for the life of the store (even before any order exists)."""
+    await db_session.execute(text("DELETE FROM store_settings"))  # a brand-new, uninitialised store
+    await db_session.commit()
+    first = (await client.put(f"{API}/store/currency", json={"currency": "JPY"}, headers=admin_headers)).json()
+    assert first["currency"] == "jpy" and first["minor_unit_exponent"] == 0 and first["configured"] is True
+    rows = (await db_session.execute(select(AuditLog).where(AuditLog.action == "store.currency_set"))).scalars().all()
+    assert [(r.details["from"], r.details["to"]) for r in rows] == [(None, "jpy")]
+    # repeating the same value is harmless and records nothing new
+    assert (await client.put(f"{API}/store/currency", json={"currency": "jpy"}, headers=admin_headers)).status_code == 200
+    # ANY other value is refused by the API, with no order involved ...
+    other = await client.put(f"{API}/store/currency", json={"currency": "inr"}, headers=admin_headers)
+    assert other.status_code == 409 and other.json()["code"] == "store_currency_locked"
+    assert (await client.get(f"{API}/store/currency")).json()["currency"] == "jpy"
+    # ... and by the database, if the service is bypassed
+    with pytest.raises(IntegrityError):
+        await db_session.execute(text("UPDATE store_settings SET currency = 'inr'"))
+    await db_session.rollback()
+    assert (await db_session.execute(select(func.count()).select_from(AuditLog).where(AuditLog.action == "store.currency_set"))).scalar_one() == 1
+
+
+async def test_concurrent_first_time_initialisations_leave_one_currency_and_refuse_the_other(client, admin_headers, db_session):
+    import asyncio
+
+    await db_session.execute(text("DELETE FROM store_settings"))
+    await db_session.commit()
+    results = await asyncio.gather(*[client.put(f"{API}/store/currency", json={"currency": c}, headers=admin_headers) for c in ("inr", "usd")])
+    assert sorted(r.status_code for r in results) == [200, 409]
+    winner = next(r for r in results if r.status_code == 200).json()["currency"]
+    assert (await db_session.execute(text("SELECT currency FROM store_settings"))).scalar_one() == winner
+
+
+async def test_the_default_currency_recorded_by_the_first_checkout_is_also_fixed(client, admin_headers, category, db_session):
+    await db_session.execute(text("DELETE FROM store_settings"))
+    await db_session.commit()
+    p = await product(client, admin_headers, category, 1000)
+    await user_order(client, p["id"])  # a new store: the INR default is recorded by its first use
+    assert (await db_session.execute(text("SELECT currency FROM store_settings"))).scalar_one() == "inr"
+    r = await client.put(f"{API}/store/currency", json={"currency": "usd"}, headers=admin_headers)
+    assert r.status_code == 409 and r.json()["code"] == "store_currency_locked"
 
 
 @pytest.mark.parametrize("bad", ["xyz", "dollars", "us", "12"])
@@ -419,7 +454,11 @@ def test_migration_and_model_use_identical_currency_guard_sql():
     spec = importlib.util.spec_from_file_location("currency_migration", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    migration = (module.STORE_CURRENCY_GUARD_SQL, module.ORDER_CURRENCY_GUARD_SQL, module.PAYMENT_AMOUNT_GUARD_SQL)
+    fixed = next(pathlib.Path("alembic/versions").glob("c3f9b1d7a846_*.py"))  # the store function was replaced by this migration
+    spec2 = importlib.util.spec_from_file_location("currency_fix_migration", fixed)
+    module2 = importlib.util.module_from_spec(spec2)
+    spec2.loader.exec_module(module2)
+    migration = (module2.STORE_CURRENCY_GUARD_SQL, module.ORDER_CURRENCY_GUARD_SQL, module.PAYMENT_AMOUNT_GUARD_SQL)
     assert tuple(s.strip() for s in migration) == tuple(s.strip() for s in CURRENCY_FUNCTIONS)
 
 

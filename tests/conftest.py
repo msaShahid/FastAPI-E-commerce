@@ -42,7 +42,10 @@ def test_session_factory(test_engine):
     of the pool, exactly the same way core/database.py's get_db works
     for the real app.
     """
-    return async_sessionmaker(bind=test_engine, expire_on_commit=False)
+    import _store_currency
+
+    _store_currency.FACTORY = async_sessionmaker(bind=test_engine, expire_on_commit=False)
+    return _store_currency.FACTORY
 
 
 @pytest_asyncio.fixture

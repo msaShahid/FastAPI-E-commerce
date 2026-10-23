@@ -14,6 +14,7 @@ from dataclasses import replace
 
 import httpx
 import pytest
+from _store_currency import reset_store_currency
 from cryptography.fernet import Fernet
 from pydantic import SecretStr
 from sqlalchemy import text
@@ -119,6 +120,7 @@ async def category(client, admin_headers):
 
 
 async def set_inr(client, admin_headers):
+    await reset_store_currency("inr")  # the application cannot change a set currency: re-initialise the order-free store
     assert (await client.put(f"{API}/store/currency", json={"currency": "inr"}, headers=admin_headers)).status_code == 200
 
 

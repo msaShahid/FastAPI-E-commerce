@@ -7,6 +7,7 @@ import asyncio
 import json
 
 import pytest
+from _store_currency import reset_store_currency
 from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
@@ -21,6 +22,7 @@ from app.core.payments.interface import (
     WebhookEvent,
 )
 from app.main import app
+from app.modules.audit.models.audit_log import AuditLog
 from app.modules.payments.dependencies.payment_deps import get_payment_provider
 
 API = "/api/v1"
@@ -173,14 +175,16 @@ def test_the_default_currency_must_be_supported():
         Settings(**base, default_store_currency="xyz")
 
 
-async def test_an_administrator_can_change_the_currency_and_sees_whether_payments_would_work(client, admin_headers, monkeypatch):
-    r = await client.put(f"{API}/store/currency", json={"currency": "kwd"}, headers=admin_headers)
-    assert r.status_code == 200 and r.json()["configured"] is True
-    assert any("not verified" in w for w in r.json()["warnings"])                         # checked against the provider
-    monkeypatch.setattr(get_settings(), "payment_currencies_enabled", "inr")
-    r = await client.put(f"{API}/store/currency", json={"currency": "usd"}, headers=admin_headers)
-    assert any("PAYMENT_CURRENCIES_ENABLED" in w for w in r.json()["warnings"])
-    assert (await client.put(f"{API}/store/currency", json={"currency": "inr"}, headers=admin_headers)).json()["warnings"] == []
+async def test_an_administrator_choosing_the_currency_sees_whether_payments_would_work(client, admin_headers, monkeypatch):
+    for code, enabled, expect in (("kwd", "", "not verified"), ("usd", "inr", "PAYMENT_CURRENCIES_ENABLED"), ("inr", "inr", None)):
+        await reset_store_currency(code)  # one fresh store per currency: a set currency is fixed for the life of the store
+        monkeypatch.setattr(get_settings(), "payment_currencies_enabled", enabled)
+        r = await client.put(f"{API}/store/currency", json={"currency": code}, headers=admin_headers)
+        assert r.status_code == 200 and r.json()["configured"] is True
+        if expect:
+            assert any(expect in w for w in r.json()["warnings"])
+        else:
+            assert r.json()["warnings"] == []
     assert (await client.put(f"{API}/store/currency", json={"currency": "xyz"}, headers=admin_headers)).status_code == 422
 
 
@@ -593,8 +597,10 @@ async def test_store_history_alone_is_accepted_only_when_unambiguous(client, adm
 
 
 async def test_store_history_is_ambiguous_if_the_store_currency_was_ever_changed(client, admin_headers, category, provider, db_session):
-    await client.put(f"{API}/store/currency", json={"currency": "inr"}, headers=admin_headers)     # a change is on record...
-    await client.put(f"{API}/store/currency", json={"currency": "usd"}, headers=admin_headers)
+    # A change is on record from before currencies became fixed (the API can no longer produce one, an old deployment can have it).
+    db_session.add(AuditLog(actor_user_id=None, action="store.currency_set", target_type="store_settings", target_id="1",
+                            details={"from": "inr", "to": "usd"}))
+    await db_session.commit()
     h, o, _ = await legacy(client, admin_headers, category, provider, db_session, with_payment=False)
     r = await client.post(f"{API}/admin/orders/{o['id']}/establish-currency", headers=admin_headers,
                           json=review(evidence_type="store_history_reviewed", evidence_reference="Store settings reviewed",

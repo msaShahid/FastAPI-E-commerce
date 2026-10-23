@@ -15,6 +15,7 @@ from app.modules.payments.repositories.refund_repository import (
     RefundRepository,
 )
 from app.modules.payments.services.lifecycle_service import OrderLifecycleService
+from app.modules.payments.services.provider_resolver import ProviderResolver
 from app.modules.products.repositories.product_repository import ProductRepository
 
 
@@ -26,7 +27,7 @@ def get_lifecycle_service(
     return OrderLifecycleService(
         OrderRepository(db), ProductRepository(db), PaymentRepository(db), RefundRepository(db),
         ReconciliationRepository(db), provider, audit=audit, job_queue=JobQueue(db), commit=db.commit,
-        disputes=DisputeRepository(db),
+        disputes=DisputeRepository(db), provider_resolver=ProviderResolver(db),
     )
 
 

@@ -88,13 +88,14 @@ def _build_lifecycle(session):
         RefundRepository,
     )
     from app.modules.payments.services.lifecycle_service import OrderLifecycleService
+    from app.modules.payments.services.provider_resolver import ProviderResolver
     from app.modules.products.repositories.product_repository import ProductRepository
 
     return OrderLifecycleService(
         OrderRepository(session), ProductRepository(session), PaymentRepository(session), RefundRepository(session),
         ReconciliationRepository(session), get_payment_provider(),
         audit=get_audit_service(get_audit_repository(session)), job_queue=JobQueue(session), commit=session.commit,
-        disputes=DisputeRepository(session),
+        disputes=DisputeRepository(session), provider_resolver=ProviderResolver(session),
     )
 
 
@@ -159,7 +160,8 @@ async def execute_refund(payload: dict, session_factory: async_sessionmaker[Asyn
         return  # already handled
 
     try:
-        result = await get_provider().create_refund(
+        refund_provider = await _refund_provider(session_factory, attempt.provider_config_id)
+        result = await refund_provider.create_refund(
             provider_payment_id=attempt.provider_payment_id, amount_cents=attempt.amount,
             currency=attempt.currency, idempotency_key=attempt.idempotency_key,
         )
@@ -176,6 +178,18 @@ async def execute_refund(payload: dict, session_factory: async_sessionmaker[Asyn
         await _build_lifecycle(session).finish_refund(refund_id, result)
         await session.commit()
     logger.info("refund %s recorded with provider status %s", refund_id, result.status)
+
+
+async def _refund_provider(session_factory, config_id):
+    """The provider that CREATED the payment (its stored configuration even if disabled/rotated), else the environment one."""
+    if config_id is not None:
+        from app.modules.payments.services.provider_resolver import ProviderResolver
+
+        async with session_factory() as session:
+            provider = await ProviderResolver(session).provider_for_config(config_id)
+        if provider is not None:
+            return provider
+    return get_provider()
 
 
 def get_provider():
@@ -200,6 +214,7 @@ async def reprocess_deferred_events(payload: dict, session_factory: async_sessio
     from app.modules.payments.dependencies.payment_deps import get_payment_provider
     from app.modules.payments.repositories.payment_repository import PaymentRepository
     from app.modules.payments.services.payment_service import PaymentService
+    from app.modules.payments.services.provider_resolver import ProviderResolver
     from app.modules.products.repositories.product_repository import ProductRepository
 
     settings = get_settings()
@@ -211,13 +226,13 @@ async def reprocess_deferred_events(payload: dict, session_factory: async_sessio
             PaymentRepository(session),
             OrderService(OrderRepository(session), CartRepository(session), ProductRepository(session)),
             get_payment_provider(), job_queue=JobQueue(session), audit=audit,
-            lifecycle=_build_lifecycle(session), commit=session.commit,
+            lifecycle=_build_lifecycle(session), commit=session.commit, resolver=ProviderResolver(session),
         )
         for row in rows:
             now = datetime.now(UTC)
             try:
                 async with session.begin_nested():  # one event's failure never affects the others
-                    if await service.repository.get_by_provider_payment_id(row.provider_payment_id) is None:
+                    if await service.repository.get_by_provider_payment_id(row.provider_payment_id, row.provider) is None:
                         row.attempts += 1
                         if row.attempts >= settings.webhook_recovery_max_attempts or now >= row.expires_at:
                             row.status, row.resolved_at = "expired", now

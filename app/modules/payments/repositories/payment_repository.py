@@ -54,8 +54,8 @@ class PaymentRepository:
         order_id: UUID,
         provider_payment_id: str,
         amount_cents: int,
-        currency: str = "usd",
-        provider: str = "stripe",
+        currency: str,
+        provider: str,
         provider_config_id=None,
     ) -> Payment:
         payment = Payment(

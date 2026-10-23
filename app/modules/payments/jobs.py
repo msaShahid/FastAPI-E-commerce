@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.email import get_email_sender
 from app.core.jobs.registry import job_handler
+from app.core.money import format_minor
 from app.core.redaction import redact
 from app.modules.auth.models.user import User
 from app.modules.orders.repositories.order_repository import OrderRepository
@@ -56,7 +57,8 @@ async def send_order_confirmation(
                 return
             recipient = user.email
         lines = [f"  {item.quantity} x {item.product_name_snapshot}" for item in order.items]
-        total = f"{order.total_cents / 100:.2f}"
+        # In the order's OWN currency and minor-unit exponent. A legacy order with no recorded currency is never given a guessed one.
+        total = f"{format_minor(order.total_cents, order.currency)} {order.currency.upper()}" if order.currency else None
         short_id = str(order.id)[:8]
 
     body = "\n".join(
@@ -66,7 +68,7 @@ async def send_order_confirmation(
             f"Order {short_id}",
             *lines,
             "",
-            f"Total paid: {total}",
+            *([f"Total paid: {total}"] if total else []),
         ]
     )
     await get_email_sender().send(

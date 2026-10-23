@@ -53,7 +53,8 @@ class Payment(Base, TimestampMixin):
     )
 
     amount_cents: Mapped[int] = mapped_column(Integer)
-    currency: Mapped[str] = mapped_column(String(3), default="usd", server_default="usd")
+    # No default: a payment states the currency of its order. A forgotten value must fail, never become US dollars.
+    currency: Mapped[str] = mapped_column(String(3))
 
     provider_refund_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     refunded_amount_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)

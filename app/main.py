@@ -18,7 +18,7 @@ from app.core.database import async_session_factory, get_db
 from app.core.exception_handlers import register_exception_handlers
 from app.core.jobs.worker import run_worker
 from app.core.logging_config import configure_logging
-from app.core.rate_limit import limiter
+from app.core.rate_limit import limiter, warn_if_forwarded_headers_untrusted
 from app.core.request_context import REQUEST_ID_HEADER, RequestContextMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.graphql.schema import graphql_router
@@ -43,6 +43,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    warn_if_forwarded_headers_untrusted()
     stop_worker = asyncio.Event()
     worker_task: asyncio.Task | None = None
     if settings.jobs_embedded_worker:

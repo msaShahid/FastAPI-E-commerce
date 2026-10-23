@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
-from jose import JWTError, jwt
+import jwt
 from passlib.context import CryptContext
 
 from app.core.config import get_settings
@@ -11,6 +11,10 @@ from app.core.config import get_settings
 settings = get_settings()
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
+
+
+class TokenError(Exception):
+    """The ONE exception for an unusable token (bad signature, expired, malformed, missing claims)."""
 
 
 class TokenType(StrEnum):
@@ -74,13 +78,18 @@ def create_refresh_token(subject: str) -> str:
 
 def decode_token(token: str) -> dict[str, Any]:
     """
-    Verifies the signature AND checks expiration (jose does both as part
-    of jwt.decode -- an expired token raises here, we don't check `exp`
-    manually). Raises jose.JWTError on any problem: bad signature,
-    expired, malformed. Callers catch this ONE exception type rather than
-    needing to know jose's internal exception hierarchy.
+    Verifies the signature AND checks expiration (PyJWT does both as part of jwt.decode, pinned to the configured algorithm,
+    and `exp` and `sub` must be present). Raises TokenError on any problem: bad signature, expired, malformed. Callers catch
+    this ONE exception type rather than needing to know the library's exception hierarchy.
     """
     try:
-        return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
-    except JWTError as exc:
-        raise JWTError("Invalid or expired token") from exc
+        return jwt.decode(
+            token, settings.jwt_secret, algorithms=[settings.jwt_algorithm], options={"require": ["exp", "sub"]}
+        )
+    except jwt.PyJWTError as exc:
+        raise TokenError("Invalid or expired token") from exc
+
+
+def unverified_claims(token: str) -> dict[str, Any]:
+    """Claims of a token THIS server has just minted (to read its jti/exp for storage). Never use on a token a client sent."""
+    return jwt.decode(token, options={"verify_signature": False, "verify_exp": False})

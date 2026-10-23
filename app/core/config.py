@@ -243,6 +243,15 @@ class Settings(BaseSettings):
     # Convenient for development and small deployments; for production prefer
     # `python -m scripts.run_worker` so a slow job can never compete with request
     # handling for CPU and so the worker can be scaled on its own.
+    # --- Rate limits (per client address; counters live in Redis). Login, registration and token refresh keep their fixed limits.
+    # Tunable here: the money-moving and abuse-prone routes. A limit is "<count>/<second|minute|hour|day>".
+    rate_limit_checkout: str = "10/minute"
+    rate_limit_payment: str = "15/minute"
+    rate_limit_cart: str = "60/minute"
+    # Applied to EVERY limited route (in memory, per process) while Redis is unreachable, so an outage neither turns requests into
+    # errors nor switches limiting off completely.
+    rate_limit_fallback: str = "30/minute"
+
     jobs_embedded_worker: bool = False
     jobs_concurrency: int = Field(default=2, ge=1)  # jobs a worker runs at once
     jobs_poll_interval_seconds: float = Field(default=1.0, gt=0)  # sleep when idle

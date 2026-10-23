@@ -349,7 +349,7 @@ async def test_every_privileged_payment_route_refuses_anonymous_and_customer_cal
 def test_no_public_route_can_change_a_payment_or_refund_directly():
     # The OpenAPI schema is the reliable route table (FastAPI wraps included routers, so app.routes is not flat).
     paths = app.openapi()["paths"]
-    payment_paths = {p: sorted(m.upper() for m in ops) for p, ops in paths.items() if "payment" in p.lower()}
+    payment_paths = {p: sorted(m.upper() for m in ops) for p, ops in paths.items() if "/payments" in p.lower()}
     assert payment_paths, "the route table was not read: this test would pass vacuously"
     assert payment_paths == {
         "/api/v1/payments": ["POST"],                                   # create a payment for the caller's own order

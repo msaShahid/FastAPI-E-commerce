@@ -77,7 +77,5 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_payments_provider_payment_id'), table_name='payments')
     op.drop_index(op.f('ix_payments_order_id'), table_name='payments')
     op.drop_table('payments')
-    # Note: this leaves the native `payment_status` enum type in place,
-    # same as `order_status` / `product_status` do on their downgrades
-    # elsewhere in this chain -- consistent with, not a fix for, that
-    # existing behavior.
+    # A native enum outlives its table: left behind, a re-upgrade fails with "type already exists".
+    op.execute("DROP TYPE IF EXISTS payment_status")

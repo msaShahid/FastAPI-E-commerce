@@ -81,8 +81,35 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+# Downgrades are a DEVELOPMENT convenience (see docs/MIGRATIONS.md): several drop columns or tables outright. They are refused on a
+# database that holds real data unless the operator says so explicitly: `alembic -x allow_data_loss=true downgrade ...`.
+# Production recovery is "restore the backup", never "downgrade".
+DOWNGRADE_PROTECTED_TABLES = ("users", "products", "orders", "payments")
+_downgrade_checked = False
+
+
+def refuse_downgrade_with_data(ctx, step, heads, run_args) -> None:
+    """Runs after each step, inside the same transaction as the whole run, so raising here rolls EVERYTHING back."""
+    global _downgrade_checked
+    if _downgrade_checked or step.is_upgrade:
+        return
+    _downgrade_checked = True
+    if context.get_x_argument(as_dictionary=True).get("allow_data_loss", "").lower() == "true":
+        return
+    for table in DOWNGRADE_PROTECTED_TABLES:
+        exists = ctx.connection.exec_driver_sql(f"SELECT to_regclass('public.{table}') IS NOT NULL").scalar()
+        if exists and ctx.connection.exec_driver_sql(f"SELECT EXISTS (SELECT 1 FROM {table})").scalar():
+            raise RuntimeError(
+                f"Refusing to downgrade: table '{table}' holds data and a downgrade can destroy it. Nothing was changed. "
+                "To recover production, restore a backup. To downgrade a throwaway database anyway: "
+                "alembic -x allow_data_loss=true downgrade <revision>"
+            )
+
+
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection, target_metadata=target_metadata, on_version_apply=refuse_downgrade_with_data
+    )
 
     with context.begin_transaction():
         context.run_migrations()

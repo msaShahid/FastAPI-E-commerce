@@ -47,3 +47,4 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_orders_idempotency_key'), table_name='orders')
     op.drop_table('orders')
     # ### end Alembic commands ###
+    op.execute("DROP TYPE IF EXISTS order_status")  # a native enum outlives its table: left behind, a re-upgrade fails

@@ -134,6 +134,10 @@ jobs:
       - name: Apply all migrations
         run: alembic upgrade head
 
+      # A single head: two branches merged without `alembic merge` would leave `upgrade head` ambiguous.
+      - name: Exactly one migration head
+        run: test "$(alembic heads | grep -c '(head)')" = "1"
+
       # Fails if the models and the migrated schema disagree: a column,
       # index or constraint changed in a model without a new migration
       # (or the reverse). The fix is `alembic revision --autogenerate`.
@@ -144,6 +148,15 @@ jobs:
       # declared in a model that no migration creates. The two XOR constraints are a
       - name: Check named constraints exist in the migrated database
         run: >-
+          python -m scripts.check_schema_constraints
+
+      # Downgrades are a development convenience, but a broken one hides a broken migration (a native enum left behind made
+      # the next upgrade fail). On this EMPTY database a full downgrade must work and the schema must come back identical.
+      - name: Downgrade to base and upgrade again
+        run: |
+          alembic downgrade base
+          alembic upgrade head
+          alembic check
           python -m scripts.check_schema_constraints
 
   dependency-audit:

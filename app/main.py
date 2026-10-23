@@ -29,6 +29,7 @@ from app.modules.cart.api.router import cart_router
 from app.modules.categories.api.router import category_router
 from app.modules.orders.api.router import order_router
 from app.modules.payments.api.lifecycle_router import lifecycle_router
+from app.modules.payments.api.provider_router import provider_router
 from app.modules.payments.api.router import payment_router
 from app.modules.playground.api.router import playground_router
 from app.modules.products.api.router import product_router
@@ -105,6 +106,7 @@ app.include_router(audit_router, prefix=settings.api_v1_prefix)
 app.include_router(tax_router, prefix=settings.api_v1_prefix)
 app.include_router(store_router, prefix=settings.api_v1_prefix)
 app.include_router(lifecycle_router, prefix=settings.api_v1_prefix)
+app.include_router(provider_router, prefix=settings.api_v1_prefix)
 
 
 app.include_router(graphql_router, prefix="/graphql")

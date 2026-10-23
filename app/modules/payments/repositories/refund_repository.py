@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.payments.models.dispute import Dispute
@@ -33,6 +33,21 @@ class RefundRepository:
         if for_update:
             query = query.with_for_update().execution_options(populate_existing=True)
         return (await self.db.execute(query)).scalar_one_or_none()
+
+    async def has_submitted_refund(self, payment_id: UUID) -> bool:
+        """A refund that has reached, or may have reached, the provider: accepted/unknown/confirmed, or `requested` after at
+        least one attempt (the call may have been processed even though we never heard back)."""
+        return (
+            await self.db.execute(
+                select(func.count()).select_from(Refund).where(
+                    Refund.payment_id == payment_id,
+                    or_(
+                        Refund.status.in_(["pending", "uncertain", "succeeded"]),
+                        and_(Refund.status == "requested", Refund.attempts > 0),
+                    ),
+                )
+            )
+        ).scalar_one() > 0
 
     async def has_cancelling_refund(self, order_id: UUID) -> bool:
         """A cancel-with-refund for this order that is still in flight."""

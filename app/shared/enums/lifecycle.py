@@ -35,6 +35,8 @@ class ReconciliationKind(enum.StrEnum):
     DISPUTE_OPENED = "dispute_opened"                # a chargeback needs a response
     DISPUTE_LOST = "dispute_lost"                    # the dispute was lost: money left the account
     UNMATCHED_DISPUTE = "unmatched_dispute"          # a dispute for a payment we have no record of
+    REFUND_BLOCKED_BY_DISPUTE = "refund_blocked_by_dispute"  # a queued refund was NOT sent: a dispute opened first
+    DISPUTE_DURING_REFUND = "dispute_during_refund"  # a dispute opened after a refund was already submitted
 
 
 class ReconciliationStatus(enum.StrEnum):

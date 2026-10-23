@@ -275,6 +275,8 @@ class OrderLifecycleService:
                 payment = None
         if payment is None:
             raise OrderNotRefundableError("No successful payment found for this order")
+        # Serialise with dispute recording on the payment row BEFORE reading dispute/refund state (order -> payment lock order).
+        await self.payments.lock_for_update(payment.id)
         existing = await self.refunds.get_active_for_payment(payment.id)
         if existing is not None:
             if existing.cancels_order != cancels_order:
@@ -326,7 +328,27 @@ class OrderLifecycleService:
         refund = await self.refunds.get(refund_id, for_update=True)
         if refund is None or refund.status != RefundStatus.REQUESTED:
             return None  # already handled (duplicate job): nothing to do
-        payment = await self.payments.get_by_id(refund.payment_id)
+        payment = await self.payments.lock_for_update(refund.payment_id)  # same lock dispute recording takes
+        if self.disputes is not None and await self.disputes.has_open(payment.id):
+            if refund.attempts == 0:
+                # Nothing has reached the provider: do NOT submit. The refund ends `failed` (final) and a human decides; once the
+                # dispute is closed a NEW refund can be requested (new idempotency key).
+                refund.status = RefundStatus.FAILED.value
+                refund.failure_reason = "not submitted: a dispute is open on this payment"
+                await self.refunds.save(refund)
+                await self.reconcile(
+                    ReconciliationKind.REFUND_BLOCKED_BY_DISPUTE, f"refund_blocked_by_dispute:{refund.id}", payment=payment,
+                    details={"refund_id": str(refund.id), "cancels_order": refund.cancels_order},
+                )
+                await self._audit("refund.blocked_by_dispute", "refund", refund.id, details={"payment_id": str(payment.id)})
+                await self._commit()
+                return None
+            # An earlier attempt may already have been processed (we never heard back). Retrying with the SAME idempotency key
+            # only learns that outcome and cannot create a second refund, so it proceeds; the conflict is recorded for a human.
+            await self.reconcile(
+                ReconciliationKind.DISPUTE_DURING_REFUND, f"dispute_during_refund:{refund.id}", payment=payment,
+                details={"refund_id": str(refund.id), "attempts": refund.attempts, "phase": "retry_after_unknown_outcome"},
+            )
         refund.attempts += 1
         await self.refunds.save(refund)
         from app.core.payments.registry import get_spec
@@ -404,6 +426,12 @@ class OrderLifecycleService:
         await self.payments.add_refunded_amount(
             payment, provider_refund_id=provider_refund_id, amount=amount or refund.amount_cents
         )
+        if self.disputes is not None and await self.disputes.has_open(payment.id):
+            # The provider refunded while a dispute is open: the real outcome is recorded, the conflict is for a human.
+            await self.reconcile(
+                ReconciliationKind.DISPUTE_DURING_REFUND, f"dispute_during_refund:{refund.id}", payment=payment,
+                details={"refund_id": str(refund.id), "phase": "refund_confirmed_while_dispute_open"},
+            )
         fully_refunded = (payment.refunded_amount_cents or 0) >= payment.amount_cents
         if refund.origin == "requested" and fully_refunded and order.status in (OrderStatus.PAID, OrderStatus.FULFILLED):
             was_fulfilled = order.status == OrderStatus.FULFILLED
@@ -522,6 +550,7 @@ class OrderLifecycleService:
                          "amount": event.amount},
             )
             return
+        await self.payments.lock_for_update(payment.id)  # serialise with refund submission (see begin_refund_attempt)
         mapped = DISPUTE_STATUS_MAP.get(event.dispute_status or "", "open")  # unknown statuses need attention: open
         terminal = mapped in ("won", "lost", "closed")
         dispute = await self.disputes.get_by_provider_id(event.provider, event.provider_dispute_id, for_update=True)
@@ -533,6 +562,13 @@ class OrderLifecycleService:
                 reason=event.dispute_reason, closed_at=datetime.now(UTC).replace(tzinfo=None) if terminal else None,
             )
             await self._audit("dispute.opened", "dispute", dispute.id, details={"status": mapped, "payment_id": str(payment.id)})
+            if not terminal and await self.refunds.has_submitted_refund(payment.id):
+                # A refund had already reached (or may have reached) the provider before this dispute was recorded. It could not be
+                # prevented; its real outcome is recorded as reported, and this record tells a human about the overlap.
+                await self.reconcile(
+                    ReconciliationKind.DISPUTE_DURING_REFUND, f"dispute_during_refund:dispute:{dispute.id}", payment=payment,
+                    details={"dispute_id": str(dispute.id), "phase": "dispute_opened_after_refund_submitted"},
+                )
             if not terminal:
                 await self.reconcile(ReconciliationKind.DISPUTE_OPENED, f"dispute_opened:{dispute.id}", payment=payment,
                                      details={"dispute_id": str(dispute.id), "reason": event.dispute_reason,

@@ -18,6 +18,15 @@ class PaymentRepository:
     async def get_by_id(self, payment_id: UUID) -> Payment | None:
         return await self.db.get(Payment, payment_id)
 
+    async def lock_for_update(self, payment_id: UUID) -> Payment | None:
+        """Row-locks the payment. Dispute recording and refund submission both take THIS lock first, so one of them
+        always sees the other's committed state (the serialisation point for the refund/dispute race)."""
+        return (
+            await self.db.execute(
+                select(Payment).where(Payment.id == payment_id).with_for_update().execution_options(populate_existing=True)
+            )
+        ).scalar_one_or_none()
+
     async def get_by_provider_payment_id(
         self, provider_payment_id: str, provider: str | None = None
     ) -> Payment | None:

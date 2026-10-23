@@ -44,13 +44,14 @@ def get_payment_service(
         RefundRepository,
     )
     from app.modules.payments.services.lifecycle_service import OrderLifecycleService
+    from app.modules.payments.services.provider_resolver import ProviderResolver
     from app.modules.payments.webhook_recovery import record_failed_event
     from app.modules.products.repositories.product_repository import ProductRepository
 
     lifecycle = OrderLifecycleService(
         OrderRepository(db), ProductRepository(db), repository, RefundRepository(db),
         ReconciliationRepository(db), provider, audit=audit, job_queue=JobQueue(db), commit=db.commit,
-        disputes=DisputeRepository(db),
+        disputes=DisputeRepository(db), provider_resolver=ProviderResolver(db),
     )
     # A failed webhook attempt is recorded through the SAME engine this request uses (never another database).
     failure_sessions = async_sessionmaker(db.bind, expire_on_commit=False)
@@ -60,7 +61,7 @@ def get_payment_service(
 
     return PaymentService(
         repository, order_service, provider, job_queue=JobQueue(db), audit=audit, lifecycle=lifecycle,
-        commit=db.commit, rollback=db.rollback, failure_recorder=record_failure,
+        commit=db.commit, rollback=db.rollback, failure_recorder=record_failure, resolver=ProviderResolver(db),
     )
 
 

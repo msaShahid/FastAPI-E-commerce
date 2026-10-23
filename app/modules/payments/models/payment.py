@@ -32,6 +32,14 @@ class Payment(Base, TimestampMixin):
     order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id", ondelete="RESTRICT"), index=True)
 
     provider: Mapped[str] = mapped_column(String(50), default="stripe", server_default="stripe")
+    # Which stored configuration created this payment (NULL = created by the environment-configured Stripe, before configurable
+    # providers). Reconciliation, refunds and cancellation use THIS configuration even after it is disabled or another provider
+    # is preferred.
+    provider_config_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("payment_provider_configs.id", ondelete="RESTRICT"), default=None, index=True
+    )
+    # A second provider-side reference (e.g. Razorpay's pay_... id, learned from its payment.captured webhook).
+    provider_reference: Mapped[str | None] = mapped_column(String(255), default=None)
     provider_payment_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
 
     status: Mapped[PaymentStatus] = mapped_column(

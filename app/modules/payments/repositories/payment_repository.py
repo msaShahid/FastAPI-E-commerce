@@ -19,12 +19,17 @@ class PaymentRepository:
         return await self.db.get(Payment, payment_id)
 
     async def get_by_provider_payment_id(
-        self, provider_payment_id: str
+        self, provider_payment_id: str, provider: str | None = None
     ) -> Payment | None:
-        result = await self.db.execute(
-            select(Payment).where(Payment.provider_payment_id == provider_payment_id)
-        )
-        return result.scalar_one_or_none()
+        """With `provider`, only THAT provider's payment is found: an event from one provider can never touch another's."""
+        query = select(Payment).where(Payment.provider_payment_id == provider_payment_id)
+        if provider is not None:
+            query = query.where(Payment.provider == provider)
+        return (await self.db.execute(query)).scalar_one_or_none()
+
+    async def get_by_provider_reference(self, reference: str, provider: str) -> Payment | None:
+        return (await self.db.execute(select(Payment).where(
+            Payment.provider_reference == reference, Payment.provider == provider))).scalar_one_or_none()
 
     async def list_for_order(self, order_id: UUID) -> list[Payment]:
         result = await self.db.execute(
@@ -42,10 +47,12 @@ class PaymentRepository:
         amount_cents: int,
         currency: str = "usd",
         provider: str = "stripe",
+        provider_config_id=None,
     ) -> Payment:
         payment = Payment(
             order_id=order_id,
             provider=provider,
+            provider_config_id=provider_config_id,
             provider_payment_id=provider_payment_id,
             amount_cents=amount_cents,
             currency=currency,

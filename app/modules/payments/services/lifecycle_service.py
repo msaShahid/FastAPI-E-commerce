@@ -58,6 +58,7 @@ class CancelResult:
 class RefundAttempt:
     refund_id: UUID
     provider_payment_id: str
+    provider_config_id: UUID | None
     amount: int
     currency: str
     idempotency_key: str
@@ -77,6 +78,7 @@ class OrderLifecycleService:
         job_queue: JobQueue | None = None,
         commit=None,
         disputes=None,
+        provider_resolver=None,
     ) -> None:
         self.orders = orders
         self.products = products
@@ -88,6 +90,15 @@ class OrderLifecycleService:
         self.job_queue = job_queue
         self._commit_hook = commit  # None in unit tests with in-memory fakes
         self.disputes = disputes  # DisputeRepository; None only in unit tests that do not touch disputes
+        # Finds the provider that CREATED a payment (disabled configurations included). None = the single provider above.
+        self.provider_resolver = provider_resolver
+
+    async def _provider_for(self, config_id):
+        if config_id is not None and self.provider_resolver is not None:
+            provider = await self.provider_resolver.provider_for_config(config_id)
+            if provider is not None:
+                return provider
+        return self.provider
 
     # ------------------------------------------------------------ small helpers
     async def _commit(self) -> None:
@@ -160,15 +171,21 @@ class OrderLifecycleService:
         payments = await self.payments.list_for_order(order.id)
         if any(p.status == PaymentStatus.SUCCEEDED for p in payments):
             raise PaymentInProgressError()
-        to_cancel = [(p.id, p.provider_payment_id) for p in payments if p.status != PaymentStatus.REFUNDED]
+        to_cancel = [(p.id, p.provider_payment_id, p.provider_config_id) for p in payments if p.status != PaymentStatus.REFUNDED]
         await self._commit()  # release the row lock BEFORE talking to the provider
 
         uncertain: list[str] = []
         completed = False
         outcomes: list[dict] = []  # what the PROVIDER said about each intent (never assumed from our side)
-        for payment_id, provider_payment_id in to_cancel:
+        for payment_id, provider_payment_id, config_id in to_cancel:
+            provider = await self._provider_for(config_id)  # the provider that CREATED this payment, never another
+            if not provider.supports_cancel:
+                # e.g. Razorpay cannot cancel an order. Recorded as such (never assumed cancelled); if the customer still pays
+                # later, the late-payment path reconciles it and the order is never reopened.
+                outcomes.append({"provider_payment_id": provider_payment_id, "outcome": "unsupported_cancel"})
+                continue
             try:
-                result = await self.provider.cancel_payment_intent(
+                result = await provider.cancel_payment_intent(
                     provider_payment_id=provider_payment_id, idempotency_key=f"cancel:{payment_id}"
                 )
             except PaymentProviderError:  # includes a timeout: the outcome is UNKNOWN
@@ -312,8 +329,13 @@ class OrderLifecycleService:
         payment = await self.payments.get_by_id(refund.payment_id)
         refund.attempts += 1
         await self.refunds.save(refund)
+        from app.core.payments.registry import get_spec
+
+        spec = get_spec(payment.provider)
+        # Some providers refund by their PAYMENT reference (e.g. Razorpay's pay_...), others by the intent id.
+        refund_target = (payment.provider_reference if spec and spec.refund_needs_provider_reference else None) or payment.provider_payment_id
         attempt = RefundAttempt(
-            refund.id, payment.provider_payment_id, to_stripe_amount(refund.amount_cents, refund.currency),
+            refund.id, refund_target, payment.provider_config_id, to_stripe_amount(refund.amount_cents, refund.currency),
             refund.currency, refund.idempotency_key,
         )
         await self._commit()
@@ -489,7 +511,7 @@ class OrderLifecycleService:
         refund; it opens a reconciliation record so a human responds. A closed dispute never reopens, so events that
         arrive out of order are safe."""
         payment = (
-            await self.payments.get_by_provider_payment_id(event.provider_payment_id)
+            await self.payments.get_by_provider_payment_id(event.provider_payment_id, event.provider)
             if event.provider_payment_id else None
         )
         if payment is None or not event.provider_dispute_id:

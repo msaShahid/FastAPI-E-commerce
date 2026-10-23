@@ -25,6 +25,7 @@ from app.modules.orders.models.order_status_history import OrderStatusHistory  #
 from app.modules.payments.models.deferred_event import DeferredWebhookEvent  # noqa: F401
 from app.modules.payments.models.dispute import Dispute  # noqa: F401
 from app.modules.payments.models.payment import Payment  # noqa: F401
+from app.modules.payments.models.provider_config import PaymentProviderConfig  # noqa: F401
 from app.modules.payments.models.refund import PaymentReconciliation, Refund  # noqa: F401
 from app.modules.payments.models.webhook_event import ProcessedWebhookEvent  # noqa: F401
 from app.modules.products.models.product import Product  # noqa: F401

@@ -189,11 +189,11 @@ def test_a_correctly_signed_capture_is_normalised_to_the_shared_event_with_both_
     body = captured_body()
     event = rz(lambda r: None).verify_and_parse_webhook(payload=body, signature_header=sign(body), headers={"x-razorpay-event-id": "evt_rz_1"})
     assert (event.event_id, event.event_type, event.provider, event.provider_payment_id, event.provider_reference) == (
-        "evt_rz_1", "payment_intent.succeeded", "razorpay", "order_X1", "pay_P1")
+        hashlib.sha256(body).hexdigest(), "payment_intent.succeeded", "razorpay", "order_X1", "pay_P1")
     assert (event.amount, event.amount_received, event.currency) == (2000, 2000, "inr")
 
 
-def test_without_an_event_id_header_the_event_id_is_a_stable_hash_of_the_raw_body():
+def test_the_event_id_is_always_a_stable_hash_of_the_signed_body():
     body = captured_body()
     a = rz(lambda r: None).verify_and_parse_webhook(payload=body, signature_header=sign(body), headers={})
     b = rz(lambda r: None).verify_and_parse_webhook(payload=body, signature_header=sign(body))

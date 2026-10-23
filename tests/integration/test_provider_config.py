@@ -604,10 +604,10 @@ async def test_razorpay_payment_capture_is_applied_once_and_stores_the_payment_r
     assert await one(db_session, "SELECT status::text FROM orders WHERE id = :o", o=o["id"]) == "paid"
     assert await one(db_session, "SELECT provider_reference FROM payments") == "pay_P210_1"
     assert await one(db_session, "SELECT count(*) FROM order_status_history WHERE order_id = :o AND to_status::text = 'PAID'", o=o["id"]) == 1
-    assert (await db_session.execute(text("SELECT provider, status, attempts FROM processed_webhook_events WHERE event_id = 'rzev_same'"))).one() == ("razorpay", "processed", 1)
+    assert (await db_session.execute(text("SELECT provider, status, attempts FROM processed_webhook_events WHERE provider = 'razorpay'"))).one() == ("razorpay", "processed", 1)
 
 
-async def test_razorpay_events_without_an_event_id_are_still_deduplicated_by_their_body(client, admin_headers, category, world, db_session):
+async def test_razorpay_events_are_deduplicated_by_their_signed_body_whatever_the_event_id_header_says(client, admin_headers, category, world, db_session):
     await set_inr(client, admin_headers)
     await activate(client, admin_headers, "razorpay")
     h, o, p = await make_order(client, admin_headers, category)

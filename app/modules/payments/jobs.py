@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.email import get_email_sender
 from app.core.jobs.registry import job_handler
+from app.core.redaction import redact
 from app.modules.auth.models.user import User
 from app.modules.orders.repositories.order_repository import OrderRepository
 
@@ -264,7 +265,7 @@ async def reprocess_deferred_events(payload: dict, session_factory: async_sessio
             except Exception as exc:  # recorded, counted, and still bounded by the attempt limit
                 await session.refresh(row)
                 row.attempts += 1
-                row.last_reason = f"{type(exc).__name__}: {exc}"[:300]
+                row.last_reason = redact(f"{type(exc).__name__}: {exc}")[:300]
                 if row.attempts >= settings.webhook_recovery_max_attempts:
                     row.status, row.resolved_at = "expired", now
                 else:

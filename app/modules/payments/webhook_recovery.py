@@ -4,11 +4,12 @@ recognised as a retry, not a duplicate. Only the exception type and message are 
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from app.core.redaction import redact
 from app.modules.payments.models.webhook_event import ProcessedWebhookEvent
 
 
 async def record_failed_event(session_factory, event, error: Exception) -> None:
-    message = f"{type(error).__name__}: {error}"[:500]
+    message = redact(f"{type(error).__name__}: {error}")[:500]
     async with session_factory() as session, session.begin():
         await session.execute(
             pg_insert(ProcessedWebhookEvent)

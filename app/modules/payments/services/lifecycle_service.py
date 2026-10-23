@@ -22,6 +22,7 @@ from app.core.jobs.queue import JobQueue
 from app.core.money import to_stripe_amount
 from app.core.payments.exceptions import PaymentProviderError
 from app.core.payments.interface import PaymentProvider, RefundResult
+from app.core.redaction import redact
 from app.modules.audit.services.audit_service import AuditService
 from app.modules.orders.exceptions.order_exceptions import (
     CancellationNotAllowedError,
@@ -365,6 +366,7 @@ class OrderLifecycleService:
 
     async def record_refund_attempt_failed(self, refund_id: UUID, error: str) -> str:
         """The provider call failed or timed out: its outcome is unknown. Returns "retry" or "uncertain"."""
+        error = redact(error)  # an upstream message is stored for operators: never with credentials or customer data in it
         refund = await self.refunds.get(refund_id, for_update=True)
         if refund is None or refund.status != RefundStatus.REQUESTED:
             return "stale"

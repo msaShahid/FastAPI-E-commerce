@@ -3,11 +3,10 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError
 
 from app.core.database import DbSession
 from app.core.logging_config import bind
-from app.core.security import TokenType, decode_token
+from app.core.security import TokenError, TokenType, decode_token
 from app.modules.auth.models.user import User
 from app.modules.auth.repositories.auth_repository import AuthRepository
 from app.modules.auth.services.auth_service import AuthService
@@ -43,7 +42,7 @@ async def get_current_user(
 
     try:
         payload = decode_token(credentials.credentials)
-    except JWTError as exc:
+    except TokenError as exc:
         raise unauthorized from exc
 
     if payload.get("type") != TokenType.ACCESS.value:

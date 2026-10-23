@@ -1,14 +1,14 @@
 import logging
 from datetime import UTC, datetime
 
-from jose import JWTError, jwt
-
 from app.core.security import (
+    TokenError,
     TokenType,
     create_access_token,
     create_refresh_token,
     decode_token,
     hash_password,
+    unverified_claims,
     verify_password,
 )
 from app.modules.auth.exceptions.auth_exceptions import (
@@ -54,7 +54,7 @@ class AuthService:
         access_token = create_access_token(subject=str(user.id))
         refresh_token = create_refresh_token(subject=str(user.id))
 
-        refresh_payload = jwt.get_unverified_claims(refresh_token)
+        refresh_payload = unverified_claims(refresh_token)
         expires_at = datetime.fromtimestamp(refresh_payload["exp"], tz=UTC)
 
         await self.repository.store_refresh_token(
@@ -69,7 +69,7 @@ class AuthService:
 
         try:
             payload = decode_token(refresh_token)
-        except JWTError as exc:
+        except TokenError as exc:
             raise InvalidRefreshTokenError() from exc
 
         if payload.get("type") != TokenType.REFRESH.value:
@@ -111,7 +111,7 @@ class AuthService:
         new_access_token = create_access_token(subject=subject)
         new_refresh_token = create_refresh_token(subject=subject)
 
-        new_payload = jwt.get_unverified_claims(new_refresh_token)
+        new_payload = unverified_claims(new_refresh_token)
         await self.repository.store_refresh_token(
             user_id=stored.user_id,
             jti=new_payload["jti"],
@@ -128,7 +128,7 @@ class AuthService:
 
         try:
             payload = decode_token(refresh_token)
-        except JWTError:
+        except TokenError:
             return
 
         jti = payload.get("jti")

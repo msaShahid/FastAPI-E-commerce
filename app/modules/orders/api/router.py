@@ -1,12 +1,27 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Request, status
+from fastapi import (
+    APIRouter,
+    Cookie,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
 from fastapi.responses import JSONResponse
 
+from app.core.config import HARDENED_ENVIRONMENTS, get_settings
 from app.core.request_context import get_request_id
 from app.modules.auth.dependencies.auth import AdminUser, CurrentUser, OptionalUser
-from app.modules.cart.dependencies.cart_identity import GUEST_CART_COOKIE, CartOwnerDep
+from app.modules.cart.dependencies.cart_identity import (
+    GUEST_CART_COOKIE,
+    CartOwnerDep,
+    guest_payment_cookie_name,
+)
 from app.modules.orders.dependencies.order_deps import OrderServiceDep
 from app.modules.orders.exceptions.order_exceptions import (
     CancellationUnconfirmedError,
@@ -46,6 +61,7 @@ order_router = APIRouter(prefix="/orders", tags=["orders"])
 )
 async def checkout(
     request: Request,
+    response: Response,
     current_user: OptionalUser,
     owner: CartOwnerDep,
     service: OrderServiceDep,
@@ -83,6 +99,21 @@ async def checkout(
                 "request_id": get_request_id(request),
             },
         )
+    if owner.is_guest:
+        # The guest's payment capability: random, order-scoped, stored only as a hash, sent only to the payments endpoints and
+        # never in a URL or a response body. It lives no longer than the unpaid-order window.
+        token = await service.issue_guest_payment_token(order)
+        if token is not None:
+            settings = get_settings()
+            response.set_cookie(
+                key=guest_payment_cookie_name(order.id),
+                value=token,
+                httponly=True,
+                samesite="lax",
+                secure=settings.environment in HARDENED_ENVIRONMENTS,
+                path=f"{settings.api_v1_prefix}/payments",
+                max_age=settings.pending_order_timeout_minutes * 60,
+            )
     return OrderRead.model_validate(order)
 
 

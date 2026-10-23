@@ -5,7 +5,8 @@ from fastapi import APIRouter, Header, HTTPException, Request, status
 from app.core.exceptions import NotFoundError
 from app.core.payments.exceptions import InvalidWebhookSignatureError
 from app.core.payments.registry import get_spec
-from app.modules.auth.dependencies.auth import AdminUser, CurrentUser
+from app.modules.auth.dependencies.auth import AdminUser, OptionalUser
+from app.modules.cart.dependencies.cart_identity import guest_payment_cookie_name
 from app.modules.payments.dependencies.payment_deps import PaymentServiceDep
 from app.modules.payments.schemas.payment import PaymentCreate, PaymentRead, RefundRead
 
@@ -15,7 +16,8 @@ payment_router = APIRouter(prefix="/payments", tags=["payments"])
 @payment_router.post("", response_model=PaymentRead, status_code=status.HTTP_201_CREATED)
 async def create_payment(
     payload: PaymentCreate,
-    current_user: CurrentUser,
+    request: Request,
+    current_user: OptionalUser,
     service: PaymentServiceDep,
 ) -> PaymentRead:
     """
@@ -23,9 +25,21 @@ async def create_payment(
     orders and returns the client secret needed to confirm it on the
     client side. Always self-service: this cannot be used to start a
     payment on another user's order, even by an admin.
+
+    A signed-in user pays their own orders. A GUEST pays only with the order-scoped payment capability that checkout
+    set in an HttpOnly cookie for that exact order (401 without any credential, 404 for a wrong or expired one).
     """
+    guest_token = None
+    if current_user is None:
+        guest_token = request.cookies.get(guest_payment_cookie_name(payload.order_id))
+        if not guest_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated", headers={"WWW-Authenticate": "Bearer"}
+            )
     payment, client_secret = await service.create_payment_for_order(
-        order_id=payload.order_id, user_id=current_user.id
+        order_id=payload.order_id,
+        user_id=current_user.id if current_user is not None else None,
+        guest_payment_token=guest_token,
     )
     return PaymentRead(
         id=payment.id,

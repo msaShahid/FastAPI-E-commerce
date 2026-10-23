@@ -165,7 +165,7 @@ class PaymentService:
         return plan
 
     async def create_payment_for_order(
-        self, *, order_id: UUID, user_id: UUID
+        self, *, order_id: UUID, user_id: UUID | None = None, guest_payment_token: str | None = None
     ) -> tuple[Payment, str]:
         """
         Paying for an order is always a self-service action: an admin cannot start a payment on
@@ -175,7 +175,10 @@ class PaymentService:
         plan (locked, then committed) -> provider call -> re-lock, re-check, record.
         """
         self._assert_live_payments_allowed()
-        order = await self.order_service.get_order(order_id=order_id, user_id=user_id, is_admin=False)
+        if user_id is not None:
+            order = await self.order_service.get_order(order_id=order_id, user_id=user_id, is_admin=False)
+        else:  # a guest: authorised ONLY by the order-scoped capability issued at checkout, never by the order id alone
+            order = await self.order_service.authorize_guest_payment(order_id=order_id, token=guest_payment_token or "")
         plan = await self._plan_payment(order.id)
 
         if plan["reuse_provider_id"] is not None:

@@ -11,6 +11,11 @@ from app.modules.auth.dependencies.auth import OptionalUser
 GUEST_CART_COOKIE = "guest_cart_token"
 
 
+def guest_payment_cookie_name(order_id: UUID) -> str:
+    """One cookie per order: the capability is scoped to that order and is only sent to the payments endpoints."""
+    return f"guest_pay_{order_id.hex}"
+
+
 @dataclass(frozen=True)
 class CartOwner:
 

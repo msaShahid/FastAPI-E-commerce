@@ -1,7 +1,9 @@
 import hashlib
+import hmac
 import json
+import secrets
 from dataclasses import asdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
 
@@ -395,6 +397,34 @@ class OrderService:
         )
 
         await self.cart_repository.clear(cart)
+        return order
+
+    @staticmethod
+    def _hash_payment_token(token: str) -> str:
+        return hashlib.sha256(token.encode("utf-8")).hexdigest()  # the token is 256 random bits: a fast hash is sufficient
+
+    async def issue_guest_payment_token(self, order: Order) -> str | None:
+        """A NEW order-scoped payment capability for a pending GUEST order (None for anything else). Only its hash is stored.
+        Issuing again (a replayed checkout) replaces the hash, so an earlier capability stops working."""
+        if order.user_id is not None or order.status != OrderStatus.PENDING:
+            return None
+        token = secrets.token_urlsafe(32)
+        order.payment_token_hash = self._hash_payment_token(token)
+        await self.repository.db.flush()
+        return token
+
+    async def authorize_guest_payment(self, *, order_id: UUID, token: str) -> Order:
+        """The order, if `token` is the live payment capability for exactly this guest order. Every failure (unknown order,
+        registered-user order, no/expired/wrong capability) is the SAME 404, so nothing reveals which orders exist."""
+        order = await self.repository.get_by_id(order_id)
+        if order is None or order.user_id is not None or not order.payment_token_hash:
+            raise OrderNotFoundError(order_id)
+        if not hmac.compare_digest(self._hash_payment_token(token), order.payment_token_hash):
+            raise OrderNotFoundError(order_id)
+        # The capability also expires with the unpaid-order window, even if the expiry worker is not running.
+        age = datetime.now(UTC).replace(tzinfo=None) - order.created_at
+        if age > timedelta(minutes=get_settings().pending_order_timeout_minutes):
+            raise OrderNotFoundError(order_id)
         return order
 
     async def get_guest_order(self, *, order_id: UUID, guest_token: str) -> Order:

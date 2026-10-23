@@ -15,22 +15,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv
-RUN pip install --no-cache-dir uv
+RUN pip install --no-cache-dir "uv==0.13.5"
 
-# Copy dependency metadata
-COPY pyproject.toml ./
+# Dependencies: EXACTLY the versions in uv.lock (regenerate with `uv lock` after changing pyproject.toml), never "whatever is newest".
+COPY pyproject.toml uv.lock ./
+RUN uv export --locked --no-emit-project --no-hashes $([ "$INSTALL_DEV" = "true" ] && echo "--extra dev") -o /tmp/requirements.txt \
+    && uv pip install --system --no-cache -r /tmp/requirements.txt \
+    && rm /tmp/requirements.txt
 
-# Copy the application. Tests are NOT baked into the image: docker-compose.yml mounts ./tests for development.
+# The application itself. Tests are NOT baked into the image: docker-compose.yml mounts ./tests for development.
 COPY ./app ./app
 COPY alembic.ini ./alembic.ini
 COPY alembic ./alembic
 COPY scripts ./scripts
-
-RUN if [ "$INSTALL_DEV" = "true" ]; then \
-        uv pip install --system --no-cache . pytest pytest-asyncio httpx ruff; \
-    else \
-        uv pip install --system --no-cache .; \
-    fi
+RUN uv pip install --system --no-cache --no-deps .
 
 # Run as an unprivileged user. Only the media directory (uploads) needs to be writable.
 RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin app \

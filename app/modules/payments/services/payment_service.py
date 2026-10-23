@@ -227,6 +227,20 @@ class PaymentService:
         existing = await self.repository.get_by_provider_payment_id(intent.provider_payment_id, plan["provider"].name)
         if existing is not None:  # a concurrent request got the same intent (same idempotency key)
             return existing, intent.client_secret
+        winner = next(
+            (p for p in await self.repository.list_for_order(order_id) if p.status == PaymentStatus.PENDING), None
+        )
+        if winner is not None:
+            # A concurrent request recorded ITS intent first and this provider does not de-duplicate creation (Razorpay): we hold a
+            # second, never-handed-out intent. Keep the winner, retire ours (or flag it for a human where it cannot be cancelled),
+            # and return the winner so the caller still gets exactly one payable payment for the order.
+            await self._commit()  # release the order lock before talking to the provider
+            await self._cancel_orphan_intent(plan["provider"], intent.provider_payment_id, order_id)
+            winner_provider = await self._provider_for_ref(winner.provider, winner.provider_config_id)
+            winner_intent = await winner_provider.retrieve_payment_intent(provider_payment_id=winner.provider_payment_id)
+            if winner_intent.status not in OPEN_INTENT_STATUSES:
+                raise OrderNotPayableError("This order has already been paid")
+            return winner, winner_intent.client_secret
         payment = await self.repository.create(
             order_id=order_id,
             provider_payment_id=intent.provider_payment_id,

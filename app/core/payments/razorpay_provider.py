@@ -12,7 +12,11 @@ Mapping to the shared lifecycle (provider-specific details stay in this file):
     needs it;
   * an order cannot be cancelled at Razorpay (supports_cancel = False): expiry records that and relies on the late-payment path;
   * webhooks: HMAC-SHA256 (hex) over the RAW body with the webhook secret (header X-Razorpay-Signature). The scheme carries no
-    timestamp, so replays cannot be bounded by time: they are bounded by de-duplicating on x-razorpay-event-id.
+    timestamp, so replays cannot be bounded by time: they are bounded by de-duplicating on the event identity. That identity is
+    the SHA-256 of the SIGNED body and nothing else: the x-razorpay-event-id header is not covered by the signature, so anyone
+    holding one captured body could change it and defeat de-duplication. A byte-identical body is, by definition, a replay.
+  * create-order has no idempotency key at Razorpay (the receipt is a label, not a de-duplication key), so concurrent requests
+    can each create an order; the payment service keeps one and flags the other (see PaymentService._create_new_payment).
 Events are normalised to the shared internal event names ("payment_intent.succeeded", "payment_intent.payment_failed",
 "refund.updated").
 """
@@ -40,11 +44,18 @@ from app.core.payments.interface import (
 )
 
 BASE_URL = "https://api.razorpay.com/v1"
+RECEIPT_MAX_LENGTH = 40  # Razorpay's documented receipt limit (from secondary sources: see the status note above)
+
+
+def receipt_for(idempotency_key: str) -> str:
+    """A receipt that fits the limit WITHOUT losing what makes it unique. Cutting the key to its first 40 characters dropped the
+    attempt number (the end of `order:<uuid>:intent:<n>`), so every attempt for an order shared one receipt."""
+    return "r" + hashlib.sha256(idempotency_key.encode()).hexdigest()[: RECEIPT_MAX_LENGTH - 1]
 
 
 class RazorpayPaymentProvider(PaymentProvider):
     name = "razorpay"
-    uses_event_headers = True
+    uses_event_headers = False  # event identity comes from the signed body only (see the module docstring)
     supports_cancel = False
 
     def __init__(self, *, key_id: str, key_secret: str, webhook_secret: str | None,
@@ -85,7 +96,7 @@ class RazorpayPaymentProvider(PaymentProvider):
         return CredentialCheck(valid=True, detected_mode=mode)
 
     async def create_payment_intent(self, *, amount_cents: int, currency: str, metadata: dict, idempotency_key: str) -> PaymentIntentResult:
-        body = {"amount": amount_cents, "currency": currency.upper(), "receipt": idempotency_key[:40],
+        body = {"amount": amount_cents, "currency": currency.upper(), "receipt": receipt_for(idempotency_key),
                 "notes": {k: str(v) for k, v in metadata.items()}}
         order = self._ok(await self._request("POST", "/orders", json=body), "create-order")
         return PaymentIntentResult(order["id"], order["id"], order.get("status", "created"))
@@ -104,7 +115,7 @@ class RazorpayPaymentProvider(PaymentProvider):
         if not provider_payment_id.startswith("pay_"):
             raise PaymentProviderError("The Razorpay payment reference is not known yet, so a refund cannot be requested")
         response = await self._request(
-            "POST", f"/payments/{provider_payment_id}/refund", json={"amount": amount_cents, "receipt": idempotency_key[:40]},
+            "POST", f"/payments/{provider_payment_id}/refund", json={"amount": amount_cents, "receipt": receipt_for(idempotency_key)},
             headers={"X-Refund-Idempotency": idempotency_key},
         )
         refund = self._ok(response, "refund")
@@ -120,7 +131,8 @@ class RazorpayPaymentProvider(PaymentProvider):
         try:
             body = json.loads(payload)
             event_name = body["event"]
-            event_id = (headers or {}).get("x-razorpay-event-id") or hashlib.sha256(payload).hexdigest()
+            # Only signed bytes may decide identity. `headers` is accepted for interface compatibility and deliberately ignored.
+            event_id = hashlib.sha256(payload).hexdigest()
             return self._normalise(event_name, body["payload"], event_id)
         except (ValueError, KeyError, TypeError, AttributeError) as exc:
             raise InvalidWebhookPayloadError() from exc

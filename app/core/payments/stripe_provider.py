@@ -22,7 +22,9 @@ class StripePaymentProvider(PaymentProvider):
 
     def __init__(self, *, secret_key: str, webhook_secret: str) -> None:
         self._webhook_secret = webhook_secret
-        stripe.api_key = secret_key
+        # Credentials are per INSTANCE and passed on every call. Nothing is set globally, so two configurations (e.g. a test
+        # and a live account) can never use each other's key.
+        self._secret_key = secret_key
 
     @staticmethod
     async def _call(function, *args, **kwargs):
@@ -38,17 +40,29 @@ class StripePaymentProvider(PaymentProvider):
         except TimeoutError as exc:
             raise PaymentProviderTimeoutError() from exc
 
+    async def validate_credentials(self):
+        from app.core.payments.interface import CredentialCheck
+
+        mode = "live" if self._secret_key.startswith(("sk_live_", "rk_live_")) else "test"
+        try:
+            await self._call(stripe.Balance.retrieve, api_key=self._secret_key)  # harmless authenticated read
+        except stripe.AuthenticationError:
+            return CredentialCheck(valid=False, reason="authentication_failed", detected_mode=mode)
+        except stripe.StripeError:
+            return CredentialCheck(valid=False, reason="provider_unreachable_or_restricted", detected_mode=mode)
+        return CredentialCheck(valid=True, detected_mode=mode)
+
     async def cancel_payment_intent(
         self, *, provider_payment_id: str, idempotency_key: str
     ) -> PaymentIntentResult:
         try:
             intent = await self._call(
-                stripe.PaymentIntent.cancel, provider_payment_id, idempotency_key=idempotency_key
+                stripe.PaymentIntent.cancel, provider_payment_id, idempotency_key=idempotency_key, api_key=self._secret_key
             )
         except stripe.StripeError:
             # Most often "already succeeded"/"already canceled": ask Stripe what the state really is.
             try:
-                intent = await self._call(stripe.PaymentIntent.retrieve, provider_payment_id)
+                intent = await self._call(stripe.PaymentIntent.retrieve, provider_payment_id, api_key=self._secret_key)
             except stripe.StripeError as exc:
                 raise PaymentProviderError(str(exc) or "Failed to cancel payment intent") from exc
         return PaymentIntentResult(
@@ -61,6 +75,7 @@ class StripePaymentProvider(PaymentProvider):
         try:
             intent = await self._call(
                 stripe.PaymentIntent.create,
+                api_key=self._secret_key,
                 amount=amount_cents,
                 currency=currency,
                 metadata=metadata,
@@ -80,7 +95,7 @@ class StripePaymentProvider(PaymentProvider):
         self, *, provider_payment_id: str
     ) -> PaymentIntentResult:
         try:
-            intent = await self._call(stripe.PaymentIntent.retrieve, provider_payment_id)
+            intent = await self._call(stripe.PaymentIntent.retrieve, provider_payment_id, api_key=self._secret_key)
         except stripe.StripeError as exc:
             raise PaymentProviderError(
                 str(exc) or "Failed to retrieve payment intent"
@@ -99,6 +114,7 @@ class StripePaymentProvider(PaymentProvider):
         try:
             refund = await self._call(
                 stripe.Refund.create,
+                api_key=self._secret_key,
                 payment_intent=provider_payment_id,
                 amount=amount_cents,
                 idempotency_key=idempotency_key,

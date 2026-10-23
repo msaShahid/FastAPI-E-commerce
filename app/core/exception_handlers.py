@@ -129,9 +129,12 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def handle_validation_error(
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
-        return _error(
-            request, status.HTTP_422_UNPROCESSABLE_ENTITY, jsonable_encoder(exc.errors())
-        )
+        errors = jsonable_encoder(exc.errors())
+        if "/payment-providers" in request.url.path:
+            # These bodies carry credentials: a validation error must never echo what was submitted (a secret typed in the
+            # wrong field would otherwise come straight back in the response).
+            errors = [{k: v for k, v in e.items() if k not in ("input", "ctx")} for e in errors]
+        return _error(request, status.HTTP_422_UNPROCESSABLE_ENTITY, errors)
 
     @app.exception_handler(Exception)
     async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:

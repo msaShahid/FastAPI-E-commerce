@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from uuid import UUID
 
 
 @dataclass
@@ -29,6 +30,10 @@ class WebhookEvent:
     dispute_reason: str | None = None
     # Which provider sent it. Event ids are only unique per provider, so this scopes de-duplication.
     provider: str = "stripe"
+    # A SECOND provider-side reference to the payment (e.g. Razorpay's pay_... id, while provider_payment_id is the order id).
+    provider_reference: str | None = None
+    # The stored provider configuration whose webhook secret VERIFIED this event (set by the verifier, never by the payload).
+    config_id: UUID | None = None
 
 
 @dataclass
@@ -39,7 +44,25 @@ class RefundResult:
     currency: str | None = None
 
 
+@dataclass(frozen=True)
+class CredentialCheck:
+    """Result of validating stored credentials against the provider. `reason` is a safe code, never a secret."""
+
+    valid: bool
+    reason: str | None = None
+    detected_mode: str | None = None  # "test" / "live" when the provider can tell
+
+
 class PaymentProvider(ABC):
+    # True when webhook verification needs request headers (e.g. a provider-supplied event id): the service then passes `headers=`.
+    uses_event_headers: bool = False
+    # Capabilities that are PROPERTIES OF THE ADAPTER (the registry declares the same per provider for the admin API).
+    supports_cancel: bool = True
+
+    async def validate_credentials(self) -> CredentialCheck:
+        """Checks the configured credentials with a harmless authenticated call. Adapters override this."""
+        return CredentialCheck(valid=False, reason="validation_not_supported")
+
     # Recorded on every payment and webhook event so they can be reconciled after provider settings change.
     # The default exists because Stripe is the only provider today; every new provider sets its own name.
     name: str = "stripe"

@@ -2,7 +2,7 @@ from decimal import Decimal
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -106,6 +106,13 @@ class Settings(BaseSettings):
     # How often the worker looks for unpaid orders past PENDING_ORDER_TIMEOUT_MINUTES. 0 disables the
     # scheduler (then nothing expires orders: only do that for tests/maintenance).
     order_expiry_sweep_interval_seconds: int = Field(default=60, ge=0)
+    # Encryption key for provider credentials stored through the admin API (Fernet key: 32 url-safe base64 bytes). Generate with
+    #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # Unset = the admin API refuses to store credentials (there is no plaintext fallback). See app/core/secrets.py.
+    provider_secrets_key: SecretStr | None = None
+    provider_secrets_key_id: str = Field(default="k1", min_length=1, max_length=20, pattern=r"^[A-Za-z0-9_-]+$")
+    provider_secrets_previous_keys: str = ""  # "id:key,id:key": old keys kept so existing records still decrypt
+
     # Webhook events that arrive BEFORE their payment record exists are kept (identifiers only, never the payload) and
     # retried, within bounds: every INTERVAL seconds (0 disables recovery), at most MAX_ATTEMPTS times, and only for WINDOW
     # minutes after the event arrived. After that the event is `expired` and its reconciliation record stays for a human.
@@ -230,6 +237,21 @@ class Settings(BaseSettings):
             currency = CURRENCIES.get(code)
             if currency is None or not currency.payment_verified:
                 raise ValueError(f"payment_currencies_enabled: '{code}' is not a currency verified for payments")
+        return self
+
+    @model_validator(mode="after")
+    def _provider_secret_keys_are_valid(self) -> "Settings":
+        from cryptography.fernet import Fernet
+
+        from app.core.secrets import parse_previous_keys
+
+        keys = [] if self.provider_secrets_key is None else [self.provider_secrets_key.get_secret_value()]
+        keys += list(parse_previous_keys(self.provider_secrets_previous_keys).values())
+        for key in keys:
+            try:
+                Fernet(key.encode())
+            except Exception as exc:  # the key itself is never included in the message
+                raise ValueError("provider secret keys must be valid Fernet keys (32 url-safe base64-encoded bytes)") from exc
         return self
 
     @model_validator(mode="after")

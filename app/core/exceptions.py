@@ -65,6 +65,9 @@ class UpstreamServiceError(AppError):
     or is unreachable. Distinct from BadRequestError: the caller did
     nothing wrong here, so this maps to 502, not 400/422."""
 
+    # What a CLIENT is told. Always a fixed sentence: `message` (often the upstream's own text) is for logs and operators only.
+    public_message: str = "An upstream service is unavailable. Please try again later."
+
     def __init__(self, message: str = "An upstream service failed") -> None:
         super().__init__(message)
 

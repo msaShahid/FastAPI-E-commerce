@@ -22,6 +22,7 @@ from app.core.config import Settings, get_settings
 from app.core.database import async_session_factory
 from app.core.jobs.registry import get_handler
 from app.core.logging_config import bound_context, new_context
+from app.core.redaction import redact
 
 logger = logging.getLogger(__name__)
 
@@ -182,7 +183,7 @@ async def _run_claimed(
             handler(job.payload, session_factory), timeout=config.jobs_job_timeout_seconds
         )
     except Exception as exc:  # includes TimeoutError from wait_for
-        error = f"{type(exc).__name__}: {exc}"
+        error = redact(f"{type(exc).__name__}: {exc}")
         final = job.attempts >= job.max_attempts
         log = logger.error if final else logger.warning
         log(

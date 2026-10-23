@@ -21,6 +21,8 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import Any, TextIO
 
+from app.core.redaction import redact
+
 # Fields stamped on records from the request/job context, in output order.
 CONTEXT_FIELDS = ("request_id", "user_id", "method", "route", "path", "job_id", "job_type")
 
@@ -125,7 +127,7 @@ class JsonFormatter(logging.Formatter):
             ),
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            "message": redact(record.getMessage()),
         }
         for key in CONTEXT_FIELDS:
             value = getattr(record, key, None)
@@ -133,11 +135,11 @@ class JsonFormatter(logging.Formatter):
                 payload[key] = value
         for key, value in record.__dict__.items():
             if key not in _STANDARD_ATTRIBUTES and key not in payload and not key.startswith("_"):
-                payload[key] = value
+                payload[key] = redact(value) if isinstance(value, str) else value
         if record.exc_info:
-            payload["exception"] = self.formatException(record.exc_info)
+            payload["exception"] = redact(self.formatException(record.exc_info))
         if record.stack_info:
-            payload["stack"] = self.formatStack(record.stack_info)
+            payload["stack"] = redact(self.formatStack(record.stack_info))
         # default=str: a log call must never raise because of an odd value.
         return json.dumps(payload, default=str, ensure_ascii=False)
 
@@ -149,7 +151,7 @@ class TextFormatter(logging.Formatter):
         super().__init__("%(asctime)s %(levelname)-7s %(name)s: %(message)s")
 
     def format(self, record: logging.LogRecord) -> str:
-        line = super().format(record)
+        line = redact(super().format(record))
         tags = [
             f"{key}={getattr(record, key)}"
             for key in ("request_id", "user_id", "job_id")

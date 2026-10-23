@@ -72,8 +72,10 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def handle_upstream_service_error(
         request: Request, exc: UpstreamServiceError
     ) -> JSONResponse:
+        # The upstream's own message (which can name credentials or customer data) goes to the log, redacted by the formatter;
+        # the client gets a fixed sentence and the request id to quote.
         logger.warning("Upstream service error on %s %s: %s", request.method, request.url.path, exc)
-        return _error(request, status.HTTP_502_BAD_GATEWAY, exc.message)
+        return _error(request, status.HTTP_502_BAD_GATEWAY, exc.public_message)
 
     @app.exception_handler(InvalidStateError)
     async def handle_invalid_state(request: Request, exc: InvalidStateError) -> JSONResponse:
@@ -92,7 +94,13 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(IntegrityError)
     async def handle_integrity_error(request: Request, exc: IntegrityError) -> JSONResponse:
 
-        logger.warning("IntegrityError caught by global handler: %s", exc)
+        # Log WHICH constraint, never the statement or its parameters (they hold customer data).
+        orig = getattr(exc, "orig", None)
+        constraint = getattr(orig, "constraint_name", None) or getattr(getattr(orig, "__cause__", None), "constraint_name", None)
+        logger.warning(
+            "IntegrityError caught by global handler on %s %s (constraint=%s, %s)",
+            request.method, request.url.path, constraint, type(orig).__name__,
+        )
         return _error(
             request, status.HTTP_409_CONFLICT, "This request conflicts with existing data"
         )

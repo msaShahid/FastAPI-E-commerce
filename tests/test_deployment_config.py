@@ -24,8 +24,9 @@ def test_the_default_image_is_a_production_image():
     cmd = re.search(r"^CMD (.+)$", text, re.MULTILINE).group(1)
     assert "--reload" not in cmd and "--proxy-headers" in cmd
     assert re.search(r"^ARG INSTALL_DEV=false$", text, re.MULTILINE)  # production unless asked otherwise
-    install = text[text.index("RUN if"): text.index("RUN useradd")]
-    assert "pytest" in install and '"$INSTALL_DEV" = "true"' in install  # dev tools only behind the flag
+    assert "COPY pyproject.toml uv.lock" in text and "--locked" in text  # exactly the locked versions, and a stale lockfile fails the build
+    export = text[text.index("RUN uv export"): text.index("rm /tmp/requirements.txt")]
+    assert '"$INSTALL_DEV" = "true"' in export and "--extra dev" in export and "--no-dev" not in export  # dev tools only behind the flag
     assert not re.search(r"^COPY .*tests", text, re.MULTILINE)  # tests are never baked in
     users = re.findall(r"^USER (\S+)$", text, re.MULTILINE)
     assert users and users[-1] not in ("root", "0")

@@ -131,9 +131,14 @@ async def db_session(test_session_factory, _clean_database):
 @pytest_asyncio.fixture
 async def client(test_session_factory, _clean_database):
 
+    from app.core.config import get_settings
     from app.core.rate_limit import limiter
 
     limiter.reset()
+    # The suite drives many requests from ONE address; the limiter itself is tested with explicit limits (test_rate_limiting.py).
+    settings = get_settings()
+    saved = (settings.rate_limit_checkout, settings.rate_limit_payment, settings.rate_limit_cart)
+    settings.rate_limit_checkout = settings.rate_limit_payment = settings.rate_limit_cart = "100000/minute"
 
     async def override_get_db():
         async with test_session_factory() as session:
@@ -154,6 +159,7 @@ async def client(test_session_factory, _clean_database):
         yield ac
 
     app.dependency_overrides.clear()
+    settings.rate_limit_checkout, settings.rate_limit_payment, settings.rate_limit_cart = saved
 
 
 class FakeStorageService(StorageService):

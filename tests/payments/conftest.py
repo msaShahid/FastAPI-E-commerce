@@ -66,7 +66,7 @@ class FakePaymentRepository:
         return self.payments.get(payment_id)
 
     async def get_by_provider_payment_id(
-        self, provider_payment_id: str
+        self, provider_payment_id: str, provider: str | None = None
     ) -> Payment | None:
         return next(
             (
@@ -87,6 +87,7 @@ class FakePaymentRepository:
         provider_payment_id: str,
         amount_cents: int,
         currency: str = "usd",
+        provider_config_id=None,
         provider: str = "stripe",
     ) -> Payment:
         payment = Payment(

@@ -1,9 +1,32 @@
+import re
 from decimal import Decimal
 from functools import lru_cache
 from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+ENVIRONMENTS = frozenset({"development", "testing", "staging", "production"})
+# Deployments that real people or real money can reach: secrets there must be genuinely secret.
+HARDENED_ENVIRONMENTS = frozenset({"staging", "production"})
+JWT_HMAC_ALGORITHMS = frozenset({"HS256", "HS384", "HS512"})
+MIN_JWT_SECRET_LENGTH = 32
+MIN_WEBHOOK_SECRET_LENGTH = 16
+# Fragments that mark a value as a template placeholder rather than a real secret.
+_PLACEHOLDER = re.compile(
+    r"change[-_]?me|replace[-_]?me|your[-_]|placeholder|example|\*{3,}|<.*>|xxxx|todo|dummy|not[-_]?set",
+    re.IGNORECASE,
+)
+
+
+class ConfigurationError(RuntimeError):
+    """Unsafe configuration. Deliberately NOT a ValueError: pydantic echoes the offending input (with real secrets) in a
+    ValidationError, so these checks raise this instead and their messages name only the setting."""
+
+
+def looks_like_placeholder(value: str) -> bool:
+    """True for template values (CHANGE_ME, ****, <secret>, ...) and for degenerate ones (one repeated character)."""
+    return bool(_PLACEHOLDER.search(value)) or len(set(value)) < 6
 
 
 class Settings(BaseSettings):
@@ -228,6 +251,36 @@ class Settings(BaseSettings):
     # Retry delay after attempt n: base * 2**(n-1), capped.
     jobs_retry_base_seconds: float = Field(default=30.0, ge=0)
     jobs_retry_max_seconds: float = Field(default=3600.0, ge=0)
+
+    @model_validator(mode="after")
+    def _environment_and_jwt_algorithm_are_known(self) -> "Settings":
+        # An unknown label (e.g. "prod") would silently skip the hardened-environment checks below.
+        if self.environment not in ENVIRONMENTS:
+            raise ConfigurationError(f"environment must be one of {sorted(ENVIRONMENTS)}")
+        if self.jwt_algorithm not in JWT_HMAC_ALGORITHMS:
+            raise ConfigurationError(f"jwt_algorithm must be one of {sorted(JWT_HMAC_ALGORITHMS)}")
+        return self
+
+    @model_validator(mode="after")
+    def _secrets_are_real_in_hardened_environments(self) -> "Settings":
+        """Staging/production refuse to start with template or guessable secrets. Messages name the SETTING, never the value.
+
+        A known webhook secret lets anyone who knows a PaymentIntent id (the customer does) forge `payment_intent.succeeded`;
+        a known JWT secret lets anyone mint tokens. Development and testing keep their throwaway values."""
+        if self.environment not in HARDENED_ENVIRONMENTS:
+            return self
+        problems: list[str] = []
+        if len(self.jwt_secret) < MIN_JWT_SECRET_LENGTH or looks_like_placeholder(self.jwt_secret):
+            problems.append(f"JWT_SECRET must be a generated random value of at least {MIN_JWT_SECRET_LENGTH} characters, not a placeholder")
+        webhook = self.stripe_webhook_secret
+        if not webhook.startswith("whsec_") or len(webhook) < MIN_WEBHOOK_SECRET_LENGTH or looks_like_placeholder(webhook[len("whsec_"):]):
+            problems.append("STRIPE_WEBHOOK_SECRET must be the real signing secret from Stripe (whsec_...), not a placeholder")
+        key = self.stripe_secret_key
+        if not key.startswith(("sk_test_", "sk_live_", "rk_test_", "rk_live_")) or looks_like_placeholder(key.split("_", 2)[-1]):
+            problems.append("STRIPE_SECRET_KEY must be a real Stripe key (sk_/rk_ test or live), not a placeholder")
+        if problems:
+            raise ConfigurationError(f"Refusing to start in '{self.environment}': " + "; ".join(problems))
+        return self
 
     @model_validator(mode="after")
     def _payment_currencies_are_valid(self) -> "Settings":

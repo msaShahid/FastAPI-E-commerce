@@ -16,13 +16,14 @@ class StoreRepository:
     async def any_orders(self) -> bool:
         return (await self.db.execute(select(func.count()).select_from(Order))).scalar_one() > 0
 
-    async def set_currency(self, code: str) -> None:
-        row = (await self.db.execute(select(StoreSettings).where(StoreSettings.id == 1))).scalar_one_or_none()
-        if row is None:
-            self.db.add(StoreSettings(id=1, currency=code))
-        else:
-            row.currency = code
+    async def initialize_currency(self, code: str) -> bool:
+        """Records the store currency if none is recorded yet. True if THIS call initialised it; False if a currency was
+        already recorded (including by a concurrent request). It never changes an existing value."""
+        result = await self.db.execute(
+            pg_insert(StoreSettings).values(id=1, currency=code).on_conflict_do_nothing(index_elements=["id"]).returning(StoreSettings.id)
+        )
         await self.db.flush()
+        return result.scalar_one_or_none() is not None
 
     async def effective_currency(self, default: str) -> tuple[str | None, bool]:
         """(currency, configured). A configured store uses its currency. A NEW store (nothing configured, no orders

@@ -29,17 +29,24 @@ class StoreService:
         )
 
     async def set_currency(self, actor: User, code: str) -> StoreCurrencyRead:
-        """Sets the store currency. Allowed only while no order exists (the database enforces it too)."""
+        """Initialises the store currency, ONCE. After that it is fixed for the life of the store: repeating the same value is a
+        harmless no-op, anything else is refused (the database refuses it too, even if this check is bypassed)."""
         currency = get_currency(code)  # raises 422 for an unsupported code
         current = await self.repo.get_currency()
-        if current is not None and current != currency.code and await self.repo.any_orders():
+        if current is not None:
+            if current == currency.code:
+                return await self.read_currency()
             raise StoreCurrencyLockedError()
-        await self.repo.set_currency(currency.code)
+        if not await self.repo.initialize_currency(currency.code):
+            # A concurrent request (or the first checkout, which records the default) initialised it between our read and write.
+            if await self.repo.get_currency() != currency.code:
+                raise StoreCurrencyLockedError()
+            return await self.read_currency()
         await self.audit.log(
             actor_user_id=actor.id,
             action="store.currency_set",
             target_type="store_settings",
             target_id=1,
-            details={"from": current, "to": currency.code},
+            details={"from": None, "to": currency.code},
         )
         return await self.read_currency()

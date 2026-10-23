@@ -17,5 +17,6 @@ async def get_store_currency(service: StoreServiceDep) -> StoreCurrencyRead:
 async def set_store_currency(
     payload: StoreCurrencyUpdate, admin: AdminUser, service: StoreServiceDep
 ) -> StoreCurrencyRead:
-    """Administrator: set the store currency. Refused once any order exists."""
+    """Administrator: choose the store currency during initial setup. It can be set ONCE; afterwards it is fixed for the
+    lifetime of the store (repeating the same value is accepted, any other value is refused)."""
     return await service.set_currency(admin, payload.currency)

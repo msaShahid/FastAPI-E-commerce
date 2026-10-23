@@ -1,18 +1,22 @@
 """
 Database guards that keep money meaning stable (defence in depth; the service checks first).
 
-  * store_settings: the store currency cannot be changed or removed once ANY order exists.
+  * store_settings: the store currency is FIXED once set (it can never be updated); the row can be removed only while no order
+    exists (a database-level reset of a store that has no history, never an application operation).
   * orders: once an order has a currency it can never change.
   * payments: a payment's amount and currency can never change after creation.
 
-The same SQL lives in migration e5b7d2a9c418; a test asserts the copies are identical.
+The store function's current text lives in migration c3f9b1d7a846 (the other two in e5b7d2a9c418); a test asserts the copies are identical.
 """
 
 STORE_CURRENCY_GUARD_SQL = r'''CREATE OR REPLACE FUNCTION store_currency_guard() RETURNS trigger AS $$
 BEGIN
-    IF (TG_OP = 'DELETE' OR NEW.currency IS DISTINCT FROM OLD.currency)
-       AND EXISTS (SELECT 1 FROM orders) THEN
-        RAISE EXCEPTION 'store currency cannot be changed once orders exist'
+    IF TG_OP = 'UPDATE' AND NEW.currency IS DISTINCT FROM OLD.currency THEN
+        RAISE EXCEPTION 'the store currency is fixed once it has been set'
+            USING ERRCODE = 'integrity_constraint_violation';
+    END IF;
+    IF TG_OP = 'DELETE' AND EXISTS (SELECT 1 FROM orders) THEN
+        RAISE EXCEPTION 'the store currency cannot be removed once orders exist'
             USING ERRCODE = 'integrity_constraint_violation';
     END IF;
     IF TG_OP = 'DELETE' THEN

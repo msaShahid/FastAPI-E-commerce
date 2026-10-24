@@ -3,6 +3,7 @@ import uuid
 from app.modules.auth.models.user import User
 from app.modules.users.exceptions.user_exceptions import (
     ForbiddenActionError,
+    LastAdminError,
     UserNotFoundError,
 )
 from app.modules.users.repositories.user_repository import UserRepository
@@ -13,6 +14,13 @@ class UserService:
 
     def __init__(self, repository: UserRepository) -> None:
         self.repository = repository
+
+    async def _assert_not_last_admin(self, user: User) -> None:
+        """Refuses to remove the last active administrator (by demotion or deactivation), including under concurrency."""
+        if user.role != UserRole.ADMIN or not user.is_active:
+            return
+        if not [a for a in await self.repository.lock_active_admins() if a.id != user.id]:
+            raise LastAdminError()
 
     async def get_user(self, *, target_user_id: uuid.UUID, current_user: User) -> User:
        
@@ -51,6 +59,8 @@ class UserService:
         user = await self.repository.get_by_id(target_user_id)
         if user is None:
             raise UserNotFoundError(target_user_id)
+        if role is not None and role != UserRole.ADMIN:
+            await self._assert_not_last_admin(user)
 
         updates = {}
         if username is not None:
@@ -72,5 +82,6 @@ class UserService:
         user = await self.repository.get_by_id(target_user_id)
         if user is None:
             raise UserNotFoundError(target_user_id)
+        await self._assert_not_last_admin(user)
 
         return await self.repository.deactivate(user)

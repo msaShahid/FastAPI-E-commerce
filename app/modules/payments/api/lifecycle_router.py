@@ -1,8 +1,9 @@
+import contextlib
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from app.core.config import get_settings
 from app.core.database import DbSession
@@ -107,6 +108,44 @@ async def lifecycle_health(_admin: AdminUser, lifecycle: LifecycleServiceDep, db
         last_sweep_succeeded_at=last_sweep,
         sweep_overdue=overdue,
     )
+
+
+@lifecycle_router.get("/health/dependencies")
+async def dependency_health(_admin: AdminUser, db: DbSession) -> dict:
+    """For operators and monitoring (admin only; the public /health says nothing about internals): is the database reachable, is
+    Redis, and has the background worker finished any job recently? `status` is "ok" only when all three are fine."""
+    import time
+
+    from redis.asyncio import Redis
+
+    settings = get_settings()
+    started = time.perf_counter()
+    try:
+        await db.execute(text("SELECT 1"))
+        database = {"ok": True, "latency_ms": round((time.perf_counter() - started) * 1000)}
+    except Exception as exc:
+        database = {"ok": False, "error": type(exc).__name__}
+
+    started = time.perf_counter()
+    client = Redis.from_url(settings.redis_url, socket_connect_timeout=1, socket_timeout=1)
+    try:
+        await client.ping()
+        redis = {"ok": True, "latency_ms": round((time.perf_counter() - started) * 1000)}
+    except Exception as exc:
+        redis = {"ok": False, "error": type(exc).__name__}
+    finally:
+        with contextlib.suppress(Exception):
+            await client.aclose()
+
+    worker: dict = {"ok": None, "note": "the order-expiry sweep is disabled, so worker liveness cannot be inferred"}
+    interval = settings.order_expiry_sweep_interval_seconds
+    if interval > 0 and database["ok"]:
+        last = (await db.execute(select(func.max(BackgroundJob.finished_at)))).scalar_one()
+        limit = 3 * max(interval, 60)
+        age = None if last is None else int((datetime.now(UTC) - last).total_seconds())
+        worker = {"ok": age is not None and age <= limit, "last_job_finished_seconds_ago": age, "alert_after_seconds": limit}
+    healthy = database["ok"] and redis["ok"] and worker["ok"] is not False
+    return {"status": "ok" if healthy else "degraded", "database": database, "redis": redis, "worker": worker}
 
 
 @lifecycle_router.get("/webhook-events", response_model=PaginatedResponse[WebhookEventRead])

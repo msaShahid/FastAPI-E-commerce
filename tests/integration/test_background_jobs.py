@@ -512,7 +512,7 @@ async def _pending_paid_order(db_session, *, guest: bool = False):
 
     order = Order(
         id=uuid.uuid4(), idempotency_key=f"k-{unique}", status=OrderStatus.PENDING,
-        subtotal_cents=5000, shipping_cents=0, tax_cents=0, total_cents=5000, **owner,
+        subtotal_cents=5000, shipping_cents=0, tax_cents=0, total_cents=5000, currency="usd", **owner,
     )  # fmt: skip
     db_session.add(order)
     await db_session.flush()
@@ -588,7 +588,7 @@ async def test_slow_email_provider_does_not_slow_the_webhook(
     assert len(sender.sent) == 1
     assert sender.sent[0]["to"] == recipient
     assert str(order_id)[:8] in sender.sent[0]["subject"]
-    assert "2 x Gadget" in sender.sent[0]["body"] and "50.00" in sender.sent[0]["body"]
+    assert "2 x Gadget" in sender.sent[0]["body"] and "Total paid: 50.00 USD" in sender.sent[0]["body"]  # the order's own currency
 
 
 async def test_guest_orders_are_emailed_at_the_guest_address(

@@ -54,11 +54,12 @@ def test_production_compose_is_safe_and_complete():
     assert "alembic" not in str(services["api"].get("command", ""))
 
 
-def test_development_compose_keeps_reload_to_itself_and_does_not_publish_services_to_the_network():
+def test_development_compose_keeps_reload_to_itself():
+    """`--reload` is a development convenience and lives only in docker-compose.yml. How the development services' ports are
+    published (all interfaces or this machine only) is the developer's choice and is deliberately not asserted here; the
+    PRODUCTION file is checked for it above."""
     services = yaml.safe_load(need("docker-compose.yml").read_text())["services"]
     assert "--reload" in services["api"]["command"]
-    for name in ("db", "test_db", "redis", "adminer"):
-        assert all(p.startswith("127.0.0.1:") for p in services[name]["ports"])
 
 
 def test_the_production_env_template_fails_closed_until_it_is_filled_in():

@@ -252,6 +252,9 @@ class Settings(BaseSettings):
     # errors nor switches limiting off completely.
     rate_limit_fallback: str = "30/minute"
 
+    # Largest accepted product/category image upload, in bytes (admin-only endpoints).
+    max_image_bytes: int = 5 * 1024 * 1024
+
     jobs_embedded_worker: bool = False
     jobs_concurrency: int = Field(default=2, ge=1)  # jobs a worker runs at once
     jobs_poll_interval_seconds: float = Field(default=1.0, gt=0)  # sleep when idle

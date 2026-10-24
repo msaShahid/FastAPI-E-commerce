@@ -4,6 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.auth.models.user import User
+from app.shared.enums.roles import UserRole
 
 
 class UserRepository:
@@ -27,6 +28,14 @@ class UserRepository:
         items = list(items_result.scalars().all())
 
         return items, total
+
+    async def lock_active_admins(self) -> list[User]:
+        """Row-locks every ACTIVE administrator (in id order, so two requests cannot deadlock). Two admins demoting each other at
+        the same moment therefore serialise: the second sees the first's committed result."""
+        result = await self.db.execute(
+            select(User).where(User.role == UserRole.ADMIN, User.is_active.is_(True)).order_by(User.id).with_for_update()
+        )
+        return list(result.scalars().all())
 
     async def update(self, user: User, **fields) -> User:
         for key, value in fields.items():

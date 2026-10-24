@@ -1,6 +1,7 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+from functools import lru_cache
 from typing import Any
 
 import jwt
@@ -28,6 +29,17 @@ def hash_password(plain_password: str) -> str:
     deliberately -- that capability should never exist in this codebase.
     """
     return pwd_context.hash(plain_password)
+
+
+@lru_cache
+def _decoy_hash() -> str:
+    return pwd_context.hash("decoy-password-for-unknown-accounts")
+
+
+def verify_against_decoy(plain_password: str) -> None:
+    """Spends the same time as a real password check. Used when the account does not exist, so response time does not reveal
+    whether an email is registered."""
+    pwd_context.verify(plain_password, _decoy_hash())
 
 
 def verify_password(plain_password: str, password_hash: str) -> bool:

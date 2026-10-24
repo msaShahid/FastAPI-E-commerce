@@ -1,5 +1,6 @@
 from fastapi import UploadFile
 
+from app.core.config import get_settings
 from app.core.exceptions import InvalidImageError
 
 ALLOWED_IMAGE_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
@@ -43,6 +44,9 @@ def _read_header(image: UploadFile) -> bytes:
 
 
 def validate_image(image: UploadFile) -> None:
+    limit = get_settings().max_image_bytes
+    if image.size is not None and image.size > limit:
+        raise InvalidImageError(f"The image is too large (the limit is {limit // (1024 * 1024)} MB).")
     if image.content_type not in ALLOWED_IMAGE_CONTENT_TYPES:
         raise InvalidImageError("Only JPEG, PNG and WebP images are allowed.")
 

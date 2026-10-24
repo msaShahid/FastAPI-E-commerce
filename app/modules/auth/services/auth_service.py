@@ -9,6 +9,7 @@ from app.core.security import (
     decode_token,
     hash_password,
     unverified_claims,
+    verify_against_decoy,
     verify_password,
 )
 from app.modules.auth.exceptions.auth_exceptions import (
@@ -45,7 +46,10 @@ class AuthService:
     async def login(self, *, email: str, password: str) -> TokenPair:
 
         user = await self.repository.get_user_by_email(email)
-        if user is None or not verify_password(password, user.password_hash):
+        if user is None:
+            verify_against_decoy(password)  # same cost as a real check: timing must not reveal whether the email exists
+            raise InvalidCredentialsError()
+        if not verify_password(password, user.password_hash):
             raise InvalidCredentialsError()
 
         if not user.is_active:

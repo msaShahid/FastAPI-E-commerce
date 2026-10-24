@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
@@ -114,22 +114,19 @@ app.include_router(graphql_router, prefix="/graphql")
 
 @app.get("/health", tags=["health"])
 def health_check() -> dict:
-    return {
-        "status": "ok",
-        "environment": settings.environment,
-    }
+    """Liveness for load balancers and the container health check. Deliberately says nothing about the deployment."""
+    return {"status": "ok"}
 
 
 @app.get("/health/db", tags=["health"])
 async def health_check_db(db: Annotated[AsyncSession, Depends(get_db)]) -> dict:
-
-    result = await db.execute(text("SELECT 1"))
-
-    return {
-        "status": "ok",
-        "database": "reachable",
-        "result": result.scalar(),
-    }
+    """Readiness: can this process reach the database? 503 if not. Detail for operators is in the admin health endpoint."""
+    try:
+        await db.execute(text("SELECT 1"))
+    except Exception as exc:
+        logger.warning("readiness check failed: %s", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Database unavailable") from exc
+    return {"status": "ok"}
 
 
 @app.get("/", tags=["Home"])

@@ -1,9 +1,22 @@
 # Status
 
-## Milestone 2 (in progress): shipping and GST master foundation
+## Current state (after the independent audit and its remediation, phases 1-10)
 
-**Checkout and live payments remain disabled.** Tax is NOT calculated yet: the GST master
-is administration-only and not used by checkout. Payments are still USD-only.
+This section supersedes the phase notes below, which are kept as history and are NOT current where they disagree.
+
+* **Live payments are disabled** (`LIVE_PAYMENTS_ENABLED=false`) and must stay so: Stripe test-mode acceptance and Razorpay sandbox
+  acceptance have **not** been performed (`docs/RUNBOOK.md`, section 5). Test and mocked suites are not provider verification.
+* Checkout works when shipping and tax are configured; it answers 503 until they are. Payments use the ORDER's currency
+  (the store currency, INR by default, chosen once at setup and then **fixed for the life of the store**).
+* Production configuration refuses placeholder secrets; images are non-root without dev tools; dependencies are pinned in `uv.lock`.
+* Refunds are not sent while a dispute is open; guest orders are paid with an order-scoped capability; webhook identity for
+  Razorpay comes from the signed body; provider errors never reach clients; logs are redacted.
+* Migrations: `docs/MIGRATIONS.md`. Operations, monitoring, backups and the go-live checklist: `docs/RUNBOOK.md`.
+* **Not production-ready merely because tests pass.** See the runbook's go-live checklist.
+
+## Milestone 2 (historical): shipping and GST master foundation
+
+~~Checkout and live payments remain disabled. Payments are still USD-only.~~ (Historical: see "Current state" above.)
 
 ### Phase 2.1 shipping (done)
 - Free-shipping threshold now requires `FREE_SHIPPING_THRESHOLD_BASIS` (only `subtotal`

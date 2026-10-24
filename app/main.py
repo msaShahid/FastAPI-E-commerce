@@ -31,7 +31,6 @@ from app.modules.orders.api.router import order_router
 from app.modules.payments.api.lifecycle_router import lifecycle_router
 from app.modules.payments.api.provider_router import provider_router
 from app.modules.payments.api.router import payment_router
-from app.modules.playground.api.router import playground_router
 from app.modules.products.api.router import product_router
 from app.modules.store.api.router import store_router
 from app.modules.tax.api.router import tax_router
@@ -94,7 +93,6 @@ app.mount("/media", StaticFiles(directory="media"), name="media")
 
 register_exception_handlers(app)
 
-app.include_router(playground_router, prefix=settings.api_v1_prefix)
 app.include_router(auth_router, prefix=settings.api_v1_prefix)
 app.include_router(users_router, prefix=settings.api_v1_prefix)
 app.include_router(address_router, prefix=settings.api_v1_prefix)

@@ -96,7 +96,7 @@ class Settings(BaseSettings):
     # (a plain comma-separated string is NOT accepted here -- pydantic-settings
     # parses a list-typed field from an env var as JSON, so anything else
     # raises a validation error at startup rather than a silently-wrong config.)
-    cors_origins: list[str] = ["http://localhost:3000"]
+    cors_origins: list[str] = ["http://localhost:3000","http://127.0.0.1:3000"]
 
     @field_validator("cors_origins")
     @classmethod

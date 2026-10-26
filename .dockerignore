@@ -13,6 +13,8 @@
 venv
 media
 tests
+# The demo seed (and its fake payment provider) is for development only: docker-compose.yml mounts ./scripts, so it still runs there.
+scripts/*seed*.py
 docs
 loadtest
 *.md

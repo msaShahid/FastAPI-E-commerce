@@ -34,6 +34,7 @@ import asyncio
 import json
 import logging
 import sys
+from datetime import UTC, datetime
 
 import httpx
 from sqlalchemy import text
@@ -118,7 +119,7 @@ async def seed_users() -> None:
         admin = await auth.repository.get_user_by_email(settings.seed_admin_email)
         if admin is None:
             admin = await auth.register(username="admin", email=settings.seed_admin_email, password=settings.seed_admin_password)
-            await users.update(admin, role=UserRole.ADMIN)
+            await users.update(admin, role=UserRole.ADMIN, email_verified_at=datetime.now(UTC))
             print(f"  Created admin: {settings.seed_admin_email}")
         else:
             print(f"  Admin already exists: {settings.seed_admin_email}")
@@ -126,14 +127,15 @@ async def seed_users() -> None:
         approver = await auth.repository.get_user_by_email(data.APPROVER_EMAIL)
         if approver is None:
             approver = await auth.register(username=data.APPROVER_USERNAME, email=data.APPROVER_EMAIL, password=settings.seed_admin_password)
-            await users.update(approver, role=UserRole.ADMIN)
+            await users.update(approver, role=UserRole.ADMIN, email_verified_at=datetime.now(UTC))
             print(f"  Created second admin (tax approver): {data.APPROVER_EMAIL}")
         else:
             print(f"  Second admin already exists: {data.APPROVER_EMAIL}")
 
         for c in data.CUSTOMERS:
             if await auth.repository.get_user_by_email(c.email) is None:
-                await auth.register(username=c.username, email=c.email, password=settings.seed_user_password)
+                customer = await auth.register(username=c.username, email=c.email, password=settings.seed_user_password)
+                await users.update(customer, email_verified_at=datetime.now(UTC))  # demo accounts: no inbox exists to verify
                 print(f"  Created customer: {c.email}")
             else:
                 print(f"  Customer already exists: {c.email}")

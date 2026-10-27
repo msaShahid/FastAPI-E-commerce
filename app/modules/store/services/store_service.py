@@ -4,7 +4,7 @@ from app.modules.audit.services.audit_service import AuditService
 from app.modules.auth.models.user import User
 from app.modules.store.exceptions.store_exceptions import StoreCurrencyLockedError
 from app.modules.store.repositories.store_repository import StoreRepository
-from app.modules.store.schemas.store import StoreCurrencyRead
+from app.modules.store.schemas.store import StoreCurrencyRead, StoreSettingsRead
 
 
 class StoreService:
@@ -26,6 +26,32 @@ class StoreService:
         return StoreCurrencyRead(
             currency=currency.code, minor_unit_exponent=currency.exponent, payment_verified=currency.payment_verified,
             configured=configured, warnings=warnings,
+        )
+
+    async def read_public_settings(self) -> StoreSettingsRead:
+        """What a storefront may know about how buying works here, and why buying might currently be impossible."""
+        settings = get_settings()
+        currency = await self.read_currency()
+        reasons: list[str] = []
+        if currency.currency is None:
+            reasons.append("The store currency is not set")
+        if settings.flat_shipping_cents is None:
+            reasons.append("Shipping is not configured")
+        if settings.tax_rate_percent is None:
+            reasons.append("Tax is not configured")
+        payments_ok = currency.currency is not None and not currency.warnings
+        if currency.currency is not None and not payments_ok:
+            reasons.append("Payments are not enabled for the store currency")
+        return StoreSettingsRead(
+            currency=currency.currency,
+            minor_unit_exponent=currency.minor_unit_exponent,
+            flat_shipping_cents=settings.flat_shipping_cents,
+            free_shipping_threshold_cents=settings.free_shipping_threshold_cents or None,
+            pending_order_timeout_minutes=settings.pending_order_timeout_minutes,
+            checkout_available=currency.currency is not None and settings.flat_shipping_cents is not None
+            and settings.tax_rate_percent is not None,
+            payments_available=payments_ok,
+            unavailable_reasons=reasons,
         )
 
     async def set_currency(self, actor: User, code: str) -> StoreCurrencyRead:

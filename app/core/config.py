@@ -255,6 +255,10 @@ class Settings(BaseSettings):
     # Largest accepted product/category image upload, in bytes (admin-only endpoints).
     max_image_bytes: int = 5 * 1024 * 1024
 
+    # The interactive API documentation (/docs, /redoc, /openapi.json). None = on in development and testing, OFF in staging and
+    # production (it describes the whole admin surface). Set true/false to override.
+    api_docs_enabled: bool | None = None
+
     jobs_embedded_worker: bool = False
     jobs_concurrency: int = Field(default=2, ge=1)  # jobs a worker runs at once
     jobs_poll_interval_seconds: float = Field(default=1.0, gt=0)  # sleep when idle
@@ -330,6 +334,14 @@ class Settings(BaseSettings):
         if self.default_store_currency not in CURRENCIES:
             raise ValueError(f"default_store_currency: '{self.default_store_currency}' is not a supported currency")
         return self
+
+    def docs_urls(self) -> dict[str, str | None]:
+        on = self.api_docs_enabled if self.api_docs_enabled is not None else self.environment not in HARDENED_ENVIRONMENTS
+        return {
+            "docs_url": "/docs" if on else None,
+            "redoc_url": "/redoc" if on else None,
+            "openapi_url": "/openapi.json" if on else None,
+        }
 
     def enabled_payment_currencies(self) -> set[str]:
         return {c.strip().lower() for c in self.payment_currencies_enabled.split(",") if c.strip()}

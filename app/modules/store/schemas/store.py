@@ -5,6 +5,20 @@ class StoreCurrencyUpdate(BaseModel):
     currency: str = Field(min_length=3, max_length=3, description="ISO 4217 code, e.g. inr")
 
 
+class StoreSettingsRead(BaseModel):
+    """Public, read-only facts a storefront needs to describe how buying works. Amounts are in MINOR units of `currency`
+    (paise for INR); divide by 10**minor_unit_exponent to display. Never includes tax rates, credentials or provider details."""
+
+    currency: str | None
+    minor_unit_exponent: int | None
+    flat_shipping_cents: int | None
+    free_shipping_threshold_cents: int | None   # null = no free shipping
+    pending_order_timeout_minutes: int          # an unpaid order is cancelled and its stock released after this long
+    checkout_available: bool                    # false: checkout would answer 503 (see unavailable_reasons)
+    payments_available: bool                    # false: paying would be refused for this currency
+    unavailable_reasons: list[str] = []
+
+
 class StoreCurrencyRead(BaseModel):
     """null/null until the administrator sets it (checkout answers 503 until then)."""
 

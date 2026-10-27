@@ -70,6 +70,7 @@ app = FastAPI(
     title="FastAPI E-Commerce",
     version="0.1.0",
     description="Production ready e-commerce backend.",
+    **settings.docs_urls(),
 )
 
 app.state.limiter = limiter

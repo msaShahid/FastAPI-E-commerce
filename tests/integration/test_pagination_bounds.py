@@ -50,6 +50,7 @@ PAGINATED = [
 BOUNDED_UNPAGINATED = {
     f"{API}/addresses": "capped at MAX_ADDRESSES_PER_USER per user",
     f"{API}/admin/payment-providers/catalog": "one entry per supported provider, from a code registry (currently 2)",
+    f"{API}/admin/email-providers/catalog": "one entry per supported email service, from a code registry (currently 3)",
     f"{API}/admin/payment-providers": "capped by the unique (provider, mode) constraint: at most 2 rows per supported provider",
 }
 

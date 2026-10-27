@@ -44,7 +44,8 @@ def test_api_docs_are_off_in_staging_and_production_unless_asked_for():
     assert Settings(_env_file=None, environment="development", **BASE).docs_urls() == on
     assert Settings(_env_file=None, environment="testing", **BASE).docs_urls() == on
     hardened = dict(BASE, jwt_secret="9f2c4a7e1b8d3c6a5e0f7b2d4c9a1e8f6b3d5c7a9e1f2b4d6c8a0e3f5b7d9c1a",
-                    stripe_secret_key="sk_test_51Nabcdefghijklmnopqrstuv", stripe_webhook_secret="whsec_8d3f1a6b9c2e5d7f0a4b8c1e3d6f9a2b")
+                    stripe_secret_key="sk_test_51Nabcdefghijklmnopqrstuv", stripe_webhook_secret="whsec_8d3f1a6b9c2e5d7f0a4b8c1e3d6f9a2b",
+                    frontend_base_url="https://shop.example.com")
     for env in ("staging", "production"):
         assert Settings(_env_file=None, environment=env, **hardened).docs_urls() == off
         assert Settings(_env_file=None, environment=env, api_docs_enabled=True, **hardened).docs_urls() == on  # explicit override

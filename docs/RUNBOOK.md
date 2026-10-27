@@ -75,10 +75,47 @@ Each record is something the system refused to guess about. Open records mean mo
    event behavior).
 4. Store currency chosen and confirmed (it cannot be changed once set).
 5. Shipping and tax configured deliberately (`FLAT_SHIPPING_CENTS`, `TAX_RATE_PERCENT`: 0 is not an approved rate).
-6. A real email sender configured (`LoggingEmailSender` only writes to the log).
+6. A real email sender configured: `EMAIL_BACKEND=smtp` with `SMTP_HOST`, `SMTP_USERNAME`/`SMTP_PASSWORD`, `EMAIL_FROM` and
+   `FRONTEND_BASE_URL` (https). With `EMAIL_BACKEND=log` nobody receives password-reset links or order emails. Send yourself a
+   password reset from the real storefront and confirm it arrives (check spam and SPF/DKIM for the sending domain).
 7. TLS-terminating reverse proxy in place; `FORWARDED_ALLOW_IPS` set to its address; API port reachable only through it.
 8. Backups running and a restore rehearsed; monitoring on section 1.
 9. At least two active administrators (the last one cannot be demoted or deactivated).
+
+## 5a. Account emails
+
+Password reset, email verification, email-change confirmation and security notices are plain-text emails sent by the background
+worker (so the worker must be running). Links point at `FRONTEND_BASE_URL`: `/reset-password`, `/verify-email` and
+`/confirm-email-change`, each with `?token=...` (the storefront must provide those pages). A reset link lasts 60 minutes, a
+verification link 24 hours, an email-change link 60 minutes; each works once. At most 3 reset emails per account per hour.
+In development (`EMAIL_BACKEND=log`) the whole email, link included, is written to the worker's log:
+`docker compose logs worker --tail 30`. If delivery fails the job retries with backoff; failed jobs show in
+`/admin/lifecycle/health` (`failed_jobs`).
+
+### Choosing the email service (administrator API)
+
+An administrator can pick the email service without touching the server's environment: Google (Gmail / Workspace), Zoho Mail or
+Mailtrap. Hosts and ports are fixed presets (an administrator cannot point the server at an arbitrary host).
+
+1. `GET /api/v1/admin/email-providers/catalog`: the three services, their fields and setup notes.
+2. `PUT /api/v1/admin/email-providers/{google|zoho|mailtrap}`: save the settings (`username`, `password`, `from_email`,
+   `from_name`, plus `mode`: the Zoho data centre `com|in|eu|com.au|jp`, or Mailtrap `sandbox|live`). Credentials are encrypted
+   and never returned. **This needs `PROVIDER_SECRETS_KEY`** (generate with
+   `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`); without it the call answers 503.
+3. `POST .../{provider}/test`: connects and signs in, sending nothing. `POST .../{provider}/test-email`: sends one message to
+   YOUR OWN account address.
+4. `POST .../{provider}/activate`: makes it the service for every email. A live test must pass first. Switching to another
+   service is the same call, and takes effect for the next email with no restart. `POST .../deactivate` returns to the
+   server's `EMAIL_BACKEND` settings (the fallback whenever none is active).
+5. `GET /api/v1/admin/email-providers` shows which service is in use, each one's last test, last successful send and last failure
+   code. A failing service shows `last_error_code` (for example `auth_failed`) without reading logs.
+
+Service notes: **Google** needs an *App password* (2-Step Verification on); the From address must be the account's own or a
+verified alias. **Zoho**: choose the data centre the account lives in (India accounts: `in`). **Mailtrap `sandbox`** captures
+mail in a test inbox and delivers NOTHING to customers (development and demos only); `live` delivers from a verified domain.
+Changing the credentials of the ACTIVE service is tested first and refused if the test fails, so a typo cannot stop all email.
+Losing or changing `PROVIDER_SECRETS_KEY` makes stored credentials unreadable: email jobs then fail loudly (they never fall back
+to another account) until the credentials are entered again.
 
 ## 6. Known operational limits
 

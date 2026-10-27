@@ -11,6 +11,9 @@ This section supersedes the phase notes below, which are kept as history and are
 * Production configuration refuses placeholder secrets; images are non-root without dev tools; dependencies are pinned in `uv.lock`.
 * Refunds are not sent while a dispute is open; guest orders are paid with an order-scoped capability; webhook identity for
   Razorpay comes from the signed body; provider errors never reach clients; logs are redacted.
+* Accounts: password reset, password change, email verification and a confirmed email change exist (`/api/v1/auth/...`); email is
+  sent over SMTP when `EMAIL_BACKEND=smtp`, otherwise only logged. An administrator can instead choose Google, Zoho or Mailtrap
+  and switch between them (`/api/v1/admin/email-providers`; see `docs/RUNBOOK.md`).
 * Migrations: `docs/MIGRATIONS.md`. Operations, monitoring, backups and the go-live checklist: `docs/RUNBOOK.md`.
 * **Not production-ready merely because tests pass.** See the runbook's go-live checklist.
 

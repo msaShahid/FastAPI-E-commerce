@@ -1,4 +1,4 @@
-from app.core.exceptions import ConflictError, UnauthorizedError
+from app.core.exceptions import BadRequestError, ConflictError, UnauthorizedError
 
 
 class EmailAlreadyExistsError(ConflictError):
@@ -32,3 +32,27 @@ class InvalidRefreshTokenError(UnauthorizedError):
 
     def __init__(self) -> None:
         super().__init__("Invalid or expired refresh token")
+
+class InvalidAccountTokenError(BadRequestError):
+    """One answer for every way a link can be unusable (unknown, expired, already used, wrong purpose, address since changed)."""
+
+    code = "invalid_or_expired_token"
+
+    def __init__(self) -> None:
+        super().__init__("This link is invalid or has expired. Request a new one.")
+
+
+class CurrentPasswordIncorrectError(BadRequestError):
+    """Not a 401: the caller IS signed in; a 401 would send a client into its token-refresh loop."""
+
+    code = "current_password_incorrect"
+
+    def __init__(self) -> None:
+        super().__init__("The current password is not correct")
+
+
+class SamePasswordError(BadRequestError):
+    code = "password_unchanged"
+
+    def __init__(self) -> None:
+        super().__init__("The new password must be different from the current one")

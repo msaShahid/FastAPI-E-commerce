@@ -1,6 +1,7 @@
 import uuid
+from datetime import datetime
 
-from sqlalchemy import Boolean, Enum, Index, String
+from sqlalchemy import Boolean, DateTime, Enum, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -32,3 +33,4 @@ class User(Base, TimestampMixin):
     )
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)

@@ -5,10 +5,14 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.database import DbSession
+from app.core.jobs.queue import JobQueue
 from app.core.logging_config import bind
 from app.core.security import TokenError, TokenType, decode_token
+from app.modules.audit.repositories.audit_repository import AuditRepository
+from app.modules.audit.services.audit_service import AuditService
 from app.modules.auth.models.user import User
 from app.modules.auth.repositories.auth_repository import AuthRepository
+from app.modules.auth.services.account_service import AccountService
 from app.modules.auth.services.auth_service import AuthService
 from app.shared.enums.roles import UserRole
 
@@ -27,6 +31,15 @@ def get_auth_service(
 
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
+
+
+def get_account_service(
+    db: DbSession, repository: Annotated[AuthRepository, Depends(get_auth_repository)], auth: Annotated[AuthService, Depends(get_auth_service)]
+) -> AccountService:
+    return AccountService(repository, auth, AuditService(AuditRepository(db)), JobQueue(db))
+
+
+AccountServiceDep = Annotated[AccountService, Depends(get_account_service)]
 
 
 async def get_current_user(

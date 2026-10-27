@@ -65,8 +65,13 @@ class UserService:
         updates = {}
         if username is not None:
             updates["username"] = username
-        if email is not None:
-            updates["email"] = email
+        if email is not None and email != user.email:
+            if current_user.id == target_user_id:
+                # Your own address changes only through the confirmed flow (current password, link to the NEW address, notice to
+                # the old one): a stolen session must not be able to quietly redirect the account's mail.
+                raise ForbiddenActionError("Change your email address with POST /auth/email/change")
+            updates["email"] = email  # an administrator correcting someone else's record: it is unverified until they confirm it
+            updates["email_verified_at"] = None
         if role is not None:
             updates["role"] = role
 

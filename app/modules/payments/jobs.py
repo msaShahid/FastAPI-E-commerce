@@ -10,6 +10,7 @@ from app.core.jobs.registry import job_handler
 from app.core.money import format_minor
 from app.core.redaction import redact
 from app.modules.auth.models.user import User
+from app.modules.email_settings.sender import resolve_email_sender
 from app.modules.orders.repositories.order_repository import OrderRepository
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ async def send_order_confirmation(
             *([f"Total paid: {total}"] if total else []),
         ]
     )
-    await get_email_sender().send(
+    await (await resolve_email_sender(session_factory, get_email_sender)).send(
         to=recipient, subject=f"Payment received for order {short_id}", body=body
     )
 

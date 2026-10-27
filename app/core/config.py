@@ -96,7 +96,7 @@ class Settings(BaseSettings):
     # (a plain comma-separated string is NOT accepted here -- pydantic-settings
     # parses a list-typed field from an env var as JSON, so anything else
     # raises a validation error at startup rather than a silently-wrong config.)
-    cors_origins: list[str] = ["http://localhost:3000","http://127.0.0.1:3000"]
+    cors_origins: list[str] = ["http://localhost:3000"]
 
     @field_validator("cors_origins")
     @classmethod
@@ -259,6 +259,27 @@ class Settings(BaseSettings):
     # production (it describes the whole admin surface). Set true/false to override.
     api_docs_enabled: bool | None = None
 
+    # --- Email (account recovery, verification, notices) ---
+    # "log" writes emails to the log (development); "smtp" sends them through any SMTP provider (Amazon SES, Zoho, Brevo, SendGrid...).
+    email_backend: str = "log"
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_security: str = "starttls"          # starttls (587) | ssl (465) | none (a local test relay only)
+    smtp_timeout_seconds: int = 15
+    email_from: str | None = None            # the From address, e.g. orders@yourstore.in
+    email_from_name: str = "NovaCart Store"
+    store_name: str = "NovaCart Store"       # how emails refer to the store
+    # Where the storefront lives: emailed links point at <frontend_base_url>/reset-password?token=... and so on.
+    frontend_base_url: str = "http://localhost:3000"
+    # Log the BODY of emails too when email_backend=log (so a developer can click a reset link). Default: on outside staging/production.
+    email_log_bodies: bool | None = None
+    password_reset_token_minutes: int = 60
+    email_verification_token_hours: int = 24
+    email_change_token_minutes: int = 60
+    password_reset_emails_per_hour: int = 3  # per account, so the endpoint cannot be used to flood someone's inbox
+
     jobs_embedded_worker: bool = False
     jobs_concurrency: int = Field(default=2, ge=1)  # jobs a worker runs at once
     jobs_poll_interval_seconds: float = Field(default=1.0, gt=0)  # sleep when idle
@@ -302,6 +323,26 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def _email_settings_are_coherent(self) -> "Settings":
+        if self.email_backend not in ("log", "smtp"):
+            raise ConfigurationError("email_backend must be 'log' or 'smtp'")
+        if self.smtp_security not in ("starttls", "ssl", "none"):
+            raise ConfigurationError("smtp_security must be 'starttls', 'ssl' or 'none'")
+        if self.email_backend == "smtp" and not (self.smtp_host and self.email_from):
+            raise ConfigurationError("EMAIL_BACKEND=smtp needs SMTP_HOST and EMAIL_FROM")
+        if self.smtp_username and not self.smtp_password:
+            raise ConfigurationError("SMTP_USERNAME is set but SMTP_PASSWORD is not")
+        if self.environment in HARDENED_ENVIRONMENTS:
+            base = self.frontend_base_url.lower()
+            if not base.startswith("https://") or "localhost" in base or "127.0.0.1" in base:
+                raise ConfigurationError(
+                    "FRONTEND_BASE_URL must be the storefront's public https:// address in staging/production "
+                    "(emailed account links are built from it)"
+                )
+        self.frontend_base_url = self.frontend_base_url.rstrip("/")
+        return self
+
+    @model_validator(mode="after")
     def _payment_currencies_are_valid(self) -> "Settings":
         from app.core.money import CURRENCIES
 
@@ -334,6 +375,9 @@ class Settings(BaseSettings):
         if self.default_store_currency not in CURRENCIES:
             raise ValueError(f"default_store_currency: '{self.default_store_currency}' is not a supported currency")
         return self
+
+    def log_email_bodies(self) -> bool:
+        return self.email_log_bodies if self.email_log_bodies is not None else self.environment not in HARDENED_ENVIRONMENTS
 
     def docs_urls(self) -> dict[str, str | None]:
         on = self.api_docs_enabled if self.api_docs_enabled is not None else self.environment not in HARDENED_ENVIRONMENTS

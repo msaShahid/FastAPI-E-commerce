@@ -66,7 +66,7 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(BadRequestError)
     async def handle_bad_request(request: Request, exc: BadRequestError) -> JSONResponse:
-        return _error(request, status.HTTP_400_BAD_REQUEST, exc.message)
+        return _error(request, status.HTTP_400_BAD_REQUEST, exc.message, code=getattr(exc, "code", None))
 
     @app.exception_handler(UpstreamServiceError)
     async def handle_upstream_service_error(

@@ -14,6 +14,7 @@ GOOD = {
     "jwt_secret": "9f2c4a7e1b8d3c6a5e0f7b2d4c9a1e8f6b3d5c7a9e1f2b4d6c8a0e3f5b7d9c1a",
     "stripe_secret_key": "sk_test_51Nabcdefghijklmnopqrstuv",
     "stripe_webhook_secret": "whsec_8d3f1a6b9c2e5d7f0a4b8c1e3d6f9a2b",
+    "frontend_base_url": "https://shop.example.com",  # staging/production need the storefront's public https address
 }
 
 

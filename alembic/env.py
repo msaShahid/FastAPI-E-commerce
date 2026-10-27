@@ -13,11 +13,13 @@ from app.core.database import Base, asyncpg_connect_args
 from app.core.jobs.models import BackgroundJob  # noqa: F401
 from app.modules.addresses.models.address import Address  # noqa: F401
 from app.modules.audit.models.audit_log import AuditLog  # noqa: F401
+from app.modules.auth.models.auth_token import AuthToken  # noqa: F401
 from app.modules.auth.models.refresh_token import RefreshToken  # noqa: F401
 from app.modules.auth.models.user import User  # noqa: F401
 from app.modules.cart.models.cart import Cart  # noqa: F401
 from app.modules.cart.models.cart_item import CartItem  # noqa: F401
 from app.modules.categories.models.category import Category  # noqa: F401
+from app.modules.email_settings.models.email_provider_config import EmailProviderConfig  # noqa: F401
 from app.modules.orders.models.currency_remediation import OrderCurrencyRemediation  # noqa: F401
 from app.modules.orders.models.order import Order  # noqa: F401
 from app.modules.orders.models.order_item import OrderItem  # noqa: F401

@@ -55,6 +55,10 @@ class AuthService:
         if not user.is_active:
             raise InvalidCredentialsError()
 
+        return await self.issue_tokens(user)
+
+    async def issue_tokens(self, user: User) -> TokenPair:
+        """A fresh access + refresh pair for `user` (a new token family). Used by login and after a password change."""
         access_token = create_access_token(subject=str(user.id))
         refresh_token = create_refresh_token(subject=str(user.id))
 

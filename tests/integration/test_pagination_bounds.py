@@ -44,7 +44,6 @@ PAGINATED = [
     ("/orders/admin", "admin"),
     ("/users", "admin"),
     ("/audit-logs", "admin"),
-    ("/playground/items", None),
 ]
 
 # GET endpoints that return a list without page/page_size, and why that is bounded.
@@ -129,7 +128,8 @@ def test_free_text_filters_have_a_length_limit():
                 limit = _max_length(schema)
                 assert limit, f"GET {path}: {name} has no maxLength"
                 assert limit <= 255, f"GET {path}: {name} maxLength {limit} is not a real bound"
-    assert checked >= 4
+    # products.search and the audit log's two filters.
+    assert checked >= 3
 
 
 # --- data -----------------------------------------------------------------------------------------

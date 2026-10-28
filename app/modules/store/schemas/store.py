@@ -14,6 +14,7 @@ class StoreSettingsRead(BaseModel):
     flat_shipping_cents: int | None
     free_shipping_threshold_cents: int | None   # null = no free shipping
     pending_order_timeout_minutes: int          # an unpaid order is cancelled and its stock released after this long
+    delivery_check: str                         # "none": every address is accepted; another value: a check refuses undeliverable ones
     checkout_available: bool                    # false: checkout would answer 503 (see unavailable_reasons)
     payments_available: bool                    # false: paying would be refused for this currency
     unavailable_reasons: list[str] = []

@@ -2,6 +2,7 @@ from app.core.config import get_settings
 from app.core.money import get_currency
 from app.modules.audit.services.audit_service import AuditService
 from app.modules.auth.models.user import User
+from app.modules.orders.services.eligibility import get_delivery_eligibility
 from app.modules.store.exceptions.store_exceptions import StoreCurrencyLockedError
 from app.modules.store.repositories.store_repository import StoreRepository
 from app.modules.store.schemas.store import StoreCurrencyRead, StoreSettingsRead
@@ -48,6 +49,7 @@ class StoreService:
             flat_shipping_cents=settings.flat_shipping_cents,
             free_shipping_threshold_cents=settings.free_shipping_threshold_cents or None,
             pending_order_timeout_minutes=settings.pending_order_timeout_minutes,
+            delivery_check=get_delivery_eligibility().policy,
             checkout_available=currency.currency is not None and settings.flat_shipping_cents is not None
             and settings.tax_rate_percent is not None,
             payments_available=payments_ok,

@@ -186,7 +186,7 @@ async def test_my_orders_with_their_items(client, db_session, statements):
     small = await count_statements(statements, lambda: client.get(f"/api/v1/orders?page_size={SMALL}", headers=h))
     large = await count_statements(statements, lambda: client.get(f"/api/v1/orders?page_size={LARGE}", headers=h))
 
-    assert_constant(small, large, ceiling=4)  # user, count, orders, items
+    assert_constant(small, large, ceiling=5)  # user, count, orders, items, shipments (one query for ALL the orders' shipments)
 
 
 async def test_admin_all_orders_with_their_items(client, db_session, statements):
@@ -200,7 +200,7 @@ async def test_admin_all_orders_with_their_items(client, db_session, statements)
     small = await count_statements(statements, lambda: client.get(f"/api/v1/orders/admin?page_size={SMALL}", headers=h))
     large = await count_statements(statements, lambda: client.get(f"/api/v1/orders/admin?page_size={LARGE}", headers=h))
 
-    assert_constant(small, large, ceiling=4)
+    assert_constant(small, large, ceiling=5)  # user, count, orders, items, shipments
 
 
 async def test_cart_with_products(client, db_session, statements):

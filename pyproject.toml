@@ -11,6 +11,7 @@ dependencies = [
     "asyncpg>=0.29",
     "alembic>=1.13",
     "PyJWT>=2.9",
+    "tzdata>=2024.1",  # IANA timezone database for the reporting timezone (slim images and Windows may not ship one)
     "cryptography>=42",  # provider-credential encryption (Fernet); no longer pulled in by the JWT library
     "passlib[argon2]>=1.7",
     "python-multipart>=0.0.9",

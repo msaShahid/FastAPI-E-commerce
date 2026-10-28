@@ -112,3 +112,8 @@ class Order(Base, TimestampMixin):
     status_history: Mapped[list["OrderStatusHistory"]] = relationship(
         back_populates="order", cascade="all, delete-orphan"
     )
+    # Parcels handed to carriers (entered by an administrator). Never cascade-deleted: shipment records outlive mistakes.
+    shipments: Mapped[list["OrderShipment"]] = relationship(back_populates="order", order_by="OrderShipment.created_at")
+
+# Registers the OrderShipment mapper whenever Order is imported (the relationship above names it).
+from app.modules.shipments.models.order_shipment import OrderShipment  # noqa: E402,F401

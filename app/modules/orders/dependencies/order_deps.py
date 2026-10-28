@@ -9,6 +9,7 @@ from app.modules.addresses.repositories.address_repository import AddressReposit
 from app.modules.cart.dependencies.cart_deps import get_cart_repository
 from app.modules.cart.repositories.cart_repository import CartRepository
 from app.modules.orders.repositories.order_repository import OrderRepository
+from app.modules.orders.services.eligibility import get_delivery_eligibility
 from app.modules.orders.services.order_service import OrderService
 from app.modules.products.dependencies.product_deps import get_product_repository
 from app.modules.products.repositories.product_repository import ProductRepository
@@ -63,6 +64,7 @@ def get_order_service(
         require_tax_classification=settings.tax_classification_required,
         tax_engine=tax_engine,
         store_repository=StoreRepository(db),
+        delivery_eligibility=get_delivery_eligibility(),
     )
 
 

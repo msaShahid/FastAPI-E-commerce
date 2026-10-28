@@ -7,6 +7,16 @@ from app.core.exceptions import (
 )
 
 
+class DeliveryNotAvailableError(InvalidStateError):
+    """The store cannot deliver to this address. Only ever raised by a configured delivery-eligibility policy (none is, today)."""
+
+    code = "delivery_not_available"
+
+    def __init__(self, reason: str | None = None) -> None:
+        self.reason = reason
+        super().__init__("We cannot deliver to this address.")
+
+
 class EmptyCartError(InvalidStateError):
     def __init__(self) -> None:
         super().__init__("Cannot check out an empty cart")

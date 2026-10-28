@@ -2,7 +2,9 @@ from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, model_validator
+from sqlalchemy import inspect as sa_inspect
 
+from app.modules.shipments.schemas.shipment import ShipmentRead
 from app.shared.enums.order_status import OrderStatus
 
 
@@ -74,6 +76,7 @@ class OrderRead(BaseModel):
     tax_snapshot: dict | None = None
     shipping_address: ShippingAddressRead
     items: list[OrderItemRead]
+    shipments: list[ShipmentRead] = []   # parcels handed to carriers, with tracking details when the store has entered them
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -97,6 +100,9 @@ class OrderRead(BaseModel):
             "shipping_snapshot": order.shipping_snapshot,
             "tax_snapshot": order.tax_snapshot,
             "items": order.items,
+            # An order object that was built or loaded without its shipments (never lazily loaded here: this runs outside a
+            # database call) simply has none to show.
+            "shipments": [] if "shipments" in sa_inspect(order).unloaded else list(order.shipments),
             "created_at": order.created_at,
             "shipping_address": {
                 "recipient_name": order.shipping_recipient_name,

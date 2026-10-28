@@ -43,7 +43,7 @@ class OrderRepository:
         result = await self.db.execute(
             select(Order)
             .where(Order.idempotency_key == key, identity_condition)
-            .options(selectinload(Order.items))
+            .options(selectinload(Order.items), selectinload(Order.shipments))
         )
         return result.scalar_one_or_none()
 
@@ -58,13 +58,13 @@ class OrderRepository:
         result = await self.db.execute(
             select(Order)
             .where(Order.id == order_id, Order.guest_token == guest_token)
-            .options(selectinload(Order.items))
+            .options(selectinload(Order.items), selectinload(Order.shipments))
         )
         return result.scalar_one_or_none()
 
     async def get_by_id(self, order_id) -> Order | None:
         result = await self.db.execute(
-            select(Order).where(Order.id == order_id).options(selectinload(Order.items))
+            select(Order).where(Order.id == order_id).options(selectinload(Order.items), selectinload(Order.shipments))
         )
         return result.scalar_one_or_none()
 
@@ -81,7 +81,7 @@ class OrderRepository:
         result = await self.db.execute(
             select(Order)
             .where(Order.id == order_id)
-            .options(selectinload(Order.items))
+            .options(selectinload(Order.items), selectinload(Order.shipments))
             .with_for_update()
             # Callers load the order (for the access check) before locking
             # it, so refresh the already-loaded instance from the locked row;
@@ -116,7 +116,7 @@ class OrderRepository:
         items_result = await self.db.execute(
             select(Order)
             .where(Order.user_id == user_id)
-            .options(selectinload(Order.items))
+            .options(selectinload(Order.items), selectinload(Order.shipments))
             .order_by(Order.created_at.desc())
             .offset(offset)
             .limit(limit)
@@ -144,7 +144,7 @@ class OrderRepository:
         items_result = await self.db.execute(
             select(Order)
             .where(*conditions)
-            .options(selectinload(Order.items))
+            .options(selectinload(Order.items), selectinload(Order.shipments))
             .order_by(Order.created_at.desc())
             .offset(offset)
             .limit(limit)

@@ -18,6 +18,7 @@ from app.modules.cart.exceptions.cart_exceptions import (
 from app.modules.cart.repositories.cart_repository import CartRepository
 from app.modules.orders.exceptions.order_exceptions import (
     CheckoutNotConfiguredError,
+    DeliveryNotAvailableError,
     EmptyCartError,
     GuestEmailRequiredError,
     IdempotencyKeyConflictError,
@@ -30,6 +31,11 @@ from app.modules.orders.exceptions.order_exceptions import (
 )
 from app.modules.orders.models.order import Order
 from app.modules.orders.repositories.order_repository import OrderRepository
+from app.modules.orders.services.eligibility import (
+    DeliveryDecision,
+    DeliveryEligibility,
+    NoServiceabilityCheck,
+)
 from app.modules.orders.services.shipping import ShippingAddressInput, address_as_order_columns
 from app.modules.products.repositories.product_repository import ProductRepository
 from app.modules.tax.engine import (
@@ -61,6 +67,7 @@ class OrderService:
         tax_engine: TaxEngine | None = None,
         currency: str | None = None,
         store_repository=None,
+        delivery_eligibility: DeliveryEligibility | None = None,
     ) -> None:
         self.repository = repository
         self.cart_repository = cart_repository
@@ -72,6 +79,7 @@ class OrderService:
         # The store currency: a fixed value (tests, scripts) or read from the store settings.
         self.currency = currency
         self.store_repository = store_repository
+        self.delivery_eligibility = delivery_eligibility or NoServiceabilityCheck()
         # When true, every product in the cart must have an APPROVED tax classification.
         self.require_tax_classification = require_tax_classification
         # Decimal, never float: tax is money. None = not configured.
@@ -103,7 +111,7 @@ class OrderService:
             raise StoreCurrencyNotConfiguredError()
         return get_currency(code)
 
-    def _shipping_snapshot(self, shipping_cents: int, currency=None) -> dict:
+    def _shipping_snapshot(self, shipping_cents: int, currency=None, delivery: DeliveryDecision | None = None) -> dict:
         """Frozen record of the shipping policy used for one order (integer paise)."""
         return {
             "version": 1,
@@ -119,6 +127,8 @@ class OrderService:
                 self.free_shipping_threshold_cents and shipping_cents == 0 and self.flat_shipping_cents
             ),
             "tax_treatment": "undetermined",  # decided with the GST work, not assumed here
+            # Whether this order's address was checked for deliverability, and by which policy ("none" = never checked).
+            "delivery_check": (delivery or DeliveryDecision(True, False, self.delivery_eligibility.policy)).as_snapshot(),
         }
 
     def _calculate_shipping(self, subtotal_cents: int) -> int:
@@ -286,6 +296,11 @@ class OrderService:
             shipping_address=shipping_address,
         )
 
+        # Delivery eligibility is decided here, on the backend, BEFORE any lock or stock change: an undeliverable address leaves no trace.
+        delivery = await self.delivery_eligibility.check(shipping_columns)
+        if not delivery.deliverable:
+            raise DeliveryNotAvailableError(delivery.reason)
+
         cart = await self.cart_repository.get_or_create_cart(user_id, guest_token=guest_token)
         if not cart.items:
             raise EmptyCartError()
@@ -382,7 +397,7 @@ class OrderService:
             idempotency_key=idempotency_key,
             request_hash=fingerprint,
             currency=currency.code,
-            shipping_snapshot=self._shipping_snapshot(shipping_cents, currency),
+            shipping_snapshot=self._shipping_snapshot(shipping_cents, currency, delivery),
             items=order_items_data,
             subtotal_cents=subtotal_cents,
             shipping_cents=shipping_cents,

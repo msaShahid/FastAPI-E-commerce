@@ -17,6 +17,7 @@ What you get, and which tables it fills:
     carts, cart_items ....... three customers have something in their cart
     orders, order_items,
     order_status_history,
+    order_shipments,
     payments, refunds ....... 16 orders over the last four weeks: fulfilled, paid, refunded, cancelled, cancelled-with-refund,
                               and one guest checkout
     audit_logs, background_jobs, refresh_tokens, processed_webhook_events: written by the flows above, as in real use
@@ -305,6 +306,15 @@ async def place_orders(client, admin, sessions, product_ids, provider) -> dict[s
 
             if plan.outcome in ("fulfilled", "refunded"):
                 check(await client.patch(f"{API}/orders/{oid}/status", headers=admin, json={"status": "fulfilled"}), (200,), f"{plan.key} fulfil")
+            if plan.outcome in ("fulfilled", "refunded"):
+                n = int(plan.key[-2:])
+                number = f"DEMO{n:02d}{n * 104729 % 10**6:06d}"  # deterministic, obviously fake
+                shipment = check(await client.post(f"{API}/orders/{oid}/shipments", headers=admin, json={
+                    "carrier_name": data.DEMO_CARRIERS[n % len(data.DEMO_CARRIERS)], "tracking_number": number,
+                    "tracking_url": data.DEMO_TRACKING_URL.format(number=number)}), (201,), f"{plan.key} shipment")
+                if plan.days_ago >= data.DEMO_DELIVERED_AFTER_DAYS:
+                    check(await client.patch(f"{API}/orders/{oid}/shipments/{shipment['id']}", headers=admin,
+                                             json={"status": "delivered"}), (200,), f"{plan.key} delivered")
             if plan.outcome == "refunded":
                 check(await client.post(f"{API}/payments/{oid}/refund", headers=admin), (202,), f"{plan.key} refund")
             if plan.outcome == "cancel_and_refund":
@@ -326,7 +336,7 @@ async def backdate(placed: dict[str, str]) -> None:
         async with async_session_factory() as session:
             for key, oid in placed.items():
                 days = plans[key].days_ago
-                for table, column in (("orders", "id"), ("order_status_history", "order_id"), ("payments", "order_id"), ("refunds", "order_id")):
+                for table, column in (("orders", "id"), ("order_status_history", "order_id"), ("payments", "order_id"), ("refunds", "order_id"), ("order_shipments", "order_id")):
                     cols = [r[0] for r in (await session.execute(text(
                         "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=:t "
                         "AND data_type LIKE 'timestamp%' AND column_name <> 'stock_released_at'"  # the database forbids touching it
@@ -360,7 +370,7 @@ async def seed_orders(client, admin, sessions, product_ids, provider) -> None:
 # ------------------------------------------------------------------------------------------------------------- main
 async def summary() -> None:
     tables = ["users", "addresses", "store_settings", "tax_classifications", "categories", "products", "carts", "cart_items", "orders",
-              "order_items", "order_status_history", "payments", "refunds", "audit_logs", "background_jobs", "refresh_tokens",
+              "order_items", "order_status_history", "order_shipments", "payments", "refunds", "audit_logs", "background_jobs", "refresh_tokens",
               "processed_webhook_events", "tax_rules", "gst_registrations", "business_tax_settings", "payment_provider_configs",
               "payment_reconciliations", "disputes", "deferred_webhook_events", "order_currency_remediations"]
     print("\nRows now in the database:")

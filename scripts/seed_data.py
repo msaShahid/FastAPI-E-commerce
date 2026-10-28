@@ -208,6 +208,11 @@ ORDERS = [
     OrderPlan("demo-seed-16", None, [("SPORT-DUMBBELL-001", 1), ("SPORT-BANDS-001", 1)], "guest_paid", 1),
 ]
 
+# Couriers used for the demo shipments (names only: NovaCart calls no courier). Tracking numbers and links are obviously fake.
+DEMO_CARRIERS = ["Delhivery", "Blue Dart", "DTDC", "India Post (Speed Post)", "Ecom Express", "Xpressbees"]
+DEMO_TRACKING_URL = "https://tracking.example.com/track?awb={number}"
+DEMO_DELIVERED_AFTER_DAYS = 15   # orders older than this show as delivered
+
 # Left in the customers' carts (not checked out), so a customer login shows a cart.
 CARTS = [
     (3, [("HOME-DINNERSET-001", 1), ("HOME-CONTAINER-001", 2)]),

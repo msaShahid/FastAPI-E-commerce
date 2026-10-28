@@ -255,6 +255,9 @@ class Settings(BaseSettings):
     # Largest accepted product/category image upload, in bytes (admin-only endpoints).
     max_image_bytes: int = 5 * 1024 * 1024
 
+    # The timezone business reports use for "a day" (orders are stored in UTC). An IANA name, e.g. Asia/Kolkata or UTC.
+    reporting_timezone: str = "Asia/Kolkata"
+
     # The interactive API documentation (/docs, /redoc, /openapi.json). None = on in development and testing, OFF in staging and
     # production (it describes the whole admin surface). Set true/false to override.
     api_docs_enabled: bool | None = None
@@ -320,6 +323,16 @@ class Settings(BaseSettings):
             problems.append("STRIPE_SECRET_KEY must be a real Stripe key (sk_/rk_ test or live), not a placeholder")
         if problems:
             raise ConfigurationError(f"Refusing to start in '{self.environment}': " + "; ".join(problems))
+        return self
+
+    @model_validator(mode="after")
+    def _reporting_timezone_is_valid(self) -> "Settings":
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+        try:
+            ZoneInfo(self.reporting_timezone)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ConfigurationError("reporting_timezone must be an IANA timezone name such as Asia/Kolkata or UTC") from exc
         return self
 
     @model_validator(mode="after")

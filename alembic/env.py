@@ -31,6 +31,7 @@ from app.modules.payments.models.provider_config import PaymentProviderConfig  #
 from app.modules.payments.models.refund import PaymentReconciliation, Refund  # noqa: F401
 from app.modules.payments.models.webhook_event import ProcessedWebhookEvent  # noqa: F401
 from app.modules.products.models.product import Product  # noqa: F401
+from app.modules.shipments.models.order_shipment import OrderShipment  # noqa: F401
 from app.modules.store.models.store_settings import StoreSettings  # noqa: F401
 from app.modules.tax.models.tax import (  # noqa: F401
     BusinessTaxSettings,

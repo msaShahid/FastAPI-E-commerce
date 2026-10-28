@@ -117,6 +117,18 @@ Changing the credentials of the ACTIVE service is tested first and refused if th
 Losing or changing `PROVIDER_SECRETS_KEY` makes stored credentials unreadable: email jobs then fail loudly (they never fall back
 to another account) until the credentials are entered again.
 
+## 5b. Business reports (administrator, read-only)
+
+`GET /api/v1/admin/reports/` `summary`, `sales-by-day`, `top-products` (`by=revenue|units`, `limit`) and `low-stock`
+(`threshold`, `include_inactive`, paginated). Periods are `start`/`end` calendar days (inclusive, at most 366), default the last 30
+days, cut at midnight in `REPORTING_TIMEZONE` (default `Asia/Kolkata`; orders are stored in UTC). Money is in minor units of the
+store currency. Definitions (also returned by `summary`): an order is **sold on the day it first became PAID** (never when merely
+placed, so unpaid or expired orders are never revenue); **refunds count on the day they completed**; **net = gross - refunded**;
+paid orders in another currency, or with none recorded, are counted in `excluded_orders` and never added in; top products exclude
+orders now refunded or cancelled, and a partial refund made outside NovaCart cannot be assigned to items. These queries read the
+whole order history of the chosen period and have no extra indexes: fine for thousands of orders a month; if reports slow down
+as the store grows, add an index on `order_status_history (to_status, created_at)` and tell your developer.
+
 ## 6. Known operational limits
 
 * Timestamps are naive UTC (`DateTime` without time zone, server default `now()`): the database server must run in UTC.

@@ -14,6 +14,7 @@ This section supersedes the phase notes below, which are kept as history and are
 * Accounts: password reset, password change, email verification and a confirmed email change exist (`/api/v1/auth/...`); email is
   sent over SMTP when `EMAIL_BACKEND=smtp`, otherwise only logged. An administrator can instead choose Google, Zoho or Mailtrap
   and switch between them (`/api/v1/admin/email-providers`; see `docs/RUNBOOK.md`).
+* Admin reports (sales by day, summary, top products, low stock): `/api/v1/admin/reports/...`, read-only (`docs/RUNBOOK.md`, 5b).
 * Migrations: `docs/MIGRATIONS.md`. Operations, monitoring, backups and the go-live checklist: `docs/RUNBOOK.md`.
 * **Not production-ready merely because tests pass.** See the runbook's go-live checklist.
 

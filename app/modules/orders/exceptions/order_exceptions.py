@@ -17,6 +17,16 @@ class DeliveryNotAvailableError(InvalidStateError):
         super().__init__("We cannot deliver to this address.")
 
 
+class VariantCheckoutNotSupportedError(InvalidStateError):
+    """Temporary guard (removed in milestone E4): until checkout is variant-aware it must not sell a variant line as if it were a
+    simple product. The cart accepts variants already; checkout refuses them, changing nothing."""
+
+    code = "variant_checkout_unavailable"
+
+    def __init__(self) -> None:
+        super().__init__("Checkout of products with options is not available yet")
+
+
 class EmptyCartError(InvalidStateError):
     def __init__(self) -> None:
         super().__init__("Cannot check out an empty cart")

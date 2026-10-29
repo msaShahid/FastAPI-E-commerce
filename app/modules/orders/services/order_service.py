@@ -29,6 +29,7 @@ from app.modules.orders.exceptions.order_exceptions import (
     PriceChangedError,
     ProductTaxUnassignedError,
     ShippingAddressRequiredError,
+    VariantCheckoutNotSupportedError,
 )
 from app.modules.orders.models.order import Order
 from app.modules.orders.repositories.order_repository import OrderRepository
@@ -305,6 +306,8 @@ class OrderService:
         cart = await self.cart_repository.get_or_create_cart(user_id, guest_token=guest_token)
         if not cart.items:
             raise EmptyCartError()
+        if any(item.variant_id is not None for item in cart.items):
+            raise VariantCheckoutNotSupportedError()  # temporary: see the exception (milestone E4)
 
         sorted_items = sorted(cart.items, key=lambda i: i.product_id)
 

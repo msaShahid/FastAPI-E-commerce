@@ -99,21 +99,25 @@ class CartRepository:
         return result.scalar_one_or_none()
 
     async def get_item_by_product(
-        self, cart_id: int, product_id: int
+        self, cart_id: int, product_id: int, variant_id: int | None = None
     ) -> CartItem | None:
+        """The cart's line for a simple product (variant_id None) or for one variant."""
         result = await self.db.execute(
             select(CartItem).where(
-                CartItem.cart_id == cart_id, CartItem.product_id == product_id
+                CartItem.cart_id == cart_id,
+                CartItem.product_id == product_id,
+                CartItem.variant_id.is_(None) if variant_id is None else CartItem.variant_id == variant_id,
             )
         )
         return result.scalar_one_or_none()
 
     async def add_item(
-        self, *, cart_id: int, product_id: int, quantity: int, price_cents: int
+        self, *, cart_id: int, product_id: int, quantity: int, price_cents: int, variant_id: int | None = None
     ) -> CartItem:
         item = CartItem(
             cart_id=cart_id,
             product_id=product_id,
+            variant_id=variant_id,
             quantity=quantity,
             price_cents_snapshot=price_cents,
         )
@@ -131,20 +135,22 @@ class CartRepository:
         product up with its own query, and flushes once, so merging N lines costs
         the same number of queries as merging one.
         """
-        by_product = {item.product_id: item for item in cart.items}
+        by_line = {(item.product_id, item.variant_id): item for item in cart.items}
         for source in incoming:
-            existing = by_product.get(source.product_id)
+            key = (source.product_id, source.variant_id)
+            existing = by_line.get(key)
             if existing is not None:
                 existing.quantity += source.quantity
             else:
                 created = CartItem(
                     cart_id=cart.id,
                     product_id=source.product_id,
+                    variant_id=source.variant_id,
                     quantity=source.quantity,
                     price_cents_snapshot=source.price_cents_snapshot,
                 )
                 self.db.add(created)
-                by_product[source.product_id] = created
+                by_line[key] = created
         await self.db.flush()
 
     async def update_quantity(self, item: CartItem, quantity: int) -> CartItem:

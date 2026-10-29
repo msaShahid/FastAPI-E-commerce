@@ -6,32 +6,16 @@ from app.modules.cart.dependencies.cart_identity import CartOwnerDep
 from app.modules.cart.models.cart import Cart
 from app.modules.cart.Schemas.cart import (
     CartItemCreate,
-    CartItemRead,
     CartItemUpdate,
     CartRead,
 )
+from app.modules.cart.services.cart_view import build_cart_read
 
 cart_router = APIRouter(prefix="/cart", tags=["cart"])
 
 
 def _to_cart_read(cart: Cart) -> CartRead:
-
-    items = []
-    subtotal = 0
-    for item in cart.items:
-        line_total = item.quantity * item.price_cents_snapshot
-        subtotal += line_total
-        items.append(
-            CartItemRead(
-                id=item.id,
-                product=item.product,
-                quantity=item.quantity,
-                price_cents_snapshot=item.price_cents_snapshot,
-                price_changed=item.price_cents_snapshot != item.product.price_cents,
-                line_total_cents=line_total,
-            )
-        )
-    return CartRead(items=items, subtotal_cents=subtotal, item_count=len(items))
+    return build_cart_read(cart)
 
 
 @cart_router.get("", response_model=CartRead)
@@ -51,6 +35,7 @@ async def add_item(
         user_id=owner.user_id,
         guest_token=owner.guest_token,
         product_id=payload.product_id,
+        variant_id=payload.variant_id,
         quantity=payload.quantity,
     )
     return _to_cart_read(cart)

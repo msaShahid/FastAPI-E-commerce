@@ -55,12 +55,12 @@ async def _clean_database(test_engine):
             # The GST master's immutability trigger (rightly) refuses DELETE of approved
             # records. TRUNCATE does not fire row triggers, so it is the test-cleanup path.
             # CASCADE also empties products (they reference classifications) and their dependents.
-            # store_settings is truncated too: its guard refuses DELETE once orders exist.
+            # store_settings is truncated too: its guard refuses DELETE once orders exist; so is the append-only stock ledger.
             await conn.execute(text(
                 "TRUNCATE business_tax_settings, tax_rules, tax_classifications, gst_registrations, "
-                "store_settings CASCADE"))
+                "store_settings, stock_movements CASCADE"))
             for table in reversed(Base.metadata.sorted_tables):
-                if table.name not in GUARDED_TABLES and table.name != "store_settings":
+                if table.name not in GUARDED_TABLES and table.name not in ("store_settings", "stock_movements"):
                     await conn.execute(table.delete())
 
     async def seed_store_currency():

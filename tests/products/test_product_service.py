@@ -78,6 +78,7 @@ async def test_update_product_price_and_stock(product_service):
         description=None,
         price_cents=2999,
         stock=5,
+        stock_reason="annual recount",  # every administrative stock change says why
         category_id=None,
         status=None,
     )

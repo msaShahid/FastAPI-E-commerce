@@ -128,7 +128,7 @@ async def test_patch_assign_change_unassign_and_leave_unchanged_with_audit(
 
     assert (await client.patch(url, json={"tax_classification_id": a}, headers=admin_headers)).json()["tax_classification"]["id"] == a
     # an unrelated edit leaves the assignment alone
-    r = await client.patch(url, json={"stock": 5}, headers=admin_headers)
+    r = await client.patch(url, json={"stock": 5, "stock_reason": "unrelated edit"}, headers=admin_headers)
     assert r.json()["tax_classification"]["id"] == a and r.json()["tax_state"] == "assigned_approved"
     # reassign: the response reflects the NEW classification immediately
     r = await client.patch(url, json={"tax_classification_id": b}, headers=admin_headers)

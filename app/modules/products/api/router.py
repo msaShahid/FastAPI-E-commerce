@@ -13,6 +13,7 @@ from app.modules.products.schemas.product import (
     ProductUpdate,
 )
 from app.modules.products.services.product_service import UNSET, ProductService
+from app.modules.products.services.product_view import view_fields
 from app.shared.enums.roles import UserRole
 from app.shared.enums.tax import product_tax_state
 from app.shared.pagination.schemas import PaginatedResponse
@@ -25,14 +26,16 @@ product_router = APIRouter(prefix="/products", tags=["products"])
 
 
 def _to_product_read(
-    product: Product, service: ProductService, *, include_tax: bool = False
+    product: Product, service: ProductService, *, include_tax: bool = False, detail: bool = False
 ) -> ProductRead:
-    """Tax fields are administrator-only: everyone else (and every cached public view) gets null."""
+    """Tax fields and exact stock are administrator-only: everyone else (and every cached public view) gets null for them.
+    Products that have options must have had their variants attached first (ProductService.attach_variant_views)."""
     base = ProductRead.model_validate(product)
     image_url = (
         service.storage.get_url(path=product.image_path) if product.image_path else None
     )
     update: dict = {"image_url": image_url}
+    update.update(view_fields(product, is_admin=include_tax, detail=detail, settings=get_settings()))
     if include_tax:
         classification = product.tax_classification
         update["tax_state"] = product_tax_state(classification.status if classification else None)
@@ -94,6 +97,7 @@ async def list_products(
             sort=params.sort,
             is_admin=is_admin,
         )
+        await service.attach_variant_views(products)
         return PaginatedResponse(
             items=[_to_product_read(p, service, include_tax=is_admin) for p in products],
             total=total,
@@ -114,6 +118,8 @@ async def list_products(
             "min_price": params.min_price,
             "max_price": params.max_price,
             "sort": params.sort,
+            "stock_visibility": get_settings().public_stock_visibility,  # a changed setting must not serve old-format entries
+            "low_stock": get_settings().low_stock_display_threshold,
         },
         get_settings().cache_ttl_products_seconds,
         load,
@@ -132,7 +138,8 @@ async def get_product(
 ) -> ProductRead:
     is_admin = _is_admin(current_user)
     product = await service.get_product(product_id, is_admin=is_admin)
-    return _to_product_read(product, service, include_tax=is_admin)
+    await service.attach_variant_views([product], with_options=True)
+    return _to_product_read(product, service, include_tax=is_admin, detail=True)
 
 
 @product_router.patch("/{product_id}", response_model=ProductRead)
@@ -179,7 +186,8 @@ async def update_product(
             details={"from": old, "to": new},
         )
 
-    return _to_product_read(product, service, include_tax=True)
+    await service.attach_variant_views([product], with_options=True)
+    return _to_product_read(product, service, include_tax=True, detail=True)
 
 
 @product_router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -207,7 +215,8 @@ async def upload_product_image(
     image: UploadFile = File(...),
 ) -> ProductRead:
     product = await service.upload_product_image(product_id=product_id, image=image)
-    return _to_product_read(product, service, include_tax=True)
+    await service.attach_variant_views([product], with_options=True)
+    return _to_product_read(product, service, include_tax=True, detail=True)
 
 
 @product_router.delete("/{product_id}/image", response_model=ProductRead)
@@ -215,4 +224,5 @@ async def delete_product_image(
     product_id: int, service: ProductServiceDep, _admin: AdminUser
 ) -> ProductRead:
     product = await service.delete_product_image(product_id=product_id)
-    return _to_product_read(product, service, include_tax=True)
+    await service.attach_variant_views([product], with_options=True)
+    return _to_product_read(product, service, include_tax=True, detail=True)

@@ -79,14 +79,50 @@ class ProductQueryParams(PageParams):
     )
 
 
+class VariantOptionRead(BaseModel):
+    name: str
+    value: str
+
+
+class OptionRead(BaseModel):
+    name: str
+    values: list[str]
+
+
+class VariantRead(BaseModel):
+    """One sellable combination. `price_cents` is the EFFECTIVE price the backend will charge: the shopper submits only the variant id."""
+
+    id: int
+    sku: str
+    options: list[VariantOptionRead]
+    price_cents: int
+    price_overridden: bool
+    available: bool
+    availability: str                 # in_stock | low_stock | out_of_stock
+    stock: int | None = None          # exact stock: administrators only (or everyone if PUBLIC_STOCK_VISIBILITY=exact)
+    status: str | None = None         # administrators only (the public sees active variants only)
+
+
 class ProductRead(BaseModel):
     id: int
     name: str
     slug: str
     description: str | None
+    # For a simple product: its price. For a product with options: the LOWEST effective price ("from"); see price_to_cents.
     price_cents: int
     sku: str
-    stock: int
+    # Exact stock: administrators only by default (null for the public). The public gets `available` / `availability` instead.
+    stock: int | None = None
+    available: bool = True
+    availability: str = "in_stock"    # in_stock | low_stock | out_of_stock
+    has_variants: bool = False
+    variant_count: int = 0
+    price_from_cents: int | None = None
+    price_to_cents: int | None = None
+    has_price_range: bool = False
+    base_price_cents: int | None = None   # administrators only: the product's own price (variants may override it)
+    options: list[OptionRead] | None = None      # product detail only
+    variants: list[VariantRead] | None = None    # product detail only
     status: ProductStatus
     category: CategorySummary
     image_path: str | None

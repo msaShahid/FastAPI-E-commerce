@@ -1,6 +1,7 @@
 from uuid import uuid4
 
 from fastapi import UploadFile
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.config import get_settings
 from app.core.stock_context import stock_change
@@ -211,6 +212,25 @@ class ProductService:
                 async with stock_change(self.repository, "admin_set", actor_user_id=actor_user_id, reason=reason):
                     return await self.repository.update(product, **updates)
         return await self.repository.update(product, **updates)
+
+    async def attach_variant_views(self, products: list[Product], *, with_options: bool = False) -> None:
+        """Loads the variants (and, for a single product's detail, its option sets) of the products that HAVE options, in one query each,
+        so building the response never lazy-loads. A catalog of simple products costs nothing extra."""
+        with_variants = [p for p in products if p.option_count > 0]
+        if not with_variants:
+            return
+        ids = [p.id for p in with_variants]
+        by_product: dict[int, list] = {i: [] for i in ids}
+        for variant in await self.repository.variants_for(ids):
+            by_product[variant.product_id].append(variant)
+        for product in with_variants:
+            set_committed_value(product, "variant_rows", by_product[product.id])
+        if with_options:
+            options: dict[int, list] = {i: [] for i in ids}
+            for option in await self.repository.options_for(ids):
+                options[option.product_id].append(option)
+            for product in with_variants:
+                set_committed_value(product, "option_rows", options[product.id])
 
     async def archive_product(self, product_id: int) -> Product:
         product = await self.repository.get_by_id(product_id)

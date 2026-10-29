@@ -1,11 +1,12 @@
 from collections.abc import Iterable
 
-from sqlalchemy import case, func, select, update
+from sqlalchemy import and_, case, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.modules.products.models.product import Product
+from app.modules.products.models.variants import ProductOption, ProductVariant
 from app.modules.tax.models.tax import TaxClassification
 from app.shared.enums.product_status import ProductStatus
 
@@ -32,9 +33,42 @@ class ProductRepository:
 
     _SORT_COLUMNS = {
         "created_at": Product.created_at,
-        "price_cents": Product.price_cents,
+        "price_cents": Product.price_cents,  # replaced per direction below: see _sort_column
         "name": Product.name,
     }
+
+    @staticmethod
+    def _sort_column(sort_key: str, is_descending: bool):
+        """Price sorting uses the EFFECTIVE price range: ascending by the lowest price a product sells at, descending by its highest.
+        (A simple product's range is its own price, so for simple products this is exactly the old behaviour.)"""
+        if sort_key == "price_cents":
+            return Product.summary_price_to if is_descending else Product.summary_price_from
+        return ProductRepository._SORT_COLUMNS[sort_key]
+
+    @staticmethod
+    def _price_condition(min_price: int | None, max_price: int | None):
+        """A product matches a price range if: it is simple and its price is in range, OR it has options and ANY active variant's
+        effective price is in range (an exact test, not a range overlap: variants at 400 and 1200 do not match 500-1000)."""
+        simple, variant = [Product.option_count == 0], [ProductVariant.product_id == Product.id, ProductVariant.status == "active"]
+        effective = func.coalesce(ProductVariant.price_override_cents, Product.price_cents)
+        if min_price is not None:
+            simple.append(Product.price_cents >= min_price)
+            variant.append(effective >= min_price)
+        if max_price is not None:
+            simple.append(Product.price_cents <= max_price)
+            variant.append(effective <= max_price)
+        return or_(and_(*simple), and_(Product.option_count > 0, exists().where(*variant)))
+
+    async def variants_for(self, product_ids: list[int]) -> list[ProductVariant]:
+        result = await self.db.execute(select(ProductVariant).where(ProductVariant.product_id.in_(product_ids)).order_by(ProductVariant.id))
+        return list(result.scalars().all())
+
+    async def options_for(self, product_ids: list[int]) -> list[ProductOption]:
+        result = await self.db.execute(
+            select(ProductOption).where(ProductOption.product_id.in_(product_ids)).options(selectinload(ProductOption.values))
+            .order_by(ProductOption.product_id, ProductOption.position)
+        )
+        return list(result.scalars().all())
 
     async def list_paginated(
         self,
@@ -54,10 +88,8 @@ class ProductRepository:
             conditions.append(Product.category_id == category_id)
         if search:
             conditions.append(Product.name.ilike(f"%{search}%"))
-        if min_price is not None:
-            conditions.append(Product.price_cents >= min_price)
-        if max_price is not None:
-            conditions.append(Product.price_cents <= max_price)
+        if min_price is not None or max_price is not None:
+            conditions.append(self._price_condition(min_price, max_price))
         if not include_inactive:
             conditions.append(Product.status == ProductStatus.ACTIVE)
 
@@ -68,12 +100,12 @@ class ProductRepository:
 
         is_descending = sort.startswith("-")
         sort_key = sort.lstrip("-")
-        sort_column = self._SORT_COLUMNS[sort_key]
+        sort_column = self._sort_column(sort_key, is_descending)
 
         items_query = (
             select(Product)
             .options(selectinload(Product.category), joinedload(Product.tax_classification))
-            .order_by(sort_column.desc() if is_descending else sort_column.asc())
+            .order_by(sort_column.desc() if is_descending else sort_column.asc(), Product.id)  # id: a stable page order on ties
             .offset(offset)
             .limit(limit)
         )

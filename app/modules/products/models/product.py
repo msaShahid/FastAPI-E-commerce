@@ -21,6 +21,7 @@ from app.shared.mixins import TimestampMixin
 
 if TYPE_CHECKING:
     from app.modules.categories.models.category import Category
+    from app.modules.products.models.variants import ProductOption, ProductVariant
     from app.modules.tax.models.tax import TaxClassification
 
 class Product(Base, TimestampMixin):
@@ -63,9 +64,24 @@ class Product(Base, TimestampMixin):
     unit: Mapped[str | None] = mapped_column(String(8), default=None)
     # 0 = a simple product (own SKU, stock and price, exactly as before). 1..3 = sold only through its variants (gap E).
     option_count: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
+    # Lowest / highest effective price this product is sold at (see price_guard.py). Maintained by the database; used for filtering and
+    # sorting in SQL, never read back into Python (a trigger sets them after the ORM's own write).
+    # (Python names differ from the response schema's on purpose, so serialising a product never touches these deferred columns.)
+    summary_price_from: Mapped[int] = mapped_column("price_from_cents", Integer, server_default="0", deferred=True)
+    summary_price_to: Mapped[int] = mapped_column("price_to_cents", Integer, server_default="0", deferred=True)
     tax_classification: Mapped["TaxClassification | None"] = relationship()
     # category is the parent of the product
     category: Mapped["Category"] = relationship(back_populates="products")
+    # Read-only views of the variant structure. Never lazy-loaded (a lazy load inside an async response would fail): the product service
+    # attaches them explicitly, and only for products that have options.
+    variant_rows: Mapped[list["ProductVariant"]] = relationship(
+        "ProductVariant", primaryjoin="Product.id == foreign(ProductVariant.product_id)", viewonly=True,
+        order_by="ProductVariant.id", lazy="raise_on_sql",
+    )
+    option_rows: Mapped[list["ProductOption"]] = relationship(
+        "ProductOption", primaryjoin="Product.id == foreign(ProductOption.product_id)", viewonly=True,
+        order_by="ProductOption.position", lazy="raise_on_sql",
+    )
 
     __table_args__ = (
         CheckConstraint("price_cents > 0", name="ck_products_price_positive"),
@@ -75,6 +91,9 @@ class Product(Base, TimestampMixin):
         # A product with variants keeps its stock on the variants: the product's own stock can never disagree with them.
         CheckConstraint("option_count = 0 OR stock = 0", name="ck_products_stock_zero_with_options"),
         UniqueConstraint("id", "option_count", name="uq_products_id_option_count"),
+        CheckConstraint("price_from_cents <= price_to_cents", name="ck_products_price_range"),
+        Index("ix_products_price_from_cents", "price_from_cents"),
+        Index("ix_products_price_to_cents", "price_to_cents"),
         # Default storefront listing: WHERE status = 'active' ORDER BY created_at DESC.
         Index("ix_products_status_created_at", "status", "created_at"),
         # Admin listing (all statuses), newest first: no status filter, so the
@@ -102,5 +121,6 @@ event.listen(
 )
 
 # Variant, SKU-registry and stock-ledger tables (gap E) belong to the same schema: always import them together.
+from app.modules.products.models import price_guard as _price_guard  # noqa: E402,F401
 from app.modules.products.models import stock_movement as _stock_movement  # noqa: E402,F401
 from app.modules.products.models import variants as _variants  # noqa: E402,F401

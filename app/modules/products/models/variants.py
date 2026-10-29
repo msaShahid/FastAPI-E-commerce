@@ -16,7 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.shared.mixins import TimestampMixin
@@ -38,6 +38,10 @@ class ProductOption(Base, TimestampMixin):
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"))
     position: Mapped[int] = mapped_column(SmallInteger)
     name: Mapped[str] = mapped_column(String(50))
+    values: Mapped[list["ProductOptionValue"]] = relationship(
+        "ProductOptionValue", primaryjoin="ProductOption.id == foreign(ProductOptionValue.option_id)", viewonly=True,
+        order_by="ProductOptionValue.id", lazy="raise_on_sql",
+    )
 
 
 class ProductOptionValue(Base, TimestampMixin):

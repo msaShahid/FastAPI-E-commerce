@@ -23,6 +23,7 @@ from app.core.money import to_stripe_amount
 from app.core.payments.exceptions import PaymentProviderError
 from app.core.payments.interface import PaymentProvider, RefundResult
 from app.core.redaction import redact
+from app.core.stock_context import stock_change
 from app.modules.audit.services.audit_service import AuditService
 from app.modules.orders.exceptions.order_exceptions import (
     CancellationNotAllowedError,
@@ -240,7 +241,8 @@ class OrderLifecycleService:
         for item in order.items:
             if item.product_id in locked:  # a deleted product has nothing to restock
                 restock[item.product_id] = restock.get(item.product_id, 0) + item.quantity
-        await self.products.adjust_stock_many(locked, restock)
+        async with stock_change(self.products, "restock", order_id=order.id):
+            await self.products.adjust_stock_many(locked, restock)
         order.stock_released_at = datetime.now(UTC)
         return True
 

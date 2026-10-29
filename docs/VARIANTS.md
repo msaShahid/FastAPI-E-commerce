@@ -1,6 +1,6 @@
-# Product variants: database, stock ledger, pricing and deployment (milestones E1 and E2)
+# Product variants: database, stock ledger, pricing and deployment (milestones E1 to E3)
 
-Status: E1 delivered the **database foundation**, E2 the **pricing and availability** reads. No API creates or sells variants yet (E3 to E5). What changes for users today is
+Status: E1 delivered the **database foundation**, E2 the **pricing and availability** reads, E3 the **cart**. No API creates variants and checkout does not sell them yet (E4, E5). What changes for users today is
 listed under "What E1 changes". Design baseline: Product Variants Design v2 plus the final instructions.
 
 ## What E1 adds
@@ -109,3 +109,21 @@ changes no price/stock/status/timestamp), constraint validated last. Run order a
 - **Cache**: variant, option and option-value changes invalidate the cached product lists; the cache key includes the stock-visibility
   setting; administrators are never served the cached public view.
 - A variant that has ever held stock cannot be deleted (the ledger references it): deactivate it instead.
+
+## E3: the cart
+
+No migration. `POST /cart/items` takes `variant_id` (and `product_id`, which must then match); the price is never sent: the backend uses the
+current effective price and stores it as the line's snapshot.
+
+- A product with options can only be added through one of its ACTIVE variants: `422 variant_required` if only the product is sent,
+  `422 variant_unavailable` for every other way a variant cannot be bought (unknown, another product's, inactive, product not on sale).
+  Simple products behave exactly as before.
+- Stock is checked against the variant (including what the cart already holds of it). Exact stock is not public, so the stock error names
+  a number only when stock is at or below `LOW_STOCK_DISPLAY_THRESHOLD`; otherwise it says "Not enough stock for that quantity".
+- One cart line per product (simple) or per variant; guest carts merge into the user's cart by `(product, variant)`, summing quantities.
+- Each line in `GET /cart` now has `variant` (id, sku, options), `current_price_cents` (the effective price now), `price_changed` (snapshot
+  differs from that), and `available` / `unavailable_reason` (`unavailable`, `out_of_stock`, `insufficient_stock`). A line that can no longer
+  be bought does not break the cart. The cart also returns `cart_digest`: a fingerprint of products, variants and quantities (not prices),
+  independent of line order. Clients may ignore it; checkout will use it in E4.
+- **Checkout does not sell variants yet.** A cart containing a variant line is refused at checkout with `422 variant_checkout_unavailable`,
+  and nothing changes (no order, no stock movement). This guard is removed in E4.

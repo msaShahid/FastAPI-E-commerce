@@ -285,6 +285,10 @@ _PENDING_KEY = "cache_pending_namespaces"
 # A product list embeds its category, so category edits stale both.
 _TABLE_NAMESPACES: dict[str, tuple[str, ...]] = {
     "products": (PRODUCTS,),
+    # A product page embeds its variants' prices and availability, so they stale the same cached lists.
+    "product_variants": (PRODUCTS,),
+    "product_options": (PRODUCTS,),
+    "product_option_values": (PRODUCTS,),
     "categories": (CATEGORIES, PRODUCTS),
 }
 

@@ -262,6 +262,12 @@ class Settings(BaseSettings):
     # production (it describes the whole admin surface). Set true/false to override.
     api_docs_enabled: bool | None = None
 
+    # --- Public stock display (gap E) ---
+    # "availability" (default): the public sees in_stock / low_stock / out_of_stock, never a count. "exact": the public sees the count.
+    # Administrators always see exact stock.
+    public_stock_visibility: str = "availability"
+    low_stock_display_threshold: int = Field(default=5, ge=0, le=100000)  # at or below this many units a product shows as low_stock
+
     # --- Email (account recovery, verification, notices) ---
     # "log" writes emails to the log (development); "smtp" sends them through any SMTP provider (Amazon SES, Zoho, Brevo, SendGrid...).
     email_backend: str = "log"
@@ -323,6 +329,12 @@ class Settings(BaseSettings):
             problems.append("STRIPE_SECRET_KEY must be a real Stripe key (sk_/rk_ test or live), not a placeholder")
         if problems:
             raise ConfigurationError(f"Refusing to start in '{self.environment}': " + "; ".join(problems))
+        return self
+
+    @model_validator(mode="after")
+    def _public_stock_visibility_is_valid(self) -> "Settings":
+        if self.public_stock_visibility not in ("availability", "exact"):
+            raise ConfigurationError("public_stock_visibility must be 'availability' or 'exact'")
         return self
 
     @model_validator(mode="after")

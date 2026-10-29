@@ -1,6 +1,6 @@
-# Product variants: database, stock ledger and deployment (milestone E1)
+# Product variants: database, stock ledger, pricing and deployment (milestones E1 and E2)
 
-Status: E1 delivers the **database foundation** only. No API creates or sells variants yet (E2 to E5). What changes for users today is
+Status: E1 delivered the **database foundation**, E2 the **pricing and availability** reads. No API creates or sells variants yet (E3 to E5). What changes for users today is
 listed under "What E1 changes". Design baseline: Product Variants Design v2 plus the final instructions.
 
 ## What E1 adds
@@ -88,3 +88,24 @@ Needs **PostgreSQL 15 or newer** (`NULLS NOT DISTINCT`). The first migration ref
   changed a SKU, but the database did not forbid it, so this cannot be proven historical for hand-edited data.
 - Sales rows in the ledger do not yet carry the order id (checkout creates the order after reserving stock); E4 attaches it.
 - The unit tests' fake repositories have no database session, so for them the ledger context is a no-op.
+
+## E2: prices, ranges, filtering and public availability
+
+Migration `d2f6b9a4c731` (after E1's two): adds `products.price_from_cents` / `price_to_cents`, kept current by database triggers, and two
+indexes. Added `NOT NULL DEFAULT 0` (no rewrite), indexes built `CONCURRENTLY`, existing products back-filled in batches of 5,000 (resumable,
+changes no price/stock/status/timestamp), constraint validated last. Run order and recovery are as for E1 above.
+
+- **Effective price** = the variant's override if it has one, else the product's price. A product with options shows the lowest and
+  highest effective price over its **active variants, in stock or not**; with no active variant it falls back to its own price.
+- **Price filters** (`min_price`, `max_price`): a product with options matches if an ACTIVE variant's effective price is inside the range
+  (exact, not a range overlap). Simple products match on their price, as before.
+- **Sorting**: `sort=price_cents` is by lowest price, `sort=-price_cents` by highest; ties keep a stable order.
+- **Public stock**: `stock` is `null` for everyone but administrators; the public gets `available` and `availability`
+  (`in_stock`, `low_stock`, `out_of_stock`; low = at or below `LOW_STOCK_DISPLAY_THRESHOLD`, default 5). A product with options shows its
+  best active variant's availability. `PUBLIC_STOCK_VISIBILITY=exact` shows counts publicly instead.
+- **Responses**: new `has_variants`, `variant_count`, `price_from_cents`, `price_to_cents`, `has_price_range`, `available`,
+  `availability`, and (administrators) `base_price_cents`. For a product with options `price_cents` is the LOWEST effective price.
+  Detail responses add `options` and `variants`; the public sees active variants only.
+- **Cache**: variant, option and option-value changes invalidate the cached product lists; the cache key includes the stock-visibility
+  setting; administrators are never served the cached public view.
+- A variant that has ever held stock cannot be deleted (the ledger references it): deactivate it instead.

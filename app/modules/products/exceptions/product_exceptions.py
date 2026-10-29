@@ -6,6 +6,15 @@ class SkuAlreadyExistsError(ConflictError):
         super().__init__(f"A product with SKU '{sku}' already exists")
 
 
+class StockReasonRequiredError(InvalidStateError):
+    """Every administrative stock change says why (3 to 200 characters): it goes into the stock ledger with the administrator's id."""
+
+    code = "stock_reason_required"
+
+    def __init__(self) -> None:
+        super().__init__("Changing stock needs a reason (stock_reason, at least 3 characters)")
+
+
 class ProductNotFoundError(NotFoundError):
     def __init__(self, product_id: int) -> None:
         super().__init__(f"Product with id {product_id} not found")

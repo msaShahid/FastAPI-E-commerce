@@ -1,6 +1,18 @@
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DDL, CheckConstraint, Enum, ForeignKey, Index, Integer, String, Text, event
+from sqlalchemy import (
+    DDL,
+    CheckConstraint,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    SmallInteger,
+    String,
+    Text,
+    UniqueConstraint,
+    event,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -49,6 +61,8 @@ class Product(Base, TimestampMixin):
     # Unit quantity code for the product (format only: 2-8 upper-case letters). Checking it
     # against the official list is a business/professional decision, not made here.
     unit: Mapped[str | None] = mapped_column(String(8), default=None)
+    # 0 = a simple product (own SKU, stock and price, exactly as before). 1..3 = sold only through its variants (gap E).
+    option_count: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
     tax_classification: Mapped["TaxClassification | None"] = relationship()
     # category is the parent of the product
     category: Mapped["Category"] = relationship(back_populates="products")
@@ -57,6 +71,10 @@ class Product(Base, TimestampMixin):
         CheckConstraint("price_cents > 0", name="ck_products_price_positive"),
         CheckConstraint("stock >= 0", name="ck_products_stock_non_negative"),
         CheckConstraint("unit IS NULL OR unit ~ '^[A-Z]{2,8}$'", name="ck_products_unit_format"),
+        CheckConstraint("option_count BETWEEN 0 AND 3", name="ck_products_option_count"),
+        # A product with variants keeps its stock on the variants: the product's own stock can never disagree with them.
+        CheckConstraint("option_count = 0 OR stock = 0", name="ck_products_stock_zero_with_options"),
+        UniqueConstraint("id", "option_count", name="uq_products_id_option_count"),
         # Default storefront listing: WHERE status = 'active' ORDER BY created_at DESC.
         Index("ix_products_status_created_at", "status", "created_at"),
         # Admin listing (all statuses), newest first: no status filter, so the
@@ -82,3 +100,7 @@ event.listen(
     "before_create",
     DDL("CREATE EXTENSION IF NOT EXISTS pg_trgm"),
 )
+
+# Variant, SKU-registry and stock-ledger tables (gap E) belong to the same schema: always import them together.
+from app.modules.products.models import stock_movement as _stock_movement  # noqa: E402,F401
+from app.modules.products.models import variants as _variants  # noqa: E402,F401

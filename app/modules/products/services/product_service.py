@@ -3,6 +3,7 @@ from uuid import uuid4
 from fastapi import UploadFile
 
 from app.core.config import get_settings
+from app.core.stock_context import stock_change
 from app.core.storage.interface import StorageService
 from app.modules.categories.repositories.category_repository import CategoryRepository
 from app.modules.products.exceptions.product_exceptions import (
@@ -12,6 +13,7 @@ from app.modules.products.exceptions.product_exceptions import (
     ProductNotFoundError,
     ProductTaxRequiredError,
     SkuAlreadyExistsError,
+    StockReasonRequiredError,
 )
 from app.modules.products.models.product import Product
 from app.modules.products.repositories.product_repository import ProductRepository
@@ -161,6 +163,8 @@ class ProductService:
         status: ProductStatus | None,
         tax_classification_id=UNSET,
         unit=UNSET,
+        stock_reason: str | None = None,
+        actor_user_id=None,
     ) -> Product:
         product = await self.repository.get_by_id(product_id)
         if product is None:
@@ -199,6 +203,13 @@ class ProductService:
         if status is not None:
             updates["status"] = status
 
+        if stock is not None:
+            reason = (stock_reason or "").strip()
+            if len(reason) < 3:
+                raise StockReasonRequiredError()
+            if stock != product.stock:
+                async with stock_change(self.repository, "admin_set", actor_user_id=actor_user_id, reason=reason):
+                    return await self.repository.update(product, **updates)
         return await self.repository.update(product, **updates)
 
     async def archive_product(self, product_id: int) -> Product:

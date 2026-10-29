@@ -149,6 +149,8 @@ async def update_product(
         description=payload.description,
         price_cents=payload.price_cents,
         stock=payload.stock,
+        stock_reason=payload.stock_reason,
+        actor_user_id=admin.id,
         category_id=payload.category_id,
         status=payload.status,
         # an explicit null un-assigns; an omitted field leaves the value unchanged

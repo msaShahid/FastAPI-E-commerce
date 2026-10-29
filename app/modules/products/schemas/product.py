@@ -55,6 +55,8 @@ class ProductUpdate(BaseModel):
     description: str | None = Field(default=None, max_length=5000)
     price_cents: int | None = Field(default=None, gt=0)
     stock: int | None = Field(default=None, ge=0)
+    # Required whenever `stock` is sent: every administrative stock change is recorded with who made it and why.
+    stock_reason: str | None = Field(default=None, max_length=200)
     category_id: int | None = None
     status: ProductStatus | None = None
     # Send null explicitly to un-assign; omit the field to leave it unchanged.

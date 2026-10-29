@@ -23,6 +23,7 @@ from app.modules.email_settings.models.email_provider_config import EmailProvide
 from app.modules.orders.models.currency_remediation import OrderCurrencyRemediation  # noqa: F401
 from app.modules.orders.models.order import Order  # noqa: F401
 from app.modules.orders.models.order_item import OrderItem  # noqa: F401
+from app.modules.orders.models.order_item_restock import OrderItemRestock  # noqa: F401
 from app.modules.orders.models.order_status_history import OrderStatusHistory  # noqa: F401
 from app.modules.payments.models.deferred_event import DeferredWebhookEvent  # noqa: F401
 from app.modules.payments.models.dispute import Dispute  # noqa: F401
@@ -31,6 +32,13 @@ from app.modules.payments.models.provider_config import PaymentProviderConfig  #
 from app.modules.payments.models.refund import PaymentReconciliation, Refund  # noqa: F401
 from app.modules.payments.models.webhook_event import ProcessedWebhookEvent  # noqa: F401
 from app.modules.products.models.product import Product  # noqa: F401
+from app.modules.products.models.stock_movement import StockMovement  # noqa: F401
+from app.modules.products.models.variants import (  # noqa: F401
+    ProductOption,
+    ProductOptionValue,
+    ProductVariant,
+    SkuRegistry,
+)
 from app.modules.shipments.models.order_shipment import OrderShipment  # noqa: F401
 from app.modules.store.models.store_settings import StoreSettings  # noqa: F401
 from app.modules.tax.models.tax import (  # noqa: F401

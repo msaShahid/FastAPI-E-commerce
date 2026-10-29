@@ -129,6 +129,25 @@ orders now refunded or cancelled, and a partial refund made outside NovaCart can
 whole order history of the chosen period and have no extra indexes: fine for thousands of orders a month; if reports slow down
 as the store grows, add an index on `order_status_history (to_status, created_at)` and tell your developer.
 
+## 5c. Shipping and tracking
+
+NovaCart does **not** talk to any courier. When a parcel is handed over, an administrator records it:
+`POST /api/v1/orders/{order_id}/shipments` with `carrier_name` (any courier; required) and optionally `tracking_number` and
+`tracking_url`, plus optional `fulfill_order: true` to also move a PAID order to FULFILLED (through the normal status rules and
+history). A tracking number and link can be added or corrected later (`PATCH .../shipments/{id}`; `null` clears a field),
+the parcel marked `delivered` (one way only), or a mistaken entry removed (`DELETE`, audited). An order can have several
+shipments; the same tracking number cannot be entered twice for one order and carrier. Only PAID or FULFILLED orders can be shipped.
+Customers (and guests) see their shipments inside the order (`shipments` on the order detail and list). The tracking link is
+https-only and rejected if it has a login in it, a custom port, an IP address or an internal host name, because it becomes a link
+on the customer's page. Recording a shipment never changes what was charged. Shipping CHARGES are unchanged (the flat rate and the
+free-shipping threshold from the environment settings).
+
+**Delivery eligibility.** No address is currently checked: every address is accepted, and each order's `shipping_snapshot` records
+`delivery_check: {"checked": false, "policy": "none"}` so it is always clear which orders were never checked.
+`GET /api/v1/store/settings` returns `delivery_check: "none"`. A later check (an admin-managed list of serviceable pincodes, or a
+shipping-provider lookup) is added by implementing `DeliveryEligibility` (`app/modules/orders/services/eligibility.py`): checkout
+then refuses an undeliverable address with `delivery_not_available` before any stock is touched.
+
 ## 6. Known operational limits
 
 * Timestamps are naive UTC (`DateTime` without time zone, server default `now()`): the database server must run in UTC.

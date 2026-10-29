@@ -46,3 +46,7 @@ Run migrations as a separate, deliberate step before starting the new version, a
 ```
 docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate
 ```
+
+## Product variants (b4d8e2a6c915, c7f1a9d3e526)
+
+Two additive revisions: the first is transactional with a 3-second lock timeout and refuses PostgreSQL older than 15 or colliding SKUs; the second builds indexes concurrently, back-fills in batches and validates constraints, and is safe to run again. Sequence, pre-flight queries, recovery and the application-role recipe are in `docs/VARIANTS.md`.

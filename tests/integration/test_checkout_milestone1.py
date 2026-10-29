@@ -52,7 +52,7 @@ async def product(client, admin_headers):
 
 
 async def _stock(client, product_id):
-    return (await client.get(f"{API}/products/{product_id}")).json()["stock"]
+    return (await client.get(f"{API}/products/{product_id}", headers=client.admin_headers)).json()["stock"]
 
 
 async def _order_count(db_session):

@@ -63,5 +63,5 @@ async def test_guest_checkout_creates_order_takes_stock_and_replays_idempotently
     assert replay.status_code in (200, 201), replay.text
     assert replay.json()["id"] == first.json()["id"]
 
-    stock = (await client.get(f"/api/v1/products/{product['id']}")).json()["stock"]
+    stock = (await client.get(f"/api/v1/products/{product['id']}", headers=client.admin_headers)).json()["stock"]
     assert stock == 1  # one unit taken, the replay took nothing

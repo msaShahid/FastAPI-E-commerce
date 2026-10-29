@@ -109,7 +109,7 @@ async def order_count(db):
 
 
 async def stock(client, pid):
-    return (await client.get(f"{API}/products/{pid}")).json()["stock"]
+    return (await client.get(f"{API}/products/{pid}", headers=client.admin_headers)).json()["stock"]
 
 
 # ------------------------------------------------------------------ the contract (no database)

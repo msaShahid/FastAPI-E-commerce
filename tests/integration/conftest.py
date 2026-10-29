@@ -41,4 +41,6 @@ async def admin_headers(client, db_session):
     )
     await db_session.commit()
 
-    return {"Authorization": f"Bearer {access_token}"}
+    headers = {"Authorization": f"Bearer {access_token}"}
+    client.admin_headers = headers  # lets stock helpers read EXACT stock as an administrator (public responses show availability only)
+    return headers

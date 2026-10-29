@@ -49,6 +49,13 @@ CATEGORIES_URL = "/api/v1/categories"
 # --- fixtures -------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _public_list_shows_counts(monkeypatch):
+    """These tests use stock changes to prove the cached public list is invalidated, so the public list must show counts. (What the
+    public sees by default, and that exact stock never enters a cache entry unless asked for, is tested in test_variant_pricing.py.)"""
+    monkeypatch.setattr(get_settings(), "public_stock_visibility", "exact")
+
+
 @pytest_asyncio.fixture
 async def redis_client():
     client = Redis.from_url(get_settings().redis_url, decode_responses=True)

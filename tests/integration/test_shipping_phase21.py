@@ -112,4 +112,4 @@ async def test_threshold_without_basis_fails_closed_with_no_order_or_stock_chang
     r = await _checkout(client, product)
     assert r.status_code == 503
     assert (await db_session.execute(select(func.count()).select_from(Order))).scalar_one() == 0
-    assert (await client.get(f"{API}/products/{product['id']}")).json()["stock"] == 10
+    assert (await client.get(f"{API}/products/{product['id']}", headers=client.admin_headers)).json()["stock"] == 10

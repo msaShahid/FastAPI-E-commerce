@@ -216,7 +216,7 @@ async def test_gst_checkout_is_blocked_without_an_approved_business_configuratio
     r = await _checkout(client, pid)
     assert r.status_code == 422 and r.json()["code"] == "tax_calculation_blocked"
     assert "configuration (no_approved_tax_settings)" in r.json()["detail"]
-    assert (await client.get(f"{API}/products/{pid}")).json()["stock"] == 10
+    assert (await client.get(f"{API}/products/{pid}", headers=client.admin_headers)).json()["stock"] == 10
     assert (await db_session.execute(text("SELECT count(*) FROM orders"))).scalar_one() == 0
 
 

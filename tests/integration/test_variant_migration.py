@@ -75,6 +75,8 @@ async def test_legacy_data_is_unchanged_and_the_backfills_are_correct(scratch):
     assert [tuple(r) for r in await fetch(dsn, "SELECT product_id, delta, after_qty FROM stock_movements ORDER BY product_id")] == [(ids[0], 10, 10), (ids[2], 5, 5)]  # zero stock: no row
     assert [r[0] for r in await fetch(dsn, "SELECT sku_norm FROM sku_registry ORDER BY 1")] == ["OLD-1", "OLD-2", "OLD-3"]   # normalised: 'old-3' -> OLD-3
     assert (await fetch(dsn, "SELECT option_count FROM products GROUP BY 1"))[0][0] == 0                         # every product is still simple
+    assert not await fetch(dsn, "SELECT 1 FROM products WHERE price_from_cents <> price_cents OR price_to_cents <> price_cents")  # range back-filled: from = to = price
+    assert (await fetch(dsn, "SELECT count(*) FROM pg_indexes WHERE indexname IN ('ix_products_price_from_cents', 'ix_products_price_to_cents')"))[0][0] == 2
     # the cart rule still holds for existing data: no second line for the same product
     conn = await asyncpg.connect(dsn)
     try:
@@ -163,14 +165,15 @@ async def test_a_limited_application_role_cannot_forge_alter_or_bypass_the_stock
     alembic(url, "upgrade", "head")
     conn = await asyncpg.connect(dsn)
     try:
-        await conn.execute("CREATE ROLE novacart_app_probe NOLOGIN")
-        await conn.execute("GRANT USAGE ON SCHEMA public TO novacart_app_probe")
-        await conn.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO novacart_app_probe")
-        await conn.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO novacart_app_probe")
-        await conn.execute("REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON stock_movements FROM novacart_app_probe")
+        role = f"novacart_app_probe_{uuid.uuid4().hex[:8]}"  # roles are cluster-wide: never collide with another run
+        await conn.execute(f"CREATE ROLE {role} NOLOGIN")
+        await conn.execute(f"GRANT USAGE ON SCHEMA public TO {role}")
+        await conn.execute(f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {role}")
+        await conn.execute(f"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO {role}")
+        await conn.execute(f"REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON stock_movements FROM {role}")
         cat = await conn.fetchval("INSERT INTO categories (name, slug) VALUES ('R', 'r') RETURNING id")
         pid = await conn.fetchval("INSERT INTO products (name, slug, price_cents, sku, stock, status, category_id) VALUES ('R', 'r', 100, 'ROLE-1', 5, 'active', $1) RETURNING id", cat)
-        await conn.execute("SET ROLE novacart_app_probe")
+        await conn.execute(f"SET ROLE {role}")
 
         async def denied(sql):
             try:
@@ -195,4 +198,14 @@ async def test_a_limited_application_role_cannot_forge_alter_or_bypass_the_stock
         await conn.execute("RESET ROLE")
     finally:
         await conn.execute("RESET ROLE")
+        await conn.execute(f"DROP OWNED BY {role}")
+        await conn.execute(f"DROP ROLE IF EXISTS {role}")
         await conn.close()
+
+
+def test_the_price_range_migration_and_the_models_install_exactly_the_same_database_rules():
+    from app.modules.products.models import price_guard
+
+    migration = _load(pathlib.Path(ROOT) / "alembic" / "versions" / "d2f6b9a4c731_product_price_range.py")
+    assert tuple(migration.FUNCTIONS) == tuple(price_guard.FUNCTIONS)
+    assert tuple(migration.TRIGGERS) == tuple(price_guard.TRIGGERS)

@@ -130,7 +130,7 @@ async def one(db, sql, **params):
 
 
 async def stock(client, pid):
-    return (await client.get(f"{API}/products/{pid}")).json()["stock"]
+    return (await client.get(f"{API}/products/{pid}", headers=client.admin_headers)).json()["stock"]
 
 
 async def forget_currency(db, order_id):

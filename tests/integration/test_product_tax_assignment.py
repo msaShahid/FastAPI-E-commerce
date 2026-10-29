@@ -210,8 +210,8 @@ async def test_required_mode_blocks_unclassified_products_without_touching_stock
     assert r.status_code == 422 and r.json()["code"] == "product_tax_unassigned"
     assert str(bad["id"]) in r.json()["detail"] and f"product {ok['id']}," not in r.json()["detail"]
     assert (await db_session.execute(select(func.count()).select_from(Order))).scalar_one() == 0
-    assert (await client.get(f"{API}/products/{ok['id']}")).json()["stock"] == 10
-    assert (await client.get(f"{API}/products/{bad['id']}")).json()["stock"] == 10
+    assert (await client.get(f"{API}/products/{ok['id']}", headers=client.admin_headers)).json()["stock"] == 10
+    assert (await client.get(f"{API}/products/{bad['id']}", headers=client.admin_headers)).json()["stock"] == 10
 
     items = (await client.get(f"{API}/cart")).json()["items"]
     bad_item = next(i for i in items if i["product"]["id"] == bad["id"])

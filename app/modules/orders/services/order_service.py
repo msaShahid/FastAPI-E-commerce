@@ -9,6 +9,7 @@ from uuid import UUID
 
 from app.core.config import get_settings
 from app.core.money import StoreCurrencyNotConfiguredError, get_currency
+from app.core.stock_context import stock_change
 from app.modules.addresses.exceptions.address_exceptions import AddressNotFoundError
 from app.modules.addresses.repositories.address_repository import AddressRepository
 from app.modules.cart.exceptions.cart_exceptions import (
@@ -357,6 +358,8 @@ class OrderService:
                 {
                     "product_id": product.id,
                     "product_name_snapshot": product.name,
+                    "sku_snapshot": product.sku,
+                    "sku_snapshot_source": "order",
                     "price_cents_snapshot": current_price,
                     "quantity": cart_item.quantity,
                 }
@@ -388,7 +391,8 @@ class OrderService:
         total_cents = subtotal_cents + shipping_cents + tax_cents
 
         # One UPDATE for every product's stock, not one per cart line.
-        await self.product_repository.adjust_stock_many(locked_products, stock_deltas)
+        async with stock_change(self.product_repository, "sale"):
+            await self.product_repository.adjust_stock_many(locked_products, stock_deltas)
 
         order = await self.repository.create_order(
             user_id=user_id,

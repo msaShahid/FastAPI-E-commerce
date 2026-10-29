@@ -62,6 +62,9 @@ class Order(Base, TimestampMixin):
     # SHA-256 of the order-scoped guest PAYMENT capability (a random 256-bit secret given to the guest once, in an HttpOnly
     # cookie). Only the hash is stored. NULL for registered-user orders and for guest orders made before this existed.
     payment_token_hash: Mapped[str | None] = mapped_column(String(64), default=None)
+    # Hash of the cart lines this order was made from (product, variant, quantity). Lets a replayed idempotency key be refused when it
+    # arrives with a DIFFERENT cart. NULL on orders that pre-date it: those compare on the address alone, as before.
+    cart_digest: Mapped[str | None] = mapped_column(String(64), default=None)
 
     status: Mapped[OrderStatus] = mapped_column(
         Enum(

@@ -59,6 +59,13 @@ class ProductRepository:
             variant.append(effective <= max_price)
         return or_(and_(*simple), and_(Product.option_count > 0, exists().where(*variant)))
 
+    async def get_variant(self, variant_id: int) -> ProductVariant | None:
+        return (await self.db.execute(select(ProductVariant).where(ProductVariant.id == variant_id))).scalar_one_or_none()
+
+    async def variants_by_ids(self, variant_ids: list[int]) -> list[ProductVariant]:
+        result = await self.db.execute(select(ProductVariant).where(ProductVariant.id.in_(variant_ids)))
+        return list(result.scalars().all())
+
     async def variants_for(self, product_ids: list[int]) -> list[ProductVariant]:
         result = await self.db.execute(select(ProductVariant).where(ProductVariant.product_id.in_(product_ids)).order_by(ProductVariant.id))
         return list(result.scalars().all())

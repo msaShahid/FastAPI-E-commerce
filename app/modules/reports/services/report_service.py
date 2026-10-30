@@ -34,6 +34,13 @@ DEFINITIONS = {
 }
 
 
+def _variant_label(snapshot) -> str | None:
+    """"Size: M / Colour: Blue" from the options frozen on the order line."""
+    if not snapshot or not snapshot.get("options"):
+        return None
+    return " / ".join(f"{o['name']}: {o['value']}" for o in snapshot["options"])
+
+
 class ReportService:
     def __init__(self, repository: ReportRepository, store: StoreRepository) -> None:
         self.repo = repository
@@ -100,8 +107,14 @@ class ReportService:
             excluded_orders=await self.repo.excluded_orders(p["s"], p["e"], p["cur"]), definitions=DEFINITIONS,
         )
 
-    async def top_products(self, start: date | None, end: date | None, by: str, limit: int) -> TopProducts:
+    async def top_products(self, start: date | None, end: date | None, by: str, limit: int, group_by: str = "product") -> TopProducts:
         p = await self._period(start, end)
+        if group_by == "variant":
+            return TopProducts(**self._header(p), by=by, group_by="variant", items=[
+                TopProduct(product_id=r[0], name=r[1], units=int(r[2]), orders=int(r[3]), revenue_cents=int(r[4]), sku=r[5],
+                           current_stock=None if r[6] is None else int(r[6]), variant_id=r[7], variant_label=_variant_label(r[8]))
+                for r in await self.repo.top_variants(p["s"], p["e"], p["cur"], by, limit)
+            ])
         rows = await self.repo.top_products(p["s"], p["e"], p["cur"], by, limit)
         return TopProducts(**self._header(p), by=by, items=[
             TopProduct(product_id=r[0], name=r[1], units=int(r[2]), orders=int(r[3]), revenue_cents=int(r[4]), sku=r[5],
@@ -111,4 +124,7 @@ class ReportService:
 
     async def low_stock(self, threshold: int, include_inactive: bool, offset: int, limit: int):
         total, rows = await self.repo.low_stock(threshold, include_inactive, offset, limit)
-        return total, [LowStockItem(id=r[0], sku=r[1], name=r[2], category=r[3], stock=r[4], price_cents=r[5], status=r[6]) for r in rows]
+        return total, [
+            LowStockItem(id=r[0], sku=r[1], name=r[2], category=r[3], stock=r[4], price_cents=r[5], status=r[6], variant_id=r[7], options=r[8])
+            for r in rows
+        ]

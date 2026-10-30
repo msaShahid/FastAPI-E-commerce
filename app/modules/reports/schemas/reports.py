@@ -58,10 +58,13 @@ class TopProduct(BaseModel):
     orders: int
     revenue_cents: int                 # goods only (price x quantity), excluding shipping and tax
     current_stock: int | None
+    variant_id: int | None = None      # set when grouped by variant
+    variant_label: str | None = None   # e.g. "Size: M / Colour: Blue", as the order recorded it
 
 
 class TopProducts(ReportPeriod):
     by: str
+    group_by: str = "product"          # "product" (all variants of a product together) or "variant"
     items: list[TopProduct]
 
 
@@ -71,5 +74,7 @@ class LowStockItem(BaseModel):
     name: str
     category: str | None
     stock: int
-    price_cents: int
+    price_cents: int                   # the price this unit sells at (a variant's effective price)
     status: str
+    variant_id: int | None = None      # set for a variant; the product's id and name are still in id and name
+    options: str | None = None         # e.g. "Size: M / Colour: Blue"

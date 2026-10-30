@@ -88,12 +88,49 @@ class ReportRepository:
         )
 
     async def low_stock(self, threshold: int, include_inactive: bool, offset: int, limit: int):
-        where = "pr.stock <= :t" + ("" if include_inactive else " AND pr.status::text = 'active'")
-        total = (await self._rows(f"SELECT count(*) FROM products pr WHERE {where}", t=threshold))[0][0]
+        """The units that are SOLD: simple products, and the variants of products with options. A product with options holds no stock of its
+        own, so it is never listed itself (its 0 would be meaningless)."""
+        simple_active = "" if include_inactive else " AND pr.status::text = 'active'"
+        variant_active = "" if include_inactive else " AND pr.status::text = 'active' AND v.status = 'active'"
+        units = f"""
+            SELECT pr.id AS product_id, NULL::integer AS variant_id, pr.sku AS sku, pr.name AS name, pr.category_id AS category_id, pr.stock AS stock,
+                   pr.price_cents AS price_cents, pr.status::text AS status, NULL::text AS options
+            FROM products pr WHERE pr.option_count = 0{simple_active}
+            UNION ALL
+            SELECT pr.id, v.id, v.sku, pr.name, pr.category_id, v.stock, coalesce(v.price_override_cents, pr.price_cents),
+                   CASE WHEN pr.status::text <> 'active' THEN pr.status::text ELSE v.status END,
+                   concat_ws(' / ', o1.name || ': ' || ov1.value, o2.name || ': ' || ov2.value, o3.name || ': ' || ov3.value)
+            FROM product_variants v JOIN products pr ON pr.id = v.product_id
+            LEFT JOIN product_option_values ov1 ON ov1.id = v.value1_id LEFT JOIN product_options o1 ON o1.id = ov1.option_id
+            LEFT JOIN product_option_values ov2 ON ov2.id = v.value2_id LEFT JOIN product_options o2 ON o2.id = ov2.option_id
+            LEFT JOIN product_option_values ov3 ON ov3.id = v.value3_id LEFT JOIN product_options o3 ON o3.id = ov3.option_id
+            WHERE true{variant_active}"""
+        total = (await self._rows(f"WITH units AS ({units}) SELECT count(*) FROM units WHERE stock <= :t", t=threshold))[0][0]
         rows = await self._rows(
-            f"""SELECT pr.id, pr.sku, pr.name, c.name AS category, pr.stock, pr.price_cents, pr.status::text
-            FROM products pr LEFT JOIN categories c ON c.id = pr.category_id WHERE {where}
-            ORDER BY pr.stock ASC, pr.name ASC, pr.id ASC OFFSET :o LIMIT :l""",
+            f"""WITH units AS ({units})
+            SELECT u.product_id, u.sku, u.name, c.name AS category, u.stock, u.price_cents, u.status, u.variant_id, u.options
+            FROM units u LEFT JOIN categories c ON c.id = u.category_id WHERE u.stock <= :t
+            ORDER BY u.stock ASC, u.name ASC, u.product_id ASC, u.variant_id ASC NULLS FIRST OFFSET :o LIMIT :l""",
             t=threshold, o=offset, l=limit,
         )
         return total, rows
+
+    async def top_variants(self, s: datetime, e: datetime, cur: str, by: str, limit: int):
+        """Like top_products, but one row per VARIANT sold (a simple product is its own row)."""
+        order = "revenue DESC, units DESC" if by == "revenue" else "units DESC, revenue DESC"
+        return await self._rows(
+            FIRST_PAID + f"""
+            SELECT oi.product_id, max(oi.product_name_snapshot) AS name, sum(oi.quantity) AS units, count(DISTINCT oi.order_id) AS orders,
+                   sum(oi.price_cents_snapshot * oi.quantity) AS revenue, max(oi.sku_snapshot) AS sku,
+                   coalesce(max(v.stock), max(pr.stock)) AS stock, oi.variant_id,
+                   (array_agg(oi.variant_snapshot ORDER BY oi.id DESC))[1] AS snapshot
+            FROM first_paid p
+            JOIN orders o ON o.id = p.order_id
+            JOIN order_items oi ON oi.order_id = o.id
+            LEFT JOIN products pr ON pr.id = oi.product_id
+            LEFT JOIN product_variants v ON v.id = oi.variant_id
+            WHERE o.currency = :cur AND o.status::text NOT IN ('refunded', 'cancelled')
+            GROUP BY oi.product_id, oi.variant_id
+            ORDER BY {order}, name, oi.variant_id NULLS FIRST LIMIT :n""",  # `order` is one of two fixed strings chosen above, never user text
+            s=s, e=e, cur=cur, n=limit,
+        )

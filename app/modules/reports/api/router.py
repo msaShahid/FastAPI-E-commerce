@@ -46,8 +46,9 @@ async def sales_by_day(request: Request, _admin: AdminUser, service: ServiceDep,
 async def top_products(
     request: Request, _admin: AdminUser, service: ServiceDep, start: Start = None, end: End = None,
     by: Literal["revenue", "units"] = "revenue", limit: Annotated[int, Query(ge=1, le=50)] = 10,
+    group_by: Annotated[Literal["product", "variant"], Query(description="'variant' lists each size/colour separately")] = "product",
 ) -> TopProducts:
-    return await service.top_products(start, end, by, limit)
+    return await service.top_products(start, end, by, limit, group_by)
 
 
 @reports_router.get("/low-stock", response_model=PaginatedResponse[LowStockItem])

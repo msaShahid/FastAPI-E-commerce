@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
+from sqlalchemy.orm.attributes import set_committed_value
+
 from app.core.config import get_settings
 from app.core.jobs.queue import JobQueue
 from app.core.money import to_stripe_amount
@@ -236,13 +238,39 @@ class OrderLifecycleService:
         also refuses to repeat). Returns whether stock was released now."""
         if order.stock_released_at is not None:
             return False
+        # Products first, then variants, ascending ids: the same lock order as checkout.
         locked = await self.products.get_many_for_update([item.product_id for item in order.items])
+        variant_ids = [item.variant_id for item in order.items if item.variant_id is not None]
+        locked_variants = await self.products.get_variants_for_update(variant_ids) if variant_ids else {}
         restock: dict[int, int] = {}
+        variant_restock: dict[int, int] = {}
+        pending = []
         for item in order.items:
-            if item.product_id in locked:  # a deleted product has nothing to restock
-                restock[item.product_id] = restock.get(item.product_id, 0) + item.quantity
+            remaining = item.quantity - (item.restocked_quantity or 0)
+            if remaining <= 0:
+                continue  # this line is already fully back in stock
+            product = locked.get(item.product_id)
+            if item.variant_id is None and product is not None and (product.option_count or 0) > 0:
+                # A line bought as a simple product whose product has since gained options has no variant to return to. Conversion is
+                # refused while such an order can still be restocked, so this is a guard, not an expected path.
+                raise RuntimeError(f"order item {item.id} cannot be restocked: product {item.product_id} now has variants")
+            pending.append((item, remaining, product))
+        # The per-LINE boundary: (line, event) is recorded once, and the database caps the line at what was bought. A retry of this
+        # same release finds its events already recorded and puts nothing back a second time. One statement for all the lines.
+        recorded = await self.orders.record_restock_events([(item.id, "order-release", remaining) for item, remaining, _p in pending])
+        for item, remaining, product in pending:
+            if item.id not in recorded:
+                continue
+            set_committed_value(item, "restocked_quantity", item.quantity)  # (a trigger updated the row; keep the loaded object current)
+            if item.variant_id is not None:
+                if item.variant_id in locked_variants:
+                    variant_restock[item.variant_id] = variant_restock.get(item.variant_id, 0) + remaining
+            elif product is not None:  # a deleted product has nothing to restock
+                restock[item.product_id] = restock.get(item.product_id, 0) + remaining
         async with stock_change(self.products, "restock", order_id=order.id):
             await self.products.adjust_stock_many(locked, restock)
+            if variant_restock:
+                await self.products.adjust_variant_stock_many(locked_variants, variant_restock)
         order.stock_released_at = datetime.now(UTC)
         return True
 

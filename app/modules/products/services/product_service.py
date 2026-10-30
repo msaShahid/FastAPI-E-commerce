@@ -20,6 +20,7 @@ from app.modules.products.models.product import Product
 from app.modules.products.repositories.product_repository import ProductRepository
 from app.modules.tax.models.tax import TaxClassification
 from app.modules.tax.repositories.tax_repository import TaxRepository
+from app.modules.variants.exceptions.variant_exceptions import ProductNeedsActiveVariantError
 from app.shared.enums.product_status import ProductStatus
 from app.shared.utils.image_validation import get_image_extension, validate_image
 from app.shared.utils.slugify import slugify
@@ -184,6 +185,12 @@ class ProductService:
             updates["unit"] = unit
 
         final_status = status if status is not None else product.status
+        if (
+            final_status == ProductStatus.ACTIVE
+            and (product.option_count or 0) > 0
+            and not any(v.status == "active" for v in await self.repository.variants_for([product.id]))
+        ):
+            raise ProductNeedsActiveVariantError()
         final_classification = updates.get("tax_classification_id", product.tax_classification_id)
         await self._enforce_tax_required(final_status, final_classification)
 

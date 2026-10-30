@@ -85,8 +85,10 @@ class VariantOptionRead(BaseModel):
 
 
 class OptionRead(BaseModel):
+    id: int = 0
     name: str
     values: list[str]
+    value_ids: list[int] = []         # the ids of `values`, in the same order (administrators need them to rename or remove a value)
 
 
 class VariantRead(BaseModel):

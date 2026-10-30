@@ -72,7 +72,7 @@ def view_fields(product, *, is_admin: bool, detail: bool, settings) -> dict:
         fields["base_price_cents"] = product.price_cents
     if detail:
         labels = _value_labels(product)
-        fields["options"] = [OptionRead(name=o.name, values=[v.value for v in o.values]) for o in _attached(product, "option_rows")]
+        fields["options"] = [OptionRead(id=o.id, name=o.name, values=[v.value for v in o.values], value_ids=[v.id for v in o.values]) for o in _attached(product, "option_rows")]
         fields["variants"] = [
             VariantRead(
                 id=v.id, sku=v.sku,

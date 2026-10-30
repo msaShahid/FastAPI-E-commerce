@@ -17,6 +17,7 @@ This section supersedes the phase notes below, which are kept as history and are
 * Admin reports (sales by day, summary, top products, low stock): `/api/v1/admin/reports/...`, read-only (`docs/RUNBOOK.md`, 5b).
 * Shipments: administrators record carrier, tracking number and link per parcel; customers see them on their orders. No pincode
   serviceability check yet (every address is accepted, recorded on the order); the seam for one exists (`docs/RUNBOOK.md`, 5c).
+* Reviews (customers who bought a product, moderated by administrators) and wishlists: see `docs/REVIEWS_WISHLIST.md`.
 * Migrations: `docs/MIGRATIONS.md`. Operations, monitoring, backups and the go-live checklist: `docs/RUNBOOK.md`.
 * **Not production-ready merely because tests pass.** See the runbook's go-live checklist.
 

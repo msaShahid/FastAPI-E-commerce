@@ -2,11 +2,13 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import func, select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.modules.orders.models.order import Order
 from app.modules.orders.models.order_item import OrderItem
+from app.modules.orders.models.order_item_restock import OrderItemRestock
 from app.modules.orders.models.order_status_history import OrderStatusHistory
 from app.shared.enums.order_status import OrderStatus
 
@@ -165,6 +167,8 @@ class OrderRepository:
         currency: str | None = None,
         shipping_snapshot: dict | None = None,
         tax_snapshot: dict | None = None,
+        id: UUID | None = None,
+        cart_digest: str | None = None,
         guest_token: str | None = None,
         guest_email: str | None = None,
         shipping_recipient_name: str | None = None,
@@ -176,6 +180,8 @@ class OrderRepository:
         shipping_country: str | None = None,
     ) -> Order:
         order = Order(
+            **({"id": id} if id is not None else {}),
+            cart_digest=cart_digest,
             user_id=user_id,
             guest_token=guest_token,
             guest_email=guest_email,
@@ -260,3 +266,22 @@ class OrderRepository:
         self.db.add(record)
         await self.db.flush()
         return record
+
+    async def record_restock_events(self, events: list[tuple[int, str, int]]) -> set[int]:
+        """Records restock events, (order_item_id, event_key, quantity), with ONE statement however many lines there are. Returns the ids
+        of the lines whose event is NEW; an event already recorded (a retry) is skipped and its line is absent from the result.
+        (order_item_id, event_key) is unique and a trigger adds the quantity to the line's restocked_quantity, whose CHECK keeps it within
+        what was bought: a line can never be restocked twice for the same event, nor beyond its purchased quantity."""
+        if not events:
+            return set()
+        statement = (
+            pg_insert(OrderItemRestock)
+            .values([{"order_item_id": i, "event_key": k, "quantity": q} for i, k, q in events])
+            .on_conflict_do_nothing(constraint="uq_order_item_restocks_event")
+            .returning(OrderItemRestock.order_item_id)
+        )
+        return {row[0] for row in (await self.db.execute(statement)).all()}
+
+    async def record_restock_event(self, order_item_id: int, event_key: str, quantity: int) -> bool:
+        """One event for one line (see record_restock_events): True if it is new, False if it was already recorded."""
+        return order_item_id in await self.record_restock_events([(order_item_id, event_key, quantity)])

@@ -4,19 +4,31 @@ from uuid import UUID
 from pydantic import BaseModel, EmailStr, Field, model_validator
 from sqlalchemy import inspect as sa_inspect
 
+from app.modules.products.schemas.product import VariantOptionRead
 from app.modules.shipments.schemas.shipment import ShipmentRead
 from app.shared.enums.order_status import OrderStatus
+
+
+class OrderItemVariantRead(BaseModel):
+    """The variant as it was when bought (a frozen snapshot, never today's values)."""
+
+    sku: str | None = None
+    options: list[VariantOptionRead] = []
+    price_source: str | None = None           # "override" or "product": where the price came from
 
 
 class OrderItemRead(BaseModel):
     id: int
     product_id: int
+    variant_id: int | None = None
+    sku: str | None = Field(default=None, validation_alias="sku_snapshot")   # frozen at purchase
+    variant: OrderItemVariantRead | None = Field(default=None, validation_alias="variant_snapshot")
     product_name_snapshot: str
     price_cents_snapshot: int
     quantity: int
     line_total_cents: int
 
-    model_config = {"from_attributes": True}
+    model_config = {"from_attributes": True, "populate_by_name": True}
 
 
 class ShippingAddressRead(BaseModel):

@@ -5,7 +5,7 @@ import secrets
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from app.core.config import get_settings
 from app.core.money import StoreCurrencyNotConfiguredError, get_currency
@@ -15,8 +15,11 @@ from app.modules.addresses.repositories.address_repository import AddressReposit
 from app.modules.cart.exceptions.cart_exceptions import (
     InsufficientStockError,
     ProductUnavailableError,
+    VariantRequiredError,
+    VariantUnavailableError,
 )
 from app.modules.cart.repositories.cart_repository import CartRepository
+from app.modules.cart.services.cart_digest import cart_digest
 from app.modules.orders.exceptions.order_exceptions import (
     CheckoutNotConfiguredError,
     DeliveryNotAvailableError,
@@ -29,7 +32,6 @@ from app.modules.orders.exceptions.order_exceptions import (
     PriceChangedError,
     ProductTaxUnassignedError,
     ShippingAddressRequiredError,
-    VariantCheckoutNotSupportedError,
 )
 from app.modules.orders.models.order import Order
 from app.modules.orders.repositories.order_repository import OrderRepository
@@ -40,6 +42,7 @@ from app.modules.orders.services.eligibility import (
 )
 from app.modules.orders.services.shipping import ShippingAddressInput, address_as_order_columns
 from app.modules.products.repositories.product_repository import ProductRepository
+from app.modules.products.services.product_view import effective_price
 from app.modules.tax.engine import (
     FlatInterimTaxEngine,
     NotConfiguredTaxEngine,
@@ -285,6 +288,13 @@ class OrderService:
             # NULL hash = an order from before fingerprints existed: nothing to compare.
             if existing.request_hash is not None and existing.request_hash != fingerprint:
                 raise IdempotencyKeyConflictError()
+            if existing.cart_digest is not None:
+                # A retry normally finds an EMPTY cart (checkout emptied it): nothing to compare, the original order is the answer.
+                # A cart that is NOT empty and holds different products, variants or quantities than this order was made from is
+                # a different purchase under a reused key: refuse it instead of silently returning the old order.
+                waiting = await self.cart_repository.get_or_create_cart(user_id, guest_token=guest_token)
+                if waiting.items and cart_digest(waiting.items) != existing.cart_digest:
+                    raise IdempotencyKeyConflictError()
             return existing
 
         # Fail before taking any lock or touching stock if totals can't be computed.
@@ -306,10 +316,10 @@ class OrderService:
         cart = await self.cart_repository.get_or_create_cart(user_id, guest_token=guest_token)
         if not cart.items:
             raise EmptyCartError()
-        if any(item.variant_id is not None for item in cart.items):
-            raise VariantCheckoutNotSupportedError()  # temporary: see the exception (milestone E4)
+        digest = cart_digest(cart.items)
+        order_id = uuid4()  # known before stock moves, so the ledger's sale rows can name the order
 
-        sorted_items = sorted(cart.items, key=lambda i: i.product_id)
+        sorted_items = sorted(cart.items, key=lambda i: (i.product_id, i.variant_id or 0))
 
         order_items_data = []
         subtotal_cents = 0
@@ -319,6 +329,10 @@ class OrderService:
         locked_products = await self.product_repository.get_many_for_update(
             [cart_item.product_id for cart_item in sorted_items]
         )
+        # Then the variants, also in ascending id order: products first, variants second, in every path that locks stock.
+        variant_line_ids = [i.variant_id for i in sorted_items if i.variant_id is not None]
+        locked_variants = await self.product_repository.get_variants_for_update(variant_line_ids) if variant_line_ids else {}
+        option_labels = await self._option_labels(sorted({i.product_id for i in sorted_items if i.variant_id is not None})) if variant_line_ids else {}
 
         if self.require_tax_classification:
             # Before any stock change: unclassified products are never treated as tax-ready.
@@ -327,46 +341,72 @@ class OrderService:
             if untaxed:
                 raise ProductTaxUnassignedError(untaxed)
 
-        remaining_stock = {pid: p.stock for pid, p in locked_products.items()}
+        # What is sold is a simple product OR one variant: stock is checked and moved on that unit, never on a parent product.
+        remaining_stock: dict[tuple[str, int], int] = {}
         stock_deltas: dict[int, int] = {}
+        variant_deltas: dict[int, int] = {}
         price_changes: list[dict] = []
 
         for cart_item in sorted_items:
             product = locked_products.get(cart_item.product_id)
+            variant = locked_variants.get(cart_item.variant_id) if cart_item.variant_id is not None else None
 
-            if product is None or product.status != ProductStatus.ACTIVE:
-                raise ProductUnavailableError()
-            if remaining_stock[product.id] < cart_item.quantity:
-                raise InsufficientStockError(available=remaining_stock[product.id])
+            if cart_item.variant_id is not None:
+                if product is None or variant is None or variant.product_id != product.id or product.status != ProductStatus.ACTIVE or variant.status != "active":
+                    raise VariantUnavailableError()
+                unit, unit_stock = ("v", variant.id), variant.stock
+                current_price = effective_price(variant, product.price_cents)  # the locked rows are the only authority on price
+            else:
+                if product is None or product.status != ProductStatus.ACTIVE:
+                    raise ProductUnavailableError()
+                if (product.option_count or 0) > 0:
+                    raise VariantRequiredError()
+                unit, unit_stock = ("p", product.id), product.stock
+                current_price = product.price_cents
 
-            remaining_stock[product.id] -= cart_item.quantity
-            stock_deltas[product.id] = stock_deltas.get(product.id, 0) - cart_item.quantity
+            available = remaining_stock.get(unit, unit_stock)
+            if available < cart_item.quantity:
+                raise InsufficientStockError(available=available)
+            remaining_stock[unit] = available - cart_item.quantity
+            deltas = variant_deltas if variant is not None else stock_deltas
+            deltas[unit[1]] = deltas.get(unit[1], 0) - cart_item.quantity
 
-            # The locked product row is the only authority on price. The cart's
-            # snapshot is just what the customer last saw.
-            current_price = product.price_cents
+            # The cart's snapshot is just what the customer last saw.
             if cart_item.price_cents_snapshot != current_price:
-                price_changes.append(
-                    {
-                        "cart_item": cart_item,
-                        "product_id": product.id,
-                        "name": product.name,
-                        "old_price_cents": cart_item.price_cents_snapshot,
-                        "new_price_cents": current_price,
-                    }
-                )
+                change = {
+                    "cart_item": cart_item,
+                    "product_id": product.id,
+                    "name": product.name,
+                    "old_price_cents": cart_item.price_cents_snapshot,
+                    "new_price_cents": current_price,
+                }
+                if variant is not None:
+                    change.update(variant_id=variant.id, sku=variant.sku)
+                price_changes.append(change)
 
             subtotal_cents += current_price * cart_item.quantity
-            order_items_data.append(
-                {
-                    "product_id": product.id,
-                    "product_name_snapshot": product.name,
-                    "sku_snapshot": product.sku,
-                    "sku_snapshot_source": "order",
-                    "price_cents_snapshot": current_price,
-                    "quantity": cart_item.quantity,
+            line = {
+                "product_id": product.id,
+                "product_name_snapshot": product.name,
+                "sku_snapshot": variant.sku if variant is not None else product.sku,
+                "sku_snapshot_source": "order",
+                "price_cents_snapshot": current_price,
+                "quantity": cart_item.quantity,
+            }
+            if variant is not None:
+                # Frozen with the line: later renames, price edits or deactivation never rewrite what was bought.
+                line["variant_id"] = variant.id
+                line["variant_snapshot"] = {
+                    "sku": variant.sku,
+                    "options": [
+                        {"name": option_labels[i][0], "value": option_labels[i][1]}
+                        for i in (variant.value1_id, variant.value2_id, variant.value3_id)[: variant.option_count] if i in option_labels
+                    ],
+                    "price_source": "override" if variant.price_override_cents is not None else "product",
+                    "product_price_cents": product.price_cents,
+                    "override_price_cents": variant.price_override_cents,
                 }
-            )
+            order_items_data.append(line)
 
         if price_changes:
             # Nothing has been charged or decremented yet. Bring the cart up to
@@ -394,10 +434,14 @@ class OrderService:
         total_cents = subtotal_cents + shipping_cents + tax_cents
 
         # One UPDATE for every product's stock, not one per cart line.
-        async with stock_change(self.product_repository, "sale"):
+        async with stock_change(self.product_repository, "sale", order_id=order_id):
             await self.product_repository.adjust_stock_many(locked_products, stock_deltas)
+            if variant_deltas:
+                await self.product_repository.adjust_variant_stock_many(locked_variants, variant_deltas)
 
         order = await self.repository.create_order(
+            id=order_id,
+            cart_digest=digest,
             user_id=user_id,
             guest_token=guest_token if is_guest else None,
             guest_email=guest_email if is_guest else None,
@@ -420,6 +464,14 @@ class OrderService:
 
         await self.cart_repository.clear(cart)
         return order
+
+    async def _option_labels(self, product_ids: list[int]) -> dict[int, tuple[str, str]]:
+        """value id -> (option name, value) for the products of the variant lines being bought."""
+        labels: dict[int, tuple[str, str]] = {}
+        for option in await self.product_repository.options_for(product_ids):
+            for value in option.values:
+                labels[value.id] = (option.name, value.value)
+        return labels
 
     @staticmethod
     def _hash_payment_token(token: str) -> str:

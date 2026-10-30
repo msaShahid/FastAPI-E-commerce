@@ -40,7 +40,7 @@ def test_a_simple_product_shows_availability_not_stock_to_the_public_and_stock_t
 def option_product(variants, price=1000):
     product = NS(id=7, option_count=1, price_cents=price)
     rows = [NS(id=i, value1_id=100 + i, value2_id=None, value3_id=None, sku=f"V-{i}", **v) for i, v in enumerate(variants, start=1)]
-    option = NS(name="Size", values=[NS(id=100 + i, value=f"S{i}") for i in range(1, len(variants) + 1)])
+    option = NS(id=1, name="Size", values=[NS(id=100 + i, value=f"S{i}") for i in range(1, len(variants) + 1)])
     product.variant_rows, product.option_rows = rows, [option]
     return product
 

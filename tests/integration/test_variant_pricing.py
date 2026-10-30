@@ -176,7 +176,7 @@ async def test_a_product_with_options_shows_a_from_price_a_range_and_its_best_va
     assert item["variants"] is None and item["options"] is None               # the list stays light: detail has the variants
 
     detail = (await client.get(f"{API}/products/{pid}")).json()
-    assert detail["options"] == [{"name": "Size", "values": ["S1", "S2", "S3"]}]
+    assert [(o["name"], o["values"]) for o in detail["options"]] == [("Size", ["S1", "S2", "S3"])] and len(detail["options"][0]["value_ids"]) == 3
     assert [(v["id"], v["price_cents"], v["price_overridden"], v["available"], v["availability"], v["stock"], v["status"]) for v in detail["variants"]] == [
         (a, 800, True, False, "out_of_stock", None, None), (b, 1000, False, True, "low_stock", None, None)]    # the inactive one is not shown
     assert detail["variants"][0]["options"] == [{"name": "Size", "value": "S1"}] and detail["variants"][0]["sku"].startswith("PV-")

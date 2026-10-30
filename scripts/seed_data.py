@@ -58,6 +58,7 @@ HSN = {
     "6105": "Men's or boys' shirts, knitted",
     "4202": "Trunks, bags and backpacks",
     "3304": "Beauty, skin-care and lip preparations",
+    "6302": "Bed linen, table linen, toilet linen and kitchen linen",
     "9603": "Brushes",
     "9503": "Toys, puzzles and construction sets",
     "9504": "Playing cards and games",
@@ -146,6 +147,39 @@ PRODUCTS = [
 APPROVER_USERNAME = "approver"
 APPROVER_EMAIL = "approver@example.com"
 
+# --------------------------------------------------------------------------------------------- products with options (variants)
+@dataclass(frozen=True)
+class VariantProduct:
+    sku: str
+    name: str
+    rupees: int
+    category: str
+    hsn: str | None
+    description: str
+    options: dict[str, list[str]]
+    # (variant sku, {option: value}, stock, price override in rupees or None). Only the combinations that are actually sold exist.
+    variants: list[tuple[str, dict[str, str], int, int | None]] = field(default_factory=list)
+
+
+VARIANT_PRODUCTS = [
+    VariantProduct(
+        "CLOTH-TEE-VAR", "Everyday Crew Tee", 599, "Clothing", "6109",
+        "Soft combed-cotton crew-neck tee in four sizes and three colours. Not every combination is made.",
+        {"Size": ["S", "M", "L", "XL"], "Colour": ["Black", "Navy", "White"]},
+        [("TEE-S-BLK", {"Size": "S", "Colour": "Black"}, 20, None), ("TEE-M-BLK", {"Size": "M", "Colour": "Black"}, 25, None),
+         ("TEE-L-BLK", {"Size": "L", "Colour": "Black"}, 18, None), ("TEE-XL-BLK", {"Size": "XL", "Colour": "Black"}, 8, 649),
+         ("TEE-S-NVY", {"Size": "S", "Colour": "Navy"}, 12, None), ("TEE-M-NVY", {"Size": "M", "Colour": "Navy"}, 15, None),
+         ("TEE-L-NVY", {"Size": "L", "Colour": "Navy"}, 0, None), ("TEE-M-WHT", {"Size": "M", "Colour": "White"}, 10, None)],
+    ),
+    VariantProduct(
+        "HOME-SHEET-VAR", "Cotton Bedsheet Set", 1299, "Home & Kitchen", "6302",
+        "Percale cotton bedsheet with two pillow covers, in the size of your bed.",
+        {"Size": ["Single", "Double", "King"]},
+        [("SHEET-SGL", {"Size": "Single"}, 14, 999), ("SHEET-DBL", {"Size": "Double"}, 22, None), ("SHEET-KNG", {"Size": "King"}, 9, 1699)],
+    ),
+]
+VARIANT_STOCK = {sku: stock for vp in VARIANT_PRODUCTS for sku, _o, stock, _p in vp.variants}
+
 # --------------------------------------------------------------------------------------------- customers
 @dataclass(frozen=True)
 class Customer:
@@ -199,9 +233,11 @@ ORDERS = [
     OrderPlan("demo-seed-07", 0, [("ELEC-POWERBANK-001", 1)], "fulfilled", 15),
     OrderPlan("demo-seed-08", 1, [("CLOTH-JEANS-001", 1), ("CLOTH-POLO-001", 2)], "refunded", 13),
     OrderPlan("demo-seed-09", 2, [("BOOK-DW-001", 1), ("OFFICE-NOTEBOOK-001", 2), ("OFFICE-PENS-001", 2)], "fulfilled", 11),
+    OrderPlan("demo-seed-17", 2, [("TEE-M-BLK", 2), ("TEE-L-BLK", 1), ("TEE-S-NVY", 1)], "fulfilled", 10),
     OrderPlan("demo-seed-10", 3, [("TOY-BOARDGAME-001", 1), ("TOY-CARDS-001", 2)], "fulfilled", 9),
     OrderPlan("demo-seed-11", 4, [("ELEC-HUB-001", 1), ("ELEC-STAND-001", 1)], "paid", 7),
     OrderPlan("demo-seed-12", 5, [("HOME-RICECOOKER-001", 1)], "paid", 5),
+    OrderPlan("demo-seed-18", 1, [("SHEET-KNG", 1), ("TEE-XL-BLK", 1)], "paid", 5),
     OrderPlan("demo-seed-13", 0, [("BEAUTY-CLEANSER-001", 1), ("BEAUTY-CREAM-001", 1), ("BEAUTY-LIPBALM-001", 2)], "paid", 4),
     OrderPlan("demo-seed-14", 1, [("ELEC-WEBCAM-001", 1)], "cancel_and_refund", 3),
     OrderPlan("demo-seed-15", 2, [("CLOTH-BACKPACK-001", 1)], "customer_cancelled", 2),
@@ -218,4 +254,5 @@ CARTS = [
     (3, [("HOME-DINNERSET-001", 1), ("HOME-CONTAINER-001", 2)]),
     (4, [("TOY-JIGSAW-001", 1)]),
     (5, [("ELEC-STAND-001", 1), ("OFFICE-MAT-001", 1)]),
+    (1, [("TEE-M-NVY", 2)]),
 ]

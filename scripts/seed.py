@@ -14,6 +14,7 @@ What you get, and which tables it fills:
     store_settings .......... the store currency, chosen ONCE (INR)
     tax_classifications ..... approved HSN headings, assigned to the products
     categories, products .... 8 categories, 49 products with INR prices, descriptions and placeholder pictures
+    products with options  2 products sold in sizes/colours (variants), created through the admin API, with orders and a cart
     carts, cart_items ....... three customers have something in their cart
     orders, order_items,
     order_status_history,
@@ -231,6 +232,39 @@ async def seed_products(client, admin, category_ids: dict[str, int], hsn_ids: di
     return existing
 
 
+async def seed_variant_products(client, admin, category_ids: dict[str, int], hsn_ids: dict[str, int]) -> dict[str, int]:
+    """Products with options (sizes, colours), created through the administrator API exactly as a store owner would: define the options,
+    then create ONLY the combinations that are sold. Returns variant SKU -> variant id (existing ones included)."""
+    created = 0
+    for vp in data.VARIANT_PRODUCTS:
+        if await scalar("SELECT count(*) FROM products WHERE sku = :s", s=vp.sku):
+            continue
+        product = check(await client.post(f"{API}/products", headers=admin, json={
+            "name": vp.name, "description": vp.description, "price_cents": vp.rupees * 100, "sku": vp.sku, "stock": 0, "status": "draft",
+            "category_id": category_ids[vp.category], "tax_classification_id": hsn_ids[vp.hsn] if vp.hsn else None, "unit": "NOS"}),
+            (201,), f"create {vp.sku}")
+        pid = product["id"]
+        check(await client.put(f"{API}/products/{pid}/options", headers=admin,
+                               json={"options": [{"name": n, "values": v} for n, v in vp.options.items()]}), (200,), f"options {vp.sku}")
+        check(await client.post(f"{API}/products/{pid}/variants/bulk", headers=admin, json={"variants": [
+            {"sku": sku, "option_values": values, "stock": stock, "price_override_cents": None if override is None else override * 100}
+            for sku, values, stock, override in vp.variants]}), (201,), f"variants {vp.sku}")
+        check(await client.patch(f"{API}/products/{pid}", headers=admin, json={"status": "active"}), (200,), f"activate {vp.sku}")
+        hue = next(h for n, _d, h in data.CATEGORIES if n == vp.category)
+        check(await client.post(f"{API}/products/{pid}/image", headers=admin,
+                                files={"image": (f"{vp.sku}.png", placeholder(hue, 40 + created), "image/png")}), (200,), f"image {vp.sku}")
+        created += 1
+    print(f"  Products with options: {created} created, {len(data.VARIANT_PRODUCTS) - created} already there")
+    return {sku: vid for vid, sku in await rows("SELECT id, sku FROM product_variants")}
+
+
+def line_payload(sku: str, qty: int, product_ids: dict[str, int], variant_ids: dict[str, int]) -> dict:
+    """A cart line for a simple product's SKU or a variant's SKU."""
+    if sku in variant_ids:
+        return {"variant_id": variant_ids[sku], "quantity": qty}
+    return {"product_id": product_ids[sku], "quantity": qty}
+
+
 # ------------------------------------------------------------------------------------------------------------- customers
 async def seed_addresses_and_tokens(client) -> dict[int, dict]:
     sessions: dict[int, dict] = {}
@@ -246,14 +280,14 @@ async def seed_addresses_and_tokens(client) -> dict[int, dict]:
     return sessions
 
 
-async def seed_carts(client, sessions, product_ids) -> None:
+async def seed_carts(client, sessions, product_ids, variant_ids) -> None:
     filled = 0
     for idx, items in data.CARTS:
         h = sessions[idx]["headers"]
         if check(await client.get(f"{API}/cart", headers=h), (200,), "read cart")["items"]:
             continue
         for sku, qty in items:
-            check(await client.post(f"{API}/cart/items", headers=h, json={"product_id": product_ids[sku], "quantity": qty}), (200, 201), f"cart {sku}")
+            check(await client.post(f"{API}/cart/items", headers=h, json=line_payload(sku, qty, product_ids, variant_ids)), (200, 201), f"cart {sku}")
         filled += 1
     print(f"  Carts: {filled} customers have items waiting in their cart")
 
@@ -270,7 +304,7 @@ class Webhooks:
         check(r, (200,), "payment webhook")
 
 
-async def place_orders(client, admin, sessions, product_ids, provider) -> dict[str, str]:
+async def place_orders(client, admin, sessions, product_ids, variant_ids, provider) -> dict[str, str]:
     hooks = Webhooks(client, provider)
     placed: dict[str, str] = {}
     for plan in data.ORDERS:
@@ -282,7 +316,7 @@ async def place_orders(client, admin, sessions, product_ids, provider) -> dict[s
             who, headers = client, sessions[plan.customer]["headers"]
         try:
             for sku, qty in plan.items:
-                check(await who.post(f"{API}/cart/items", headers=headers, json={"product_id": product_ids[sku], "quantity": qty}),
+                check(await who.post(f"{API}/cart/items", headers=headers, json=line_payload(sku, qty, product_ids, variant_ids)),
                       (200, 201), f"{plan.key} add {sku}")
             if plan.customer is None:
                 body = {"shipping_address": data.GUEST["address"], "guest_email": data.GUEST["email"]}
@@ -351,7 +385,7 @@ async def backdate(placed: dict[str, str]) -> None:
         print(f"  (Order dates left as 'now': the database declined the date shift: {type(exc).__name__})")
 
 
-async def seed_orders(client, admin, sessions, product_ids, provider) -> None:
+async def seed_orders(client, admin, sessions, product_ids, variant_ids, provider) -> None:
     demo = await scalar("SELECT count(*) FROM orders WHERE idempotency_key LIKE 'demo-seed-%'")
     real = await scalar("SELECT count(*) FROM orders WHERE idempotency_key NOT LIKE 'demo-seed-%'")
     if real:
@@ -362,15 +396,15 @@ async def seed_orders(client, admin, sessions, product_ids, provider) -> None:
         return
     if demo:
         raise SeedError("A previous seed run stopped part-way. Start from an empty development database: docker compose down -v")
-    placed = await place_orders(client, admin, sessions, product_ids, provider)
+    placed = await place_orders(client, admin, sessions, product_ids, variant_ids, provider)
     await backdate(placed)
-    await seed_carts(client, sessions, product_ids)
+    await seed_carts(client, sessions, product_ids, variant_ids)
 
 
 # ------------------------------------------------------------------------------------------------------------- main
 async def summary() -> None:
     tables = ["users", "addresses", "store_settings", "tax_classifications", "categories", "products", "carts", "cart_items", "orders",
-              "order_items", "order_status_history", "order_shipments", "payments", "refunds", "audit_logs", "background_jobs", "refresh_tokens",
+              "order_items", "order_status_history", "order_shipments", "product_options", "product_variants", "stock_movements", "payments", "refunds", "audit_logs", "background_jobs", "refresh_tokens",
               "processed_webhook_events", "tax_rules", "gst_registrations", "business_tax_settings", "payment_provider_configs",
               "payment_reconciliations", "disputes", "deferred_webhook_events", "order_currency_remediations"]
     print("\nRows now in the database:")
@@ -409,10 +443,12 @@ async def main() -> None:
             category_ids = await seed_categories(client, admin)
             print("Products...")
             product_ids = await seed_products(client, admin, category_ids, hsn_ids)
+            print("Products with options (variants)...")
+            variant_ids = await seed_variant_products(client, admin, category_ids, hsn_ids)
             print("Customers...")
             sessions = await seed_addresses_and_tokens(client)
             print("Orders...")
-            await seed_orders(client, admin, sessions, product_ids, provider)
+            await seed_orders(client, admin, sessions, product_ids, variant_ids, provider)
         await flush_pending_cache()
         await summary()
     finally:

@@ -39,6 +39,7 @@ from app.modules.products.models.variants import (  # noqa: F401
     ProductVariant,
     SkuRegistry,
 )
+from app.modules.reviews.models.product_review import ProductReview  # noqa: F401
 from app.modules.shipments.models.order_shipment import OrderShipment  # noqa: F401
 from app.modules.store.models.store_settings import StoreSettings  # noqa: F401
 from app.modules.tax.models.tax import (  # noqa: F401
@@ -47,6 +48,7 @@ from app.modules.tax.models.tax import (  # noqa: F401
     TaxClassification,
     TaxRule,
 )
+from app.modules.wishlist.models.wishlist_item import WishlistItem  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

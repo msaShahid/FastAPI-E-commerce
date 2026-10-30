@@ -401,10 +401,30 @@ async def seed_orders(client, admin, sessions, product_ids, variant_ids, provide
     await seed_carts(client, sessions, product_ids, variant_ids)
 
 
+async def seed_reviews_and_wishlists(client, sessions) -> None:
+    """Reviews through the real rules (a customer can only review what they bought) and a few saved products. Safe to repeat."""
+    bought = {sku: pid for pid, sku in await rows("SELECT id, sku FROM products")}
+    variant_to_product = {sku: pid for sku, pid in await rows("SELECT sku, product_id FROM product_variants")}   # a variant's review is its product's
+    made = skipped = 0
+    for idx, sku, rating, title, body in data.DEMO_REVIEWS:
+        pid = bought.get(sku) or variant_to_product.get(sku)
+        r = await client.post(f"{API}/products/{pid}/reviews", headers=sessions[idx]["headers"], json={"rating": rating, "title": title, "body": body})
+        if r.status_code == 201:
+            made += 1
+        elif r.status_code in (403, 409):  # already reviewed, or this database has no such order (it already held real orders)
+            skipped += 1
+        else:
+            check(r, (201,), f"review {sku}")
+    for idx, skus in data.DEMO_WISHLISTS:
+        for sku in skus:
+            check(await client.put(f"{API}/wishlist/{bought[sku]}", headers=sessions[idx]["headers"]), (200,), f"wishlist {sku}")
+    print(f"  Reviews: {made} created, {skipped} skipped; wishlists saved for {len(data.DEMO_WISHLISTS)} customers")
+
+
 # ------------------------------------------------------------------------------------------------------------- main
 async def summary() -> None:
     tables = ["users", "addresses", "store_settings", "tax_classifications", "categories", "products", "carts", "cart_items", "orders",
-              "order_items", "order_status_history", "order_shipments", "product_options", "product_variants", "stock_movements", "payments", "refunds", "audit_logs", "background_jobs", "refresh_tokens",
+              "order_items", "order_status_history", "order_shipments", "product_reviews", "wishlist_items", "product_options", "product_variants", "stock_movements", "payments", "refunds", "audit_logs", "background_jobs", "refresh_tokens",
               "processed_webhook_events", "tax_rules", "gst_registrations", "business_tax_settings", "payment_provider_configs",
               "payment_reconciliations", "disputes", "deferred_webhook_events", "order_currency_remediations"]
     print("\nRows now in the database:")
@@ -449,6 +469,8 @@ async def main() -> None:
             sessions = await seed_addresses_and_tokens(client)
             print("Orders...")
             await seed_orders(client, admin, sessions, product_ids, variant_ids, provider)
+            print("Reviews and wishlists...")
+            await seed_reviews_and_wishlists(client, sessions)
         await flush_pending_cache()
         await summary()
     finally:

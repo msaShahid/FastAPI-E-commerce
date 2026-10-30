@@ -249,6 +249,29 @@ DEMO_CARRIERS = ["Delhivery", "Blue Dart", "DTDC", "India Post (Speed Post)", "E
 DEMO_TRACKING_URL = "https://tracking.example.com/track?awb={number}"
 DEMO_DELIVERED_AFTER_DAYS = 15   # orders older than this show as delivered
 
+# Reviews by customers who bought the product in a paid or shipped order above: (customer index, sku, rating, title, body).
+DEMO_REVIEWS = [
+    (0, "ELEC-HEADPHONE-001", 5, "Great sound for the price", "Comfortable for long calls and the battery easily lasts the week."),
+    (0, "ELEC-CABLE-001", 4, "Sturdy cable", "Charges fast. A little short for my desk setup."),
+    (2, "TEE-M-BLK", 5, "Perfect fit", "True to size and the cotton is soft. Ordering another colour."),
+    (2, "HOME-KETTLE-001", 4, "Boils quickly", "Does the job. The lid could be a bit tighter."),
+    (3, "ELEC-KB-001", 5, "Lovely typing feel", "Solid build and the switches are satisfying."),
+    (3, "ELEC-MOUSE-001", 3, "Okay mouse", "Works well but the scroll wheel is loud."),
+    (1, "BOOK-CC-001", 5, "Worth reading", "Practical advice I use every week."),
+    (1, "BOOK-AH-001", 4, "Easy and useful", "Short chapters, simple ideas that actually stick."),
+    (4, "SPORT-YOGA-001", 4, "Good grip", "Does not slip, and easy to roll up."),
+    (4, "SPORT-BOTTLE-001", 5, "Keeps drinks cold", "Still cold after a full day out."),
+    (5, "CLOTH-TSHIRT-001", 2, "Shrank after washing", "Comfortable, but it came out a size smaller."),
+    (0, "ELEC-POWERBANK-001", 5, "Charges my phone four times", None),
+]
+
+# Products saved for later: (customer index, [skus]).
+DEMO_WISHLISTS = [
+    (0, ["ELEC-WEBCAM-001", "CLOTH-TEE-VAR", "SPORT-DUMBBELL-001"]),
+    (1, ["HOME-RICECOOKER-001", "TOY-BOARDGAME-001"]),
+    (3, ["CLOTH-JEANS-001", "HOME-SHEET-VAR"]),
+]
+
 # Left in the customers' carts (not checked out), so a customer login shows a cart.
 CARTS = [
     (3, [("HOME-DINNERSET-001", 1), ("HOME-CONTAINER-001", 2)]),

@@ -325,6 +325,12 @@ def _forget_on_rollback(session: Session, previous_transaction) -> None:
         session.info.pop(_PENDING_KEY, None)
 
 
+def note_changed(session: Session | AsyncSession, *namespaces: str) -> None:
+    """For writers that use raw SQL (invisible to the hooks above): mark namespaces stale so flush_pending() invalidates them."""
+    target = getattr(session, "sync_session", session)
+    target.info.setdefault(_PENDING_KEY, set()).update(namespaces)
+
+
 async def flush_pending(session: AsyncSession) -> None:
     """
     Call right AFTER committing ``session``. Invalidates what the

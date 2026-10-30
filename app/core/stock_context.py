@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-KINDS = ("sale", "restock", "admin_set", "admin_delta", "conversion")
+KINDS = ("initial", "sale", "restock", "admin_set", "admin_delta", "conversion")
 
 
 async def _set(db: AsyncSession, kind: str, actor: uuid.UUID | None, reason: str | None, order_id: uuid.UUID | None) -> None:

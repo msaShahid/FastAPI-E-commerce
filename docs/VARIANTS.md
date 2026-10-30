@@ -1,6 +1,6 @@
-# Product variants: database, stock ledger, pricing and deployment (milestones E1 to E3)
+# Product variants: database, stock ledger, pricing and deployment (milestones E1 to E4)
 
-Status: E1 delivered the **database foundation**, E2 the **pricing and availability** reads, E3 the **cart**. No API creates variants and checkout does not sell them yet (E4, E5). What changes for users today is
+Status: E1 delivered the **database foundation**, E2 the **pricing and availability** reads, E3 the **cart**, E4 **checkout and restocking**. No API creates variants yet (E5). What changes for users today is
 listed under "What E1 changes". Design baseline: Product Variants Design v2 plus the final instructions.
 
 ## What E1 adds
@@ -125,5 +125,32 @@ current effective price and stores it as the line's snapshot.
   differs from that), and `available` / `unavailable_reason` (`unavailable`, `out_of_stock`, `insufficient_stock`). A line that can no longer
   be bought does not break the cart. The cart also returns `cart_digest`: a fingerprint of products, variants and quantities (not prices),
   independent of line order. Clients may ignore it; checkout will use it in E4.
-- **Checkout does not sell variants yet.** A cart containing a variant line is refused at checkout with `422 variant_checkout_unavailable`,
-  and nothing changes (no order, no stock movement). This guard is removed in E4.
+
+## E4: checkout, order lines and restocking
+
+No migration. Checkout now sells variants.
+
+- **Authority.** Checkout re-reads everything from rows it has LOCKED: products first (ascending id), then the variants in the cart
+  (ascending id): the same order in checkout and restock, so concurrent buyers cannot deadlock. Price is the variant's override or the
+  product's price from those rows, never the cart's snapshot or anything the client sent; stock is checked and moved on the unit sold
+  (the variant, or the simple product). A changed price returns 409 `price_changed` (now naming `variant_id` and `sku`), refreshes the
+  cart and takes nothing; checking out again charges the new price. A variant that is inactive, whose product is not on sale, or that has
+  too little stock refuses the whole checkout and changes nothing.
+- **Order lines are frozen.** Each line stores the SKU (the variant's), the variant id and a `variant_snapshot` (SKU, selected options as
+  words, whether the price came from an override or the product, the product price and override at that moment). Later renames, price
+  edits or deactivation never change them (the database also refuses edits to order lines). `GET /orders/...` shows `variant_id`, `sku`
+  and `variant.options` per item; orders without variants show `variant: null` as before.
+- **Ledger.** Sale rows now name the order (`stock_movements.order_id`), for products and variants.
+- **Replay protection.** An order stores `cart_digest` (products, variants, quantities, not prices). The same idempotency key with the same
+  address is answered as before: an empty cart (the normal retry) returns the original order, and so does a cart holding the same lines. A
+  NON-empty cart with DIFFERENT lines under a reused key is refused with the existing `409 idempotency_key_reused` and left untouched.
+  A different address is refused as before. Orders made before this change have no digest and compare on the address alone, as before.
+  Simultaneous requests with one key still make one order (the per-key lock is unchanged).
+- **Restocking is per order line.** Cancelling an unpaid order, the expiry sweep, and a provider-confirmed cancel-with-refund of a paid,
+  unshipped order put each line back: to its VARIANT if it has one. Each line is recorded once as a restock event
+  (`order_item_restocks`, unique per line and event); a retry finds it recorded and adds nothing, and the database refuses to restock a
+  line beyond what was bought. A full refund of a SHIPPED order does not restock (unchanged policy); external partial refunds never touch
+  stock. `orders.stock_released_at` still marks whole-order release; the database does not additionally force it to equal "every line fully
+  restocked" because existing guard tests set that flag by hand.
+- A line bought as a simple product whose product has since gained options cannot be restocked (there is no variant to return it to); the
+  conversion operation (E5) refuses while any order that could still be restocked exists, so this guard should never fire.

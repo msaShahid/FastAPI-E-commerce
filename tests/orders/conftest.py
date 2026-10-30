@@ -82,6 +82,8 @@ class FakeOrderRepository:
         currency=None,
         shipping_snapshot=None,
         tax_snapshot=None,
+        id=None,
+        cart_digest=None,
         guest_token=None,
         guest_email=None,
         shipping_recipient_name=None,
@@ -92,9 +94,10 @@ class FakeOrderRepository:
         shipping_postal_code=None,
         shipping_country=None,
     ) -> Order:
-        order_id = uuid4()
+        order_id = id or uuid4()
         order = Order(
             id=order_id,
+            cart_digest=cart_digest,
             user_id=user_id,
             guest_token=guest_token,
             guest_email=guest_email,

@@ -5,7 +5,7 @@ import uuid
 from types import SimpleNamespace
 
 from sqlalchemy import text
-from test_order_payment_lifecycle import ADDR, category  # noqa: F401
+from test_order_payment_lifecycle import category  # noqa: F401
 from test_query_counts import count_statements, statements  # noqa: F401
 from test_variant_pricing import option_product, simple_product
 
@@ -194,18 +194,6 @@ def test_the_digest_is_independent_of_line_order_and_distinguishes_variants_and_
     assert cart_digest([line(1, None, 2), line(2, 5, 1)]) == cart_digest([line(2, 5, 1), line(1, None, 2)])
     assert cart_digest([line(1, None, 2)]) != cart_digest([line(1, 7, 2)]) != cart_digest([line(1, None, 3)])
     assert cart_digest([]) == cart_digest([])
-
-
-async def test_checkout_refuses_a_cart_with_a_variant_until_it_is_variant_aware_and_changes_nothing(client, db_session, category, admin_headers):
-    pid, (v,) = await option_product(db_session, category, [(None, 5, "active")])
-    client.cookies.clear()
-    assert (await add(client, None, variant_id=v, quantity=2)).status_code == 201
-    r = await client.post(f"{API}/orders/checkout", json={"shipping_address": ADDR, "guest_email": "g@example.com"}, headers={"Idempotency-Key": "var-1"})
-    assert r.status_code == 422 and r.json()["code"] == "variant_checkout_unavailable"
-    await db_session.rollback()
-    assert (await db_session.execute(text("SELECT stock FROM product_variants WHERE id = :v"), {"v": v})).scalar_one() == 5
-    assert (await db_session.execute(text("SELECT count(*) FROM orders"))).scalar_one() == 0
-    assert len((await cart(client))["items"]) == 1                              # the cart is intact
 
 
 async def test_reading_a_cart_costs_a_constant_number_of_queries_however_many_variants_it_holds(client, db_session, category, statements):

@@ -79,3 +79,21 @@ def test_products_with_options_are_consistent_and_deliberately_incomplete():
         possible *= len(values)
     assert len(tee.variants) < possible                                           # the demo shows combinations that do not exist
     assert any(stock == 0 for _sku, _o, stock, _p in tee.variants) and any(p is not None for _s, _o, _st, p in tee.variants)   # sold out, and a price override
+
+
+def test_demo_reviews_are_only_by_customers_who_bought_the_product_and_wishlists_hold_real_products():
+    variant_to_product = {sku: vp.sku for vp in d.VARIANT_PRODUCTS for sku, *_ in vp.variants}
+    bought = {}
+    for plan in d.ORDERS:
+        if plan.customer is not None and plan.outcome in ("fulfilled", "paid"):    # a refunded or cancelled order would not qualify
+            bought.setdefault(plan.customer, set()).update(variant_to_product.get(sku, sku) for sku, _q in plan.items)
+    seen = set()
+    for customer, sku, rating, title, body in d.DEMO_REVIEWS:
+        product = variant_to_product.get(sku, sku)
+        assert product in bought.get(customer, set()), (customer, sku)
+        assert 1 <= rating <= 5 and (title is None or len(title) <= 100) and (body is None or len(body) <= 2000)
+        assert (customer, product) not in seen                                      # one review per customer per product
+        seen.add((customer, product))
+    catalogue = {p.sku for p in d.PRODUCTS if p.status == "active"} | {vp.sku for vp in d.VARIANT_PRODUCTS}
+    for customer, skus in d.DEMO_WISHLISTS:
+        assert 0 <= customer < len(d.CUSTOMERS) and set(skus) <= catalogue and len(skus) == len(set(skus))

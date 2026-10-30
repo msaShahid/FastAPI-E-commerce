@@ -1,6 +1,6 @@
-# Product variants: database, stock ledger, pricing and deployment (milestones E1 to E4)
+# Product variants: database, stock ledger, pricing and deployment (milestones E1 to E5)
 
-Status: E1 delivered the **database foundation**, E2 the **pricing and availability** reads, E3 the **cart**, E4 **checkout and restocking**. No API creates variants yet (E5). What changes for users today is
+Status: E1 delivered the **database foundation**, E2 the **pricing and availability** reads, E3 the **cart**, E4 **checkout and restocking**, E5 **administration, conversion and reports**. What changes for users today is
 listed under "What E1 changes". Design baseline: Product Variants Design v2 plus the final instructions.
 
 ## What E1 adds
@@ -154,3 +154,43 @@ No migration. Checkout now sells variants.
   restocked" because existing guard tests set that flag by hand.
 - A line bought as a simple product whose product has since gained options cannot be restocked (there is no variant to return it to); the
   conversion operation (E5) refuses while any order that could still be restocked exists, so this guard should never fire.
+
+## E5: administering options and variants, stock, conversion, reports
+
+All administrator-only, under `/api/v1/products/{id}/...`. Each call that changes a product answers with the updated product detail
+(options with their ids, variants), so a screen can simply redraw. Nothing is generated: a variant exists only because an administrator
+created it.
+
+| Call | Does |
+|---|---|
+| `PUT /options` | Define the product's option sets (1 to 3, each with its values; `[]` makes it a simple product again). Only for a product with NO variants, no stock and no carts or orders. |
+| `POST /options/{option_id}/values`, `PATCH`/`DELETE /option-values/{value_id}` | Add, rename, or remove an unused value (renames never change placed orders). Option and value ids are in the product detail (`options[].id`, `options[].value_ids`). |
+| `POST /variants`, `POST /variants/bulk` | Create one, or up to 100 all-or-nothing: a value for EVERY option, its own SKU, stock, optional price override. Conflicts: `409 variant_combination_exists`, `409 sku_already_exists` (SKUs are unique across products and variants, ignoring case). |
+| `GET /variants/missing-combinations` | Lists the combinations that do not exist yet (capped at 500). Creates nothing. |
+| `PATCH /variants/{vid}` | Change the price override (`null` removes it) or the status. SKU, option values and stock cannot be changed here. Deactivating the last active variant of an ACTIVE product is refused (`409 product_needs_active_variant`); so is activating a product that has none. |
+| `DELETE /variants/{vid}` | Only while it never had stock and is in no cart or order; otherwise `409 variant_in_use`: set it inactive. |
+| `POST /variants/{vid}/stock`, `POST /stock` | `{"set_to": n}` or `{"delta": n}` plus a mandatory `reason`. Recorded in the stock ledger with who, why, before and after. `POST /stock` is for simple products; a product with options answers `422 use_variant_stock`. |
+| `GET /stock-history` | The product's ledger, newest first, paginated; `?variant_id=` narrows it. |
+| `POST /convert-to-variants` | See below. |
+
+### Converting a product that already exists
+
+Body: `options`, `variants` (with their stock), `expected_stock` and a `reason`. In ONE transaction, with the product row locked (so
+checkouts and cart adds for it wait):
+1. refuse if it already has options or is archived;
+2. `expected_stock` must equal the product's current stock (else `409 stock_changed`: nothing is changed, review and send again);
+3. the variants' stock must add up to it EXACTLY (else `422 stock_allocation_mismatch`): none is lost or invented;
+4. refuse while any order containing it is unpaid or paid-but-unshipped (`409 product_has_open_orders`): its stock could not be returned
+   to a variant. Shipped, refunded and cancelled orders do not block, and stay exactly as they are (`variant_id` null, SKU snapshot kept);
+5. remove the product's cart lines (carts are not records; the count is returned as `cart_lines_removed`);
+6. move the stock (ledger: `conversion` rows, product down, variants up) and create the options and variants.
+Any failure rolls back everything, including the cart lines. Two simultaneous conversions of one product have one winner.
+
+### Reports and the demo
+
+- `GET /admin/reports/low-stock` lists what is SOLD: simple products and variants (with `variant_id` and `options`), never the parent of a
+  product with options. `GET /admin/reports/top-products?group_by=variant` lists each variant separately (default `product` merges them).
+- The demo seed now creates two products with options through these endpoints ("Everyday Crew Tee": four sizes, three colours, only eight
+  of the twelve combinations, one sold out, one with its own price; "Cotton Bedsheet Set": three sizes with their own prices) and two orders
+  and a cart that use them.
+- Not built, on purpose: per-variant images, variant-specific tax classification, and automatic generation of combinations.

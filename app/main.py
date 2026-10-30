@@ -27,14 +27,20 @@ from app.modules.audit.api.router import audit_router
 from app.modules.auth.api.router import auth_router
 from app.modules.cart.api.router import cart_router
 from app.modules.categories.api.router import category_router
+from app.modules.email_settings.api.router import email_settings_router
 from app.modules.orders.api.router import order_router
 from app.modules.payments.api.lifecycle_router import lifecycle_router
 from app.modules.payments.api.provider_router import provider_router
 from app.modules.payments.api.router import payment_router
 from app.modules.products.api.router import product_router
+from app.modules.reports.api.router import reports_router
+from app.modules.reviews.api.router import admin_reviews_router, reviews_router, summaries_router
+from app.modules.shipments.api.router import shipment_router
 from app.modules.store.api.router import store_router
 from app.modules.tax.api.router import tax_router
 from app.modules.users.api.router import users_router
+from app.modules.variants.api.router import variants_router
+from app.modules.wishlist.api.router import wishlist_router
 
 settings = get_settings()
 configure_logging(settings.log_level, settings.log_format)
@@ -107,6 +113,14 @@ app.include_router(tax_router, prefix=settings.api_v1_prefix)
 app.include_router(store_router, prefix=settings.api_v1_prefix)
 app.include_router(lifecycle_router, prefix=settings.api_v1_prefix)
 app.include_router(provider_router, prefix=settings.api_v1_prefix)
+app.include_router(email_settings_router, prefix=settings.api_v1_prefix)
+app.include_router(reports_router, prefix=settings.api_v1_prefix)
+app.include_router(shipment_router, prefix=settings.api_v1_prefix)
+app.include_router(variants_router, prefix=settings.api_v1_prefix)
+app.include_router(reviews_router, prefix=settings.api_v1_prefix)
+app.include_router(summaries_router, prefix=settings.api_v1_prefix)
+app.include_router(admin_reviews_router, prefix=settings.api_v1_prefix)
+app.include_router(wishlist_router, prefix=settings.api_v1_prefix)
 
 
 app.include_router(graphql_router, prefix="/graphql")

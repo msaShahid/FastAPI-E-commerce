@@ -193,6 +193,36 @@ class ProductRepository:
         )
         return {product.id: product for product in result.scalars().all()}
 
+    async def get_variants_for_update(self, variant_ids: Iterable[int]) -> dict[int, ProductVariant]:
+        """Locks several variants with ONE query, in ascending id order. Always called AFTER the products are locked (products first,
+        then variants, everywhere), so concurrent checkouts and restocks cannot deadlock. populate_existing: see get_by_id_for_update."""
+        ids = sorted(set(variant_ids))
+        if not ids:
+            return {}
+        result = await self.db.execute(
+            select(ProductVariant).where(ProductVariant.id.in_(ids)).order_by(ProductVariant.id).with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return {variant.id: variant for variant in result.scalars().all()}
+
+    async def adjust_variant_stock_many(self, variants: dict[int, ProductVariant], deltas: dict[int, int]) -> None:
+        """The variant counterpart of adjust_stock_many: one UPDATE for all of them (negative = sell, positive = restock). The caller holds
+        the row locks and has checked the stock; the CHECK (stock >= 0) is the backstop, and the affected-row count is verified."""
+        deltas = {variant_id: delta for variant_id, delta in deltas.items() if delta}
+        if not deltas:
+            return
+        result = await self.db.execute(
+            update(ProductVariant)
+            .where(ProductVariant.id.in_(deltas))
+            .values(stock=ProductVariant.stock + case(deltas, value=ProductVariant.id), updated_at=func.now())
+            .execution_options(synchronize_session=False)
+        )
+        if result.rowcount != len(deltas):
+            raise RuntimeError("a variant's stock could not be adjusted: it disappeared while locked")
+        for variant_id, delta in deltas.items():
+            variant = variants[variant_id]
+            set_committed_value(variant, "stock", variant.stock + delta)
+
     async def adjust_stock_many(
         self, products: dict[int, Product], deltas: dict[int, int]
     ) -> None:

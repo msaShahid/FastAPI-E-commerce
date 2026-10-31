@@ -98,7 +98,7 @@ async def _build_document(db: AsyncSession, order: Order, profile: BusinessProfi
         rows.append({
             "sr": number_in_list, "description": item.product_name_snapshot + label, "sku": item.sku_snapshot, "hsn": tax["hsn_code"],
             "treatment": tax["treatment"], "quantity": item.quantity, "unit_price_paise": item.price_cents_snapshot,
-            "value_paise": tax["value_paise"], "discount_paise": tax.get("discount_paise", 0), "shipping_paise": tax["shipping_paise"], "taxable_paise": tax["taxable_paise"],
+            "value_paise": tax["value_paise"], "shipping_paise": tax["shipping_paise"], "taxable_paise": tax["taxable_paise"],
             "rates": tax["rates"], "cgst_paise": tax["cgst_paise"], "sgst_paise": tax["sgst_paise"], "igst_paise": tax["igst_paise"],
             "tax_paise": tax["tax_paise"], "round_off_paise": tax["round_off_paise"], "gross_paise": tax["gross_paise"],
         })
@@ -119,9 +119,7 @@ async def _build_document(db: AsyncSession, order: Order, profile: BusinessProfi
         "rounding_policy": snap["rounding_policy"], "shipping_tax_treatment": snap["shipping_tax_treatment"],
         "lines": rows,
         "shipping": {"charged_paise": order.shipping_cents, "taxed": snap["shipping"]["taxed"], "untaxed_paise": snap["shipping"]["untaxed_paise"]},
-        "totals": {**totals, "goods_paise": order.subtotal_cents, "discount_paise": order.discount_cents, "shipping_paise": order.shipping_cents,
-                   "grand_total_paise": order.total_cents},
-        "coupon": ({"code": order.coupon_code} if order.coupon_code else None),
+        "totals": {**totals, "goods_paise": order.subtotal_cents, "shipping_paise": order.shipping_cents, "grand_total_paise": order.total_cents},
         "amount_in_words": amount_in_words(order.total_cents, order.currency or "inr"),
         "footer": profile.footer,
         "reverse_charge": False,

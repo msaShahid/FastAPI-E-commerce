@@ -50,7 +50,7 @@
   <tbody>
   {% for l in d.lines %}
     <tr>
-      <td>{{ l.sr }}</td><td>{{ l.description }}<br><span class="small">SKU {{ l.sku }}{% if l.treatment != "taxable" %} &middot; {{ l.treatment | replace("_", " ") }}{% endif %}{% if l.shipping_paise %} &middot; includes shipping {{ l.shipping_paise | inr }}{% endif %}{% if l.discount_paise %} &middot; after discount {{ l.discount_paise | inr }}{% endif %}</span></td>
+      <td>{{ l.sr }}</td><td>{{ l.description }}<br><span class="small">SKU {{ l.sku }}{% if l.treatment != "taxable" %} &middot; {{ l.treatment | replace("_", " ") }}{% endif %}{% if l.shipping_paise %} &middot; includes shipping {{ l.shipping_paise | inr }}{% endif %}</span></td>
       <td>{{ l.hsn }}</td><td class="n">{{ l.quantity }}</td><td class="n">{{ l.unit_price_paise | inr }}</td><td class="n">{{ l.taxable_paise | inr }}</td>
       {% if d.supply_type == "intra_state" %}
         <td class="n">{{ l.cgst_paise | inr }}<br><span class="small">{{ l.rates.cgst }}%</span></td><td class="n">{{ l.sgst_paise | inr }}<br><span class="small">{{ l.rates.sgst }}%</span></td>
@@ -63,8 +63,6 @@
   </tbody>
 </table>
 <table style="width:55%; margin-left:auto">
-  {% if d.totals.discount_paise %}<tr><td>Goods before discount</td><td class="n">{{ d.totals.goods_paise | inr }}</td></tr>
-  <tr><td>Discount{% if d.coupon %} (coupon {{ d.coupon.code }}){% endif %}</td><td class="n">-{{ d.totals.discount_paise | inr }}</td></tr>{% endif %}
   <tr><td>Taxable value</td><td class="n">{{ d.totals.taxable_paise | inr }}</td></tr>
   {% if d.supply_type == "intra_state" %}
   <tr><td>CGST</td><td class="n">{{ d.totals.cgst_paise | inr }}</td></tr><tr><td>SGST / UTGST</td><td class="n">{{ d.totals.sgst_paise | inr }}</td></tr>

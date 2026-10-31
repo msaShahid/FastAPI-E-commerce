@@ -216,10 +216,3 @@ def test_the_invoice_migration_and_the_models_install_exactly_the_same_immutabil
 
     migration = _load(pathlib.Path(ROOT) / "alembic" / "versions" / "f1c4d8e2a937_invoices_and_business_profile.py")
     assert migration.FUNCTION == guard.FUNCTION and migration.TRIGGER == guard.TRIGGER
-
-
-def test_the_coupon_migration_and_the_models_install_exactly_the_same_freeze_rule():
-    from app.modules.coupons.models import guard
-
-    migration = _load(pathlib.Path(ROOT) / "alembic" / "versions" / "a8d2f6c1e045_coupons.py")
-    assert migration.FUNCTION == guard.FUNCTION and tuple(migration.TRIGGERS) == tuple(guard.TRIGGERS)

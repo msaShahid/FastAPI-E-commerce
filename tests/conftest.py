@@ -58,9 +58,9 @@ async def _clean_database(test_engine):
             # store_settings is truncated too: its guard refuses DELETE once orders exist; so is the append-only stock ledger.
             await conn.execute(text(
                 "TRUNCATE business_tax_settings, tax_rules, tax_classifications, gst_registrations, "
-                "store_settings, stock_movements CASCADE"))
+                "store_settings, stock_movements, invoices CASCADE"))
             for table in reversed(Base.metadata.sorted_tables):
-                if table.name not in GUARDED_TABLES and table.name not in ("store_settings", "stock_movements"):
+                if table.name not in GUARDED_TABLES and table.name not in ("store_settings", "stock_movements", "invoices"):
                     await conn.execute(table.delete())
 
     async def seed_store_currency():

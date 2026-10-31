@@ -231,7 +231,7 @@ async def test_gst_checkout_is_blocked_when_the_registration_is_not_valid_today(
     assert r.status_code == 422 and "registration_not_valid_on_date" in r.json()["detail"]
 
 
-async def test_a_fully_configured_business_is_still_refused_because_no_calculator_exists(
+async def test_a_fully_configured_business_is_taxed_by_the_gst_calculator(
     client, admin_headers, admin2, db_session, monkeypatch
 ):
     monkeypatch.setattr(get_settings(), "tax_calculation_enabled", True)
@@ -239,8 +239,10 @@ async def test_a_fully_configured_business_is_still_refused_because_no_calculato
     rid = await registration(client, admin_headers, admin2)
     await make_settings(client, admin_headers, admin2, rid)
     r = await _checkout(client, pid)
-    assert r.status_code == 503 and r.json()["code"] == "tax_engine_not_implemented"
-    assert (await db_session.execute(text("SELECT count(*) FROM orders"))).scalar_one() == 0
+    assert r.status_code == 201, r.text
+    snapshot = r.json()["tax_snapshot"]
+    assert snapshot["engine"] == "gst" and snapshot["gst_calculated"] is True and snapshot["place_of_supply"]["state_code"] == "27"
+    assert (await db_session.execute(text("SELECT count(*) FROM orders"))).scalar_one() == 1
 
 
 # ------------------------------------------------------------------ readiness report
@@ -252,7 +254,7 @@ async def _blocker_codes(client, h):
 async def test_a_fresh_business_is_not_ready_and_the_report_says_exactly_why(client, admin_headers):
     body, codes = await _blocker_codes(client, admin_headers)
     assert body["ready"] is False and body["settings_id"] is None
-    assert codes == {"no_approved_tax_settings", "gst_calculator_not_implemented"}
+    assert codes == {"no_approved_tax_settings"}
     assert body["flags"] == {"tax_calculation_enabled": False, "tax_classification_required": False}
     assert body["payments"]["live_payments_enabled"] is False and body["payments"]["payment_currency"] == "usd"
     # INR is never assumed: the test store is configured in USD and USD is enabled, so no payment blocker.
@@ -284,8 +286,7 @@ async def test_readiness_counts_active_products_that_cannot_be_taxed(client, adm
     await add("NORULE", cls)
     body, codes = await _blocker_codes(client, admin_headers)
     assert body["settings_id"] == sid
-    assert {"active_products_unclassified", "active_products_without_effective_rule",
-            "gst_calculator_not_implemented"} <= codes
+    assert {"active_products_unclassified", "active_products_without_effective_rule"} <= codes
     assert body["counts"] == {"active_products": 2, "active_unclassified": 1,
                               "active_classification_not_approved": 0, "active_without_effective_rule": 1}
 
@@ -297,19 +298,19 @@ async def test_readiness_counts_active_products_that_cannot_be_taxed(client, adm
     p = (await client.get(f"{API}/products", params={"search": "NOCLASS"}, headers=admin_headers)).json()["items"][0]
     await client.patch(f"{API}/products/{p['id']}", json={"tax_classification_id": cls}, headers=admin_headers)
     body, codes = await _blocker_codes(client, admin_headers)
-    assert codes == {"gst_calculator_not_implemented"}  # everything else is satisfied
+    assert codes == set()  # everything else is satisfied: the calculator exists, so the report is green
 
 
-async def test_the_unimplemented_calculator_is_the_only_gate_left_when_everything_else_is_configured(
+async def test_the_report_is_green_when_everything_is_configured_and_the_calculator_gate_still_works(
     client, admin_headers, admin2, monkeypatch
 ):
     rid = await registration(client, admin_headers, admin2)
     await make_settings(client, admin_headers, admin2, rid)
     body, codes = await _blocker_codes(client, admin_headers)
-    assert codes == {"gst_calculator_not_implemented"} and body["ready"] is False
-    monkeypatch.setattr("app.modules.tax.services.tax_service.GST_CALCULATOR_IMPLEMENTED", True)
+    assert codes == set() and body["ready"] is True
+    monkeypatch.setattr("app.modules.tax.services.tax_service.GST_CALCULATOR_IMPLEMENTED", False)   # the kill switch is still honoured
     body, codes = await _blocker_codes(client, admin_headers)
-    assert codes == set() and body["ready"] is True  # only then can the report turn green
+    assert codes == {"gst_calculator_not_implemented"} and body["ready"] is False
 
 
 async def test_the_readiness_report_changes_nothing(client, admin_headers, admin2, db_session):

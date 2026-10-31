@@ -249,19 +249,21 @@ async def test_gst_enabled_with_no_rule_at_all_is_blocked(client, admin_headers,
     assert r.status_code == 422 and "no_applicable_rule" in r.json()["detail"]
 
 
-@pytest.mark.parametrize("treatment", ["taxable", "exempt"])
-async def test_a_ready_cart_is_still_refused_because_the_gst_engine_is_not_implemented(
-    client, admin_headers, admin2, category, db_session, gst_on, treatment
+@pytest.mark.parametrize(("treatment", "tax"), [("taxable", 50), ("exempt", 0)])
+async def test_a_ready_cart_is_taxed_by_the_gst_calculator_and_an_exempt_one_says_why_it_is_zero(
+    client, admin_headers, admin2, category, db_session, gst_on, treatment, tax
 ):
     cid = await classification(client, admin_headers, admin2)
     await approved_rule(client, admin_headers, admin2, cid, treatment=treatment)
     await approved_settings(client, admin_headers, admin2)  # the business configuration is complete too
     p = await product(client, admin_headers, category, f"RDY-{treatment}", cid=cid)
     r = await checkout(client, [p["id"]])
-    assert r.status_code == 503 and r.json()["code"] == "tax_engine_not_implemented"
-    assert await order_count(db_session) == 0                # no zero-tax order, even for an "exempt" rule
-    assert await stock(client, p["id"]) == 10                # no stock mutation
-    assert len((await client.get(f"{API}/cart")).json()["items"]) == 1  # the cart is untouched
+    assert r.status_code == 201, r.text
+    order = r.json()
+    assert order["tax_cents"] == tax                          # Rs 10.00 at 2.5% + 2.5% = 25 + 25 paise; exempt: nothing, but on a rule
+    line = order["tax_snapshot"]["lines"][0]
+    assert line["treatment"] == treatment and line["hsn_code"] == "1234" and line["taxable_paise"] == 1000
+    assert await order_count(db_session) == 1 and await stock(client, p["id"]) == 9
 
 
 async def test_mixed_cart_names_only_the_products_that_block_tax(client, admin_headers, admin2, category, gst_on):

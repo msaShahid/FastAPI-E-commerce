@@ -19,7 +19,10 @@ from app.modules.auth.models.user import User  # noqa: F401
 from app.modules.cart.models.cart import Cart  # noqa: F401
 from app.modules.cart.models.cart_item import CartItem  # noqa: F401
 from app.modules.categories.models.category import Category  # noqa: F401
+from app.modules.coupons.models.coupon import Coupon  # noqa: F401
 from app.modules.email_settings.models.email_provider_config import EmailProviderConfig  # noqa: F401
+from app.modules.invoices.models.business_profile import BusinessProfile  # noqa: F401
+from app.modules.invoices.models.invoice import Invoice, InvoiceSequence  # noqa: F401
 from app.modules.orders.models.currency_remediation import OrderCurrencyRemediation  # noqa: F401
 from app.modules.orders.models.order import Order  # noqa: F401
 from app.modules.orders.models.order_item import OrderItem  # noqa: F401

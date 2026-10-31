@@ -262,6 +262,10 @@ class Settings(BaseSettings):
     # production (it describes the whole admin surface). Set true/false to override.
     api_docs_enabled: bool | None = None
 
+    # --- Customer returns (gap H) ---
+    # How many days after delivery (or, if no delivery date is recorded, after dispatch) a customer may ask to return goods. 0 switches returns off.
+    return_window_days: int = Field(default=7, ge=0, le=365)
+
     # --- Public stock display (gap E) ---
     # "availability" (default): the public sees in_stock / low_stock / out_of_stock, never a count. "exact": the public sees the count.
     # Administrators always see exact stock.

@@ -13,8 +13,10 @@ done from the code.
       run each provider's readiness check, and complete a real test-mode payment, a refund, and a webhook delivery end to end. Until
       then `LIVE_PAYMENTS_ENABLED` must stay `false`. **Payments have only been tested against a fake provider.**
 - [ ] **(you)** Email: configure a real email service in the admin email settings and send yourself a password reset and a verification email.
-- [ ] **(you)** GST: the tax rate in use is an interim flat rate, not a GST calculation. Have the tax approach reviewed, and enter the HSN,
-      rates and registration data, before billing real customers in India.
+- [ ] **(you)** GST: the GST calculator and tax invoices are built (`docs/GST.md`) but OFF by default; the store uses an interim flat rate until you
+      switch it on. Have your tax professional confirm the assumptions listed in `docs/GST.md`, enter the registration, rates per HSN, configuration and
+      business profile (two administrators approve each), then set `TAX_CALCULATION_ENABLED=true` and `TAX_CLASSIFICATION_REQUIRED=true`.
+      Not covered: B2B/GSTIN invoices, exports, e-invoicing (IRN) and e-way bills.
 - [ ] **(you)** HTTPS in front of the API, `FORWARDED_ALLOW_IPS` set to the proxy, `CORS_ORIGINS` and `FRONTEND_BASE_URL` set to the real
       storefront (https), and the storefront and API on the same site (see the guide, section 3).
 - [ ] **(you)** Secrets: strong random `JWT_SECRET` and `PROVIDER_SECRETS_KEY`, real database and Redis passwords, none of the example values.
@@ -34,6 +36,4 @@ done from the code.
 
 | Feature | What is needed |
 |---|---|
-| GST tax invoice | The business's GST registration and the approved rates |
-| Coupons and discounts | Which discount types, and whether they can be combined |
 | Customer returns | The returns policy: window, who pays, refund versus replacement |

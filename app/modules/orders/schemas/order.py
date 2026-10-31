@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from pydantic import BaseModel, EmailStr, Field, model_validator
 from sqlalchemy import inspect as sa_inspect
 
 from app.modules.products.schemas.product import VariantOptionRead
@@ -27,7 +27,6 @@ class OrderItemRead(BaseModel):
     price_cents_snapshot: int
     quantity: int
     line_total_cents: int
-    discount_cents: int = 0              # this line's share of the order's coupon discount
 
     model_config = {"from_attributes": True, "populate_by_name": True}
 
@@ -66,15 +65,6 @@ class CheckoutRequest(BaseModel):
     # for a logged-in checkout, which uses the account's own email.
     guest_email: EmailStr | None = None
 
-    # An optional discount code (one per order, any letter case). Check it first with POST /cart/coupon/preview.
-    coupon_code: str | None = Field(default=None, max_length=40)
-
-    @field_validator("coupon_code")
-    @classmethod
-    def _clean_coupon_code(cls, v: str | None) -> str | None:
-        v = (v or "").strip().upper()
-        return v or None
-
     @model_validator(mode="after")
     def _one_address_source(self) -> "CheckoutRequest":
         if self.address_id is not None and self.shipping_address is not None:
@@ -93,8 +83,6 @@ class OrderRead(BaseModel):
     shipping_cents: int
     tax_cents: int                       # GST ADDED to the total (0 when the listed prices already include GST)
     tax_included_cents: int = 0          # GST already contained in the listed prices (inclusive pricing)
-    discount_cents: int = 0              # what a coupon took off the goods (total = subtotal - discount + shipping + tax)
-    coupon_code: str | None = None
     total_cents: int
     currency: str | None = None
     shipping_snapshot: dict | None = None
@@ -120,8 +108,6 @@ class OrderRead(BaseModel):
             "subtotal_cents": order.subtotal_cents,
             "shipping_cents": order.shipping_cents,
             "tax_cents": order.tax_cents,
-            "discount_cents": order.discount_cents,
-            "coupon_code": order.coupon_code,
             "tax_included_cents": ((order.tax_snapshot or {}).get("totals") or {}).get("tax_included_paise", 0),
             "total_cents": order.total_cents,
             "currency": order.currency,

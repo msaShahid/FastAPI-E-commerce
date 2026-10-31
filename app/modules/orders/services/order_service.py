@@ -20,10 +20,6 @@ from app.modules.cart.exceptions.cart_exceptions import (
 )
 from app.modules.cart.repositories.cart_repository import CartRepository
 from app.modules.cart.services.cart_digest import cart_digest
-from app.modules.coupons.services.coupon_service import evaluate as evaluate_coupon
-from app.modules.coupons.services.coupon_service import find_by_code as find_coupon
-from app.modules.coupons.services.coupon_service import snapshot as coupon_snapshot_of
-from app.modules.coupons.services.discount import Discount, share_discount
 from app.modules.invoices.services.invoice_service import issue_invoice
 from app.modules.orders.exceptions.order_exceptions import (
     CheckoutNotConfiguredError,
@@ -161,7 +157,6 @@ class OrderService:
                 quantity=item["quantity"],
                 unit_price_paise=item["price_cents_snapshot"],
                 classification_id=locked_products[item["product_id"]].tax_classification_id,
-                discount_paise=item.get("discount_cents", 0),
             )
             for item in order_items_data
         ]
@@ -186,16 +181,13 @@ class OrderService:
         address_id: int | None,
         shipping_address: ShippingAddressInput | None,
         guest_email: str | None,
-        coupon_code: str | None = None,
     ) -> str:
-        """Stable hash of everything the customer sent that shapes the order. (The coupon enters it only when there is one, so the
-        hash of every request without a coupon is exactly what it always was.)"""
+        """Stable hash of everything the customer sent that shapes the order."""
         canonical = json.dumps(
             {
                 "address_id": address_id,
                 "shipping_address": asdict(shipping_address) if shipping_address else None,
                 "guest_email": guest_email,
-                **({"coupon_code": coupon_code} if coupon_code else {}),
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -257,7 +249,6 @@ class OrderService:
         idempotency_key: str,
         address_id: int | None = None,
         shipping_address: ShippingAddressInput | None = None,
-        coupon_code: str | None = None,
     ) -> Order:
         """
         Idempotency is scoped per-identity (see the composite unique
@@ -282,7 +273,6 @@ class OrderService:
             address_id=address_id,
             shipping_address=shipping_address,
             guest_email=guest_email if is_guest else None,
-            coupon_code=coupon_code,
         )
 
         # Concurrent requests with the same (identity, key) take turns here, so
@@ -438,34 +428,15 @@ class OrderService:
         # Shipping and tax are decided BEFORE any stock change, so a configuration or tax problem
         # leaves no mutation behind (and the request's transaction is rolled back anyway).
         shipping_cents = self._calculate_shipping(subtotal_cents)
-        coupon = None
-        discount = Discount(0, 0)
-        if coupon_code:
-            # The coupon row is locked from here to the end of the transaction: its limits are counted and the order is created as one step,
-            # so two simultaneous checkouts cannot both take the last use. (Lock order: products, variants, then the coupon.)
-            coupon = await find_coupon(self.repository.db, coupon_code, lock=True)
-            discount = await evaluate_coupon(
-                self.repository.db, coupon, subtotal_cents=subtotal_cents, shipping_cents=shipping_cents,
-                user_id=user_id, guest_email=guest_email if is_guest else None,
-            )
-            if discount.goods_cents:
-                # The free-shipping threshold counts what the customer actually pays for the goods.
-                shipping_cents = self._calculate_shipping(subtotal_cents - discount.goods_cents)
-                shares = share_discount(discount.goods_cents, [i["price_cents_snapshot"] * i["quantity"] for i in order_items_data])
-                for line, share in zip(order_items_data, shares, strict=True):
-                    line["discount_cents"] = share
-            else:
-                shipping_cents = 0  # a free-shipping coupon
-        net_subtotal_cents = subtotal_cents - discount.goods_cents  # GST is worked out on what the customer pays for the goods
         tax_result = await self._calculate_tax(
             order_items_data=order_items_data,
             locked_products=locked_products,
-            subtotal_cents=net_subtotal_cents,
+            subtotal_cents=subtotal_cents,
             shipping_cents=shipping_cents,
             shipping_columns=shipping_columns,
         )
         tax_cents = tax_result.tax_paise
-        total_cents = net_subtotal_cents + shipping_cents + tax_cents
+        total_cents = subtotal_cents + shipping_cents + tax_cents
 
         # One UPDATE for every product's stock, not one per cart line.
         async with stock_change(self.product_repository, "sale", order_id=order_id):
@@ -485,10 +456,6 @@ class OrderService:
             shipping_snapshot=self._shipping_snapshot(shipping_cents, currency, delivery),
             items=order_items_data,
             subtotal_cents=subtotal_cents,
-            discount_cents=discount.goods_cents,
-            coupon_id=coupon.id if coupon else None,
-            coupon_code=coupon.code if coupon else None,
-            coupon_snapshot=coupon_snapshot_of(coupon, discount) if coupon else None,
             shipping_cents=shipping_cents,
             tax_cents=tax_cents,
             tax_snapshot={

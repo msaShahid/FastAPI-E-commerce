@@ -29,6 +29,17 @@ class StoreService:
             configured=configured, warnings=warnings,
         )
 
+    async def _tax_unavailable_reason(self, settings) -> str | None:
+        """Why tax cannot be calculated right now, or None. With the GST calculator on it needs an approved business tax configuration
+        under a valid registration (each product's classification and rule is checked at checkout); otherwise a flat interim rate."""
+        if settings.tax_calculation_enabled:
+            from app.modules.tax.engine import evaluate_config, india_today
+            from app.modules.tax.repositories.tax_repository import TaxRepository
+
+            _config, blockers = await evaluate_config(TaxRepository(self.repo.db), india_today())
+            return "GST is switched on but the business tax configuration is not approved and in force" if blockers else None
+        return None if settings.tax_rate_percent is not None else "Tax is not configured"
+
     async def read_public_settings(self) -> StoreSettingsRead:
         """What a storefront may know about how buying works here, and why buying might currently be impossible."""
         settings = get_settings()
@@ -38,8 +49,9 @@ class StoreService:
             reasons.append("The store currency is not set")
         if settings.flat_shipping_cents is None:
             reasons.append("Shipping is not configured")
-        if settings.tax_rate_percent is None:
-            reasons.append("Tax is not configured")
+        tax_reason = await self._tax_unavailable_reason(settings)
+        if tax_reason:
+            reasons.append(tax_reason)
         payments_ok = currency.currency is not None and not currency.warnings
         if currency.currency is not None and not payments_ok:
             reasons.append("Payments are not enabled for the store currency")
@@ -50,8 +62,7 @@ class StoreService:
             free_shipping_threshold_cents=settings.free_shipping_threshold_cents or None,
             pending_order_timeout_minutes=settings.pending_order_timeout_minutes,
             delivery_check=get_delivery_eligibility().policy,
-            checkout_available=currency.currency is not None and settings.flat_shipping_cents is not None
-            and settings.tax_rate_percent is not None,
+            checkout_available=currency.currency is not None and settings.flat_shipping_cents is not None and tax_reason is None,
             payments_available=payments_ok,
             unavailable_reasons=reasons,
         )

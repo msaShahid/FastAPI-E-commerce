@@ -20,6 +20,11 @@ class StoreSettingsRead(BaseModel):
     unavailable_reasons: list[str] = []
 
 
+class StateRead(BaseModel):
+    code: str    # the two-digit GST state code (27 = Maharashtra)
+    name: str
+
+
 class StoreCurrencyRead(BaseModel):
     """null/null until the administrator sets it (checkout answers 503 until then)."""
 

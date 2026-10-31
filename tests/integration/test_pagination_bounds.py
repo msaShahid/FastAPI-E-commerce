@@ -52,6 +52,7 @@ BOUNDED_UNPAGINATED = {
     f"{API}/admin/payment-providers/catalog": "one entry per supported provider, from a code registry (currently 2)",
     f"{API}/admin/email-providers/catalog": "one entry per supported email service, from a code registry (currently 3)",
     f"{API}/wishlist/ids": "only product ids, and a wishlist holds at most 200 products",
+    f"{API}/store/states": "the fixed list of Indian states and union territories (37), from a code table",
     f"{API}/reviews/summaries": "at most 50 products per request (product_ids has max_length 50)",
     f"{API}/admin/payment-providers": "capped by the unique (provider, mode) constraint: at most 2 rows per supported provider",
 }

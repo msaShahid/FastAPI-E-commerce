@@ -80,6 +80,13 @@ class TaxRepository:
         )
         return {cid: status for cid, status in rows.all()}
 
+    async def classifications_by_ids(self, ids) -> "dict[int, TaxClassification]":  # noqa: UP037
+        ids = list(ids)
+        if not ids:
+            return {}
+        rows = await self.db.execute(select(TaxClassification).where(TaxClassification.id.in_(ids)))
+        return {c.id: c for c in rows.scalars().all()}
+
     async def approved_rules_covering(self, ids, as_of: date) -> "dict[int, list[TaxRule]]":  # noqa: UP037
         """Approved rules per classification whose [from, to) range contains `as_of`."""
         ids = list(ids)

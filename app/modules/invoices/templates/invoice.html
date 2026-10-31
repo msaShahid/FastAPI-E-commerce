@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ "Credit note" if d.type == "credit_note" else "Tax invoice" }} {{ d.number }}</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #111; margin: 24px; }
+  h1 { font-size: 18px; margin: 0 0 4px; text-transform: uppercase; }
+  .row { display: flex; gap: 24px; margin-bottom: 14px; }
+  .box { flex: 1; border: 1px solid #999; padding: 8px; }
+  table { border-collapse: collapse; width: 100%; margin-bottom: 12px; }
+  th, td { border: 1px solid #999; padding: 4px 6px; text-align: left; vertical-align: top; }
+  th { background: #eee; }
+  .n { text-align: right; white-space: nowrap; }
+  .small { font-size: 11px; color: #444; }
+  @media print { body { margin: 8mm; } }
+</style>
+</head>
+<body>
+<h1>{{ "Credit note" if d.type == "credit_note" else "Tax invoice" }}</h1>
+<p class="small">{{ "(Original for recipient) " }}Reverse charge: {{ "Yes" if d.reverse_charge else "No" }}</p>
+<div class="row">
+  <div class="box">
+    <strong>{{ d.supplier.legal_name }}</strong>{% if d.supplier.trade_name and d.supplier.trade_name != d.supplier.legal_name %} (trading as {{ d.supplier.trade_name }}){% endif %}<br>
+    {{ d.supplier.address.line1 }}{% if d.supplier.address.line2 %}, {{ d.supplier.address.line2 }}{% endif %}<br>
+    {{ d.supplier.address.city }}, {{ d.supplier.address.state_name }} - {{ d.supplier.address.pincode }}<br>
+    GSTIN: <strong>{{ d.supplier.gstin }}</strong>{% if d.supplier.email %}<br>{{ d.supplier.email }}{% endif %}{% if d.supplier.phone %} &middot; {{ d.supplier.phone }}{% endif %}
+  </div>
+  <div class="box">
+    {{ "Credit note" if d.type == "credit_note" else "Invoice" }} no.: <strong>{{ d.number }}</strong><br>
+    Date: <strong>{{ d.date }}</strong><br>
+    {% if d.against_invoice %}Against invoice {{ d.against_invoice.number }} dated {{ d.against_invoice.date }}<br>{% endif %}
+    Order: {{ d.order_id }}<br>
+    Place of supply: {{ d.place_of_supply.state_name }} ({{ d.place_of_supply.state_code }})<br>
+    Supply: {{ "Intra-state (CGST + SGST)" if d.supply_type == "intra_state" else "Inter-state (IGST)" }}
+  </div>
+</div>
+<div class="box" style="margin-bottom:14px">
+  <strong>Billed and shipped to:</strong> {{ d.recipient.name }}<br>
+  {{ d.recipient.address.line1 }}{% if d.recipient.address.line2 %}, {{ d.recipient.address.line2 }}{% endif %}, {{ d.recipient.address.city }},
+  {{ d.recipient.address.state }} {{ d.recipient.address.postal_code }}, {{ d.recipient.address.country }}
+  {% if d.recipient.email %}<br>{{ d.recipient.email }}{% endif %}
+</div>
+<table>
+  <thead>
+    <tr><th>#</th><th>Description</th><th>HSN</th><th class="n">Qty</th><th class="n">Rate</th><th class="n">Taxable value</th>
+      {% if d.supply_type == "intra_state" %}<th class="n">CGST</th><th class="n">SGST/UTGST</th>{% else %}<th class="n">IGST</th>{% endif %}
+      <th class="n">Amount</th></tr>
+  </thead>
+  <tbody>
+  {% for l in d.lines %}
+    <tr>
+      <td>{{ l.sr }}</td><td>{{ l.description }}<br><span class="small">SKU {{ l.sku }}{% if l.treatment != "taxable" %} &middot; {{ l.treatment | replace("_", " ") }}{% endif %}{% if l.shipping_paise %} &middot; includes shipping {{ l.shipping_paise | inr }}{% endif %}{% if l.discount_paise %} &middot; after discount {{ l.discount_paise | inr }}{% endif %}</span></td>
+      <td>{{ l.hsn }}</td><td class="n">{{ l.quantity }}</td><td class="n">{{ l.unit_price_paise | inr }}</td><td class="n">{{ l.taxable_paise | inr }}</td>
+      {% if d.supply_type == "intra_state" %}
+        <td class="n">{{ l.cgst_paise | inr }}<br><span class="small">{{ l.rates.cgst }}%</span></td><td class="n">{{ l.sgst_paise | inr }}<br><span class="small">{{ l.rates.sgst }}%</span></td>
+      {% else %}
+        <td class="n">{{ l.igst_paise | inr }}<br><span class="small">{{ l.rates.igst }}%</span></td>
+      {% endif %}
+      <td class="n">{{ (l.taxable_paise + l.tax_paise + l.round_off_paise) | inr }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<table style="width:55%; margin-left:auto">
+  {% if d.totals.discount_paise %}<tr><td>Goods before discount</td><td class="n">{{ d.totals.goods_paise | inr }}</td></tr>
+  <tr><td>Discount{% if d.coupon %} (coupon {{ d.coupon.code }}){% endif %}</td><td class="n">-{{ d.totals.discount_paise | inr }}</td></tr>{% endif %}
+  <tr><td>Taxable value</td><td class="n">{{ d.totals.taxable_paise | inr }}</td></tr>
+  {% if d.supply_type == "intra_state" %}
+  <tr><td>CGST</td><td class="n">{{ d.totals.cgst_paise | inr }}</td></tr><tr><td>SGST / UTGST</td><td class="n">{{ d.totals.sgst_paise | inr }}</td></tr>
+  {% else %}<tr><td>IGST</td><td class="n">{{ d.totals.igst_paise | inr }}</td></tr>{% endif %}
+  {% if d.totals.round_off_paise %}<tr><td>Round off</td><td class="n">{{ d.totals.round_off_paise | inr }}</td></tr>{% endif %}
+  {% if d.shipping.untaxed_paise %}<tr><td>Shipping (not taxed)</td><td class="n">{{ d.shipping.untaxed_paise | inr }}</td></tr>{% endif %}
+  <tr><th>Total</th><th class="n">{{ d.totals.grand_total_paise | inr }}</th></tr>
+</table>
+{% if d.pricing_mode == "inclusive" %}<p class="small">Prices include GST of {{ d.totals.tax_included_paise | inr }}.</p>{% endif %}
+{% if d.amount_in_words %}<p><strong>Amount in words:</strong> {{ d.amount_in_words }}</p>{% endif %}
+{% if d.reason %}<p class="small">{{ d.reason }}.</p>{% endif %}
+{% if d.footer %}<p class="small">{{ d.footer }}</p>{% endif %}
+<p class="small">This is a computer generated document.</p>
+</body>
+</html>

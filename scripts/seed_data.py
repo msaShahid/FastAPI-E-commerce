@@ -249,6 +249,13 @@ DEMO_CARRIERS = ["Delhivery", "Blue Dart", "DTDC", "India Post (Speed Post)", "E
 DEMO_TRACKING_URL = "https://tracking.example.com/track?awb={number}"
 DEMO_DELIVERED_AFTER_DAYS = 15   # orders older than this show as delivered
 
+# Discount coupons a store might run (all unused until someone uses them).
+DEMO_COUPONS = [
+    {"code": "WELCOME10", "name": "Welcome offer: 10% off", "kind": "percentage", "percent_off": "10", "max_discount_cents": 50000, "min_subtotal_cents": 50000, "max_uses_per_customer": 1},
+    {"code": "FLAT200", "name": "Rs 200 off orders above Rs 1,500", "kind": "fixed", "amount_off_cents": 20000, "min_subtotal_cents": 150000},
+    {"code": "FREESHIP", "name": "Free shipping", "kind": "free_shipping"},
+]
+
 # Reviews by customers who bought the product in a paid or shipped order above: (customer index, sku, rating, title, body).
 DEMO_REVIEWS = [
     (0, "ELEC-HEADPHONE-001", 5, "Great sound for the price", "Comfortable for long calls and the battery easily lasts the week."),

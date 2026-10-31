@@ -401,6 +401,17 @@ async def seed_orders(client, admin, sessions, product_ids, variant_ids, provide
     await seed_carts(client, sessions, product_ids, variant_ids)
 
 
+async def seed_coupons(client, admin) -> None:
+    made = 0
+    for coupon in data.DEMO_COUPONS:
+        r = await client.post(f"{API}/admin/coupons", headers=admin, json=coupon)
+        if r.status_code == 201:
+            made += 1
+        elif r.status_code != 409:  # 409: already there
+            check(r, (201,), f"coupon {coupon['code']}")
+    print(f"  Coupons: {made} created, {len(data.DEMO_COUPONS) - made} already there")
+
+
 async def seed_reviews_and_wishlists(client, sessions) -> None:
     """Reviews through the real rules (a customer can only review what they bought) and a few saved products. Safe to repeat."""
     bought = {sku: pid for pid, sku in await rows("SELECT id, sku FROM products")}
@@ -424,7 +435,7 @@ async def seed_reviews_and_wishlists(client, sessions) -> None:
 # ------------------------------------------------------------------------------------------------------------- main
 async def summary() -> None:
     tables = ["users", "addresses", "store_settings", "tax_classifications", "categories", "products", "carts", "cart_items", "orders",
-              "order_items", "order_status_history", "order_shipments", "product_reviews", "wishlist_items", "product_options", "product_variants", "stock_movements", "payments", "refunds", "audit_logs", "background_jobs", "refresh_tokens",
+              "order_items", "order_status_history", "order_shipments", "coupons", "product_reviews", "wishlist_items", "product_options", "product_variants", "stock_movements", "payments", "refunds", "audit_logs", "background_jobs", "refresh_tokens",
               "processed_webhook_events", "tax_rules", "gst_registrations", "business_tax_settings", "payment_provider_configs",
               "payment_reconciliations", "disputes", "deferred_webhook_events", "order_currency_remediations"]
     print("\nRows now in the database:")
@@ -469,6 +480,8 @@ async def main() -> None:
             sessions = await seed_addresses_and_tokens(client)
             print("Orders...")
             await seed_orders(client, admin, sessions, product_ids, variant_ids, provider)
+            print("Coupons...")
+            await seed_coupons(client, admin)
             print("Reviews and wishlists...")
             await seed_reviews_and_wishlists(client, sessions)
         await flush_pending_cache()

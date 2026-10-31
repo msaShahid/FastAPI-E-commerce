@@ -19,7 +19,8 @@ class DayRow(BaseModel):
     orders: int
     units: int
     gross_cents: int          # what customers paid: goods + shipping + tax
-    goods_cents: int
+    goods_cents: int          # the goods as customers paid for them: AFTER coupon discounts
+    discount_cents: int = 0   # what coupons took off the goods (already deducted from goods_cents)
     shipping_cents: int
     tax_cents: int
     refund_count: int
@@ -37,6 +38,7 @@ class Summary(ReportPeriod):
     units: int
     gross_cents: int
     goods_cents: int
+    discount_cents: int = 0   # what coupons took off the goods (already deducted from goods_cents)
     shipping_cents: int
     tax_cents: int
     refund_count: int
@@ -56,7 +58,7 @@ class TopProduct(BaseModel):
     name: str                          # the name on the orders (a snapshot), not necessarily today's
     units: int
     orders: int
-    revenue_cents: int                 # goods only (price x quantity), excluding shipping and tax
+    revenue_cents: int                 # goods only (price x quantity less coupon discounts), excluding shipping and tax
     current_stock: int | None
     variant_id: int | None = None      # set when grouped by variant
     variant_label: str | None = None   # e.g. "Size: M / Colour: Blue", as the order recorded it

@@ -31,8 +31,8 @@ class ReportRepository:
         return await self._rows(
             FIRST_PAID + f"""
             SELECT {LOCAL_DAY % 'p.paid_at'} AS day, count(*) AS orders, coalesce(sum(o.total_cents), 0) AS gross,
-                   coalesce(sum(o.subtotal_cents), 0) AS goods, coalesce(sum(o.shipping_cents), 0) AS shipping,
-                   coalesce(sum(o.tax_cents), 0) AS tax
+                   coalesce(sum(o.subtotal_cents - o.discount_cents), 0) AS goods, coalesce(sum(o.shipping_cents), 0) AS shipping,
+                   coalesce(sum(o.tax_cents), 0) AS tax, coalesce(sum(o.discount_cents), 0) AS discounts
             FROM first_paid p JOIN orders o ON o.id = p.order_id
             WHERE o.currency = :cur GROUP BY 1""",
             s=s, e=e, tz=tz, cur=cur,
@@ -75,7 +75,7 @@ class ReportRepository:
         return await self._rows(
             FIRST_PAID + f"""
             SELECT oi.product_id, max(oi.product_name_snapshot) AS name, sum(oi.quantity) AS units,
-                   count(DISTINCT oi.order_id) AS orders, sum(oi.price_cents_snapshot * oi.quantity) AS revenue,
+                   count(DISTINCT oi.order_id) AS orders, sum(oi.price_cents_snapshot * oi.quantity - oi.discount_cents) AS revenue,
                    max(pr.sku) AS sku, max(pr.stock) AS stock
             FROM first_paid p
             JOIN orders o ON o.id = p.order_id
@@ -121,7 +121,7 @@ class ReportRepository:
         return await self._rows(
             FIRST_PAID + f"""
             SELECT oi.product_id, max(oi.product_name_snapshot) AS name, sum(oi.quantity) AS units, count(DISTINCT oi.order_id) AS orders,
-                   sum(oi.price_cents_snapshot * oi.quantity) AS revenue, max(oi.sku_snapshot) AS sku,
+                   sum(oi.price_cents_snapshot * oi.quantity - oi.discount_cents) AS revenue, max(oi.sku_snapshot) AS sku,
                    coalesce(max(v.stock), max(pr.stock)) AS stock, oi.variant_id,
                    (array_agg(oi.variant_snapshot ORDER BY oi.id DESC))[1] AS snapshot
             FROM first_paid p

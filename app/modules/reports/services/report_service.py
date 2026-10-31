@@ -24,7 +24,7 @@ MAX_RANGE_DAYS = 366
 DEFINITIONS = {
     "sold": "An order counts on the day it first became PAID (in the reporting timezone), not the day it was placed. Orders that were "
             "never paid (pending, expired, cancelled before payment) are never revenue.",
-    "gross": "What customers paid for the orders sold in the period: goods + shipping + tax.",
+    "gross": "What customers paid for the orders sold in the period: goods (after coupon discounts) + shipping + tax.",
     "refunded": "Refunds that SUCCEEDED in the period, counted on the day they completed, whichever day the order was sold.",
     "net": "gross - refunded.",
     "currency": "Only orders in the store currency are added up. A paid order in another currency, or with none recorded, is counted in "
@@ -82,6 +82,7 @@ class ReportService:
             rows.append(DayRow(
                 day=day, orders=int(sale[1]) if sale else 0, units=int(units.get(day, 0)), gross_cents=gross,
                 goods_cents=int(sale[3]) if sale else 0, shipping_cents=int(sale[4]) if sale else 0, tax_cents=int(sale[5]) if sale else 0,
+                discount_cents=int(sale[6]) if sale else 0,
                 refund_count=int(refund[1]) if refund else 0, refunded_cents=refunded, net_cents=gross - refunded,
             ))
             day += timedelta(days=1)
@@ -99,7 +100,7 @@ class ReportService:
         orders = total("orders")
         average = int((Decimal(total("gross_cents")) / orders).quantize(Decimal(1), rounding=ROUND_HALF_UP)) if orders else 0
         return Summary(
-            **self._header(p), orders=orders, units=total("units"), gross_cents=total("gross_cents"), goods_cents=total("goods_cents"),
+            **self._header(p), orders=orders, units=total("units"), gross_cents=total("gross_cents"), goods_cents=total("goods_cents"), discount_cents=total("discount_cents"),
             shipping_cents=total("shipping_cents"), tax_cents=total("tax_cents"), refund_count=total("refund_count"),
             refunded_cents=total("refunded_cents"), net_cents=total("net_cents"), average_order_cents=average,
             orders_by_status={status: int(n) for status, n in await self.repo.orders_by_status(p["s"], p["e"])},

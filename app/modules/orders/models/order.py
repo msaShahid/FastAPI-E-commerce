@@ -12,6 +12,7 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -36,6 +37,9 @@ class Order(Base, TimestampMixin):
             "guest_token", "idempotency_key", name="uq_orders_guest_token_idempotency_key"
         ),
         CheckConstraint("currency IS NULL OR currency ~ '^[a-z]{3}$'", name="ck_orders_currency_format"),
+        CheckConstraint("discount_cents >= 0 AND discount_cents <= subtotal_cents", name="ck_orders_discount_within_subtotal"),
+        Index("ix_orders_coupon_id", "coupon_id", postgresql_where=text("coupon_id IS NOT NULL")),
+        CheckConstraint("(coupon_id IS NULL) = (coupon_code IS NULL) AND (coupon_id IS NOT NULL OR discount_cents = 0)", name="ck_orders_coupon_consistent"),
         CheckConstraint(
             "(user_id IS NOT NULL AND guest_token IS NULL AND guest_email IS NULL) OR "
             "(user_id IS NULL AND guest_token IS NOT NULL AND guest_email IS NOT NULL)",
@@ -84,6 +88,11 @@ class Order(Base, TimestampMixin):
     request_hash: Mapped[str | None] = mapped_column(String(64), default=None)
 
     subtotal_cents: Mapped[int] = mapped_column(Integer)
+    # What a coupon took off the GOODS (total = subtotal - discount + shipping + tax). Frozen with the order (database trigger).
+    discount_cents: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    coupon_id: Mapped[int | None] = mapped_column(ForeignKey("coupons.id", ondelete="RESTRICT"), default=None)
+    coupon_code: Mapped[str | None] = mapped_column(String(32), default=None)
+    coupon_snapshot: Mapped[dict | None] = mapped_column(JSONB, default=None)  # the coupon's terms and what it did, as they were
     shipping_cents: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     tax_cents: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     total_cents: Mapped[int] = mapped_column(Integer)

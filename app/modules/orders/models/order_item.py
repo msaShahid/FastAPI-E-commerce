@@ -35,6 +35,8 @@ class OrderItem(Base, TimestampMixin):
     variant_snapshot: Mapped[dict | None] = mapped_column(JSONB, default=None)
     # How much of this line has been put back in stock (see order_item_restocks); never more than `quantity`.
     restocked_quantity: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # This line's share of the order's coupon discount (the shares add up to orders.discount_cents). Frozen (database trigger).
+    discount_cents: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     order: Mapped["Order"] = relationship(back_populates="items")
 
@@ -42,6 +44,7 @@ class OrderItem(Base, TimestampMixin):
         CheckConstraint("quantity > 0", name="ck_order_items_quantity_positive"),
         CheckConstraint("restocked_quantity >= 0 AND restocked_quantity <= quantity", name="ck_order_items_restocked_within_quantity"),
         CheckConstraint("sku_snapshot_source IS NULL OR sku_snapshot_source IN ('order', 'backfill')", name="ck_order_items_sku_source"),
+        CheckConstraint("discount_cents >= 0 AND discount_cents <= price_cents_snapshot * quantity", name="ck_order_items_discount"),
         ForeignKeyConstraint(
             ["variant_id", "product_id"], ["product_variants.id", "product_variants.product_id"],
             name="fk_order_items_variant", ondelete="RESTRICT",

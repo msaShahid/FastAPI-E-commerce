@@ -87,6 +87,7 @@ async def checkout(
             idempotency_key=idempotency_key,
             address_id=payload.address_id,
             shipping_address=shipping_address,
+            coupon_code=payload.coupon_code,
         )
     except PriceChangedError as exc:
         # Returned (not raised) on purpose: an exception would roll back the cart

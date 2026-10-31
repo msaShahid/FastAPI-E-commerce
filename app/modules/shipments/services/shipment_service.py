@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 from app.modules.audit.services.audit_service import AuditService
 from app.modules.auth.models.user import User
+from app.modules.invoices.services.invoice_service import issue_invoice
 from app.modules.orders.exceptions.order_exceptions import (
     InvalidStatusTransitionError,
     OrderNotFoundError,
@@ -51,6 +52,7 @@ class ShipmentService:
             if OrderStatus.FULFILLED not in ALLOWED_TRANSITIONS[order.status]:  # the rules decide, not this service
                 raise InvalidStatusTransitionError(order.status.value, OrderStatus.FULFILLED.value)
             await self.orders.update_status(order, OrderStatus.FULFILLED, admin.id)
+            await issue_invoice(self.orders.db, order)  # a GST order must not ship without its tax invoice
             fulfilled = True
         await self.audit.log(
             actor_user_id=admin.id, action="shipment.created", target_type="order", target_id=order.id,

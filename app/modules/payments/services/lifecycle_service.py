@@ -27,6 +27,7 @@ from app.core.payments.interface import PaymentProvider, RefundResult
 from app.core.redaction import redact
 from app.core.stock_context import stock_change
 from app.modules.audit.services.audit_service import AuditService
+from app.modules.invoices.services.invoice_service import issue_credit_note, issue_invoice
 from app.modules.orders.exceptions.order_exceptions import (
     CancellationNotAllowedError,
     InvalidStatusTransitionError,
@@ -157,6 +158,7 @@ class OrderLifecycleService:
 
             raise StatusChangeNotAllowedError("A cancellation with refund is in progress for this order, so it cannot be fulfilled")
         await self.orders.update_status(order, OrderStatus.FULFILLED, admin_user_id, "marked fulfilled by an administrator")
+        await issue_invoice(self.orders.db, order)  # a GST order must not ship without its tax invoice (refuses if the profile is missing)
         await self._audit("order.fulfilled", "order", order.id, admin_user_id)
         return order
 
@@ -468,6 +470,7 @@ class OrderLifecycleService:
         if refund.origin == "requested" and fully_refunded and order.status in (OrderStatus.PAID, OrderStatus.FULFILLED):
             was_fulfilled = order.status == OrderStatus.FULFILLED
             await self.orders.update_status(order, OrderStatus.REFUNDED, None, "refund confirmed by the payment provider")
+            await issue_credit_note(self.orders.db, order)  # only if the order had a tax invoice
             if refund.cancels_order and not was_fulfilled:
                 # A cancellation with refund: only now that the provider CONFIRMED the refund is stock released.
                 await self._restock_once(order)

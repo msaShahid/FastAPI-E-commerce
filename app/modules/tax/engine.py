@@ -108,7 +108,6 @@ class TaxLine:
     quantity: int
     unit_price_paise: int
     classification_id: int | None
-    discount_paise: int = 0   # this line's share of a coupon discount: tax is on the price AFTER it
 
 
 @dataclass(frozen=True)
@@ -268,7 +267,7 @@ class GstTaxEngine:
         calc_lines = []
         for index, line in enumerate(request.lines):
             rule = rules[line.classification_id][0]
-            calc_lines.append(CalcLine(index, line.unit_price_paise * line.quantity - line.discount_paise, rule.treatment, rule.cgst_rate, rule.sgst_utgst_rate, rule.igst_rate))
+            calc_lines.append(CalcLine(index, line.unit_price_paise * line.quantity, rule.treatment, rule.cgst_rate, rule.sgst_utgst_rate, rule.igst_rate))
         result = calculate(
             calc_lines, shipping_paise=request.shipping_paise, intra_state=intra_state, pricing_mode=config.pricing_mode,
             shipping_treatment=config.shipping_tax_treatment, rounding_policy=config.rounding_policy,
@@ -280,8 +279,7 @@ class GstTaxEngine:
             lines_out.append({
                 "product_id": line.product_id, "classification_id": line.classification_id, "hsn_kind": classification.kind,
                 "hsn_code": classification.code, "treatment": rule.treatment, "quantity": line.quantity,
-                "unit_price_paise": line.unit_price_paise, "discount_paise": line.discount_paise, "value_paise": calc.value_paise,
-                "shipping_paise": tax.shipping_paise,
+                "unit_price_paise": line.unit_price_paise, "value_paise": calc.value_paise, "shipping_paise": tax.shipping_paise,
                 "gross_paise": tax.gross_paise, "taxable_paise": tax.taxable_paise, "cgst_paise": tax.cgst_paise,
                 "sgst_paise": tax.sgst_paise, "igst_paise": tax.igst_paise, "tax_paise": tax.tax_paise,
                 "round_off_paise": tax.round_off_paise,

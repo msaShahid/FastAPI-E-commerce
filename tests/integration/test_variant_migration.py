@@ -209,3 +209,17 @@ def test_the_price_range_migration_and_the_models_install_exactly_the_same_datab
     migration = _load(pathlib.Path(ROOT) / "alembic" / "versions" / "d2f6b9a4c731_product_price_range.py")
     assert tuple(migration.FUNCTIONS) == tuple(price_guard.FUNCTIONS)
     assert tuple(migration.TRIGGERS) == tuple(price_guard.TRIGGERS)
+
+
+def test_the_invoice_migration_and_the_models_install_exactly_the_same_immutability_rule():
+    from app.modules.invoices.models import guard
+
+    migration = _load(pathlib.Path(ROOT) / "alembic" / "versions" / "f1c4d8e2a937_invoices_and_business_profile.py")
+    assert migration.FUNCTION == guard.FUNCTION and migration.TRIGGER == guard.TRIGGER
+
+
+def test_the_coupon_migration_and_the_models_install_exactly_the_same_freeze_rule():
+    from app.modules.coupons.models import guard
+
+    migration = _load(pathlib.Path(ROOT) / "alembic" / "versions" / "a8d2f6c1e045_coupons.py")
+    assert migration.FUNCTION == guard.FUNCTION and tuple(migration.TRIGGERS) == tuple(guard.TRIGGERS)

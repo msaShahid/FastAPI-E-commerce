@@ -27,7 +27,6 @@ from app.modules.audit.api.router import audit_router
 from app.modules.auth.api.router import auth_router
 from app.modules.cart.api.router import cart_router
 from app.modules.categories.api.router import category_router
-from app.modules.coupons.api.router import coupons_router
 from app.modules.email_settings.api.router import email_settings_router
 from app.modules.invoices.api.router import invoices_router
 from app.modules.orders.api.router import order_router
@@ -124,7 +123,6 @@ app.include_router(summaries_router, prefix=settings.api_v1_prefix)
 app.include_router(admin_reviews_router, prefix=settings.api_v1_prefix)
 app.include_router(wishlist_router, prefix=settings.api_v1_prefix)
 app.include_router(invoices_router, prefix=settings.api_v1_prefix)
-app.include_router(coupons_router, prefix=settings.api_v1_prefix)
 
 
 app.include_router(graphql_router, prefix="/graphql")

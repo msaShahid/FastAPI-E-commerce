@@ -1101,6 +1101,18 @@
             ],
             "title": "Address Id"
           },
+          "coupon_code": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coupon Code"
+          },
           "guest_email": {
             "anyOf": [
               {
@@ -1359,6 +1371,551 @@
         "title": "ConvertRequest",
         "type": "object"
       },
+      "CouponCheck": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "guest_email": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A guest's email, so a per-customer limit can be checked",
+            "title": "Guest Email"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "CouponCheck",
+        "type": "object"
+      },
+      "CouponCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "default": true,
+            "title": "Active",
+            "type": "boolean"
+          },
+          "amount_off_cents": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Off Cents"
+          },
+          "code": {
+            "description": "3 to 32 characters: letters, digits, _ and -. Customers may type it in any case.",
+            "title": "Code",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "ends_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends At"
+          },
+          "kind": {
+            "enum": [
+              "percentage",
+              "fixed",
+              "free_shipping"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "max_discount_cents": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cap on a percentage coupon's discount",
+            "title": "Max Discount Cents"
+          },
+          "max_uses_per_customer": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Uses Per Customer"
+          },
+          "max_uses_total": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Uses Total"
+          },
+          "min_subtotal_cents": {
+            "default": 0,
+            "description": "The goods must cost at least this much",
+            "minimum": 0.0,
+            "title": "Min Subtotal Cents",
+            "type": "integer"
+          },
+          "name": {
+            "description": "An internal label (customers never see it)",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "percent_off": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent Off"
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "code"
+        ],
+        "title": "CouponCreate",
+        "type": "object"
+      },
+      "CouponPreview": {
+        "description": "What the coupon would do to the cart as it is now. Tax is worked out at checkout, so there is no tax figure here.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "discount_cents": {
+            "title": "Discount Cents",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "shipping_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shipping Cents"
+          },
+          "shipping_discount_cents": {
+            "title": "Shipping Discount Cents",
+            "type": "integer"
+          },
+          "subtotal_after_discount_cents": {
+            "title": "Subtotal After Discount Cents",
+            "type": "integer"
+          },
+          "subtotal_cents": {
+            "title": "Subtotal Cents",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "kind",
+          "subtotal_cents",
+          "discount_cents",
+          "subtotal_after_discount_cents",
+          "shipping_cents",
+          "shipping_discount_cents"
+        ],
+        "title": "CouponPreview",
+        "type": "object"
+      },
+      "CouponRead": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "default": true,
+            "title": "Active",
+            "type": "boolean"
+          },
+          "amount_off_cents": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Off Cents"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "ends_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "percentage",
+              "fixed",
+              "free_shipping"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "max_discount_cents": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cap on a percentage coupon's discount",
+            "title": "Max Discount Cents"
+          },
+          "max_uses_per_customer": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Uses Per Customer"
+          },
+          "max_uses_total": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Uses Total"
+          },
+          "min_subtotal_cents": {
+            "default": 0,
+            "description": "The goods must cost at least this much",
+            "minimum": 0.0,
+            "title": "Min Subtotal Cents",
+            "type": "integer"
+          },
+          "name": {
+            "description": "An internal label (customers never see it)",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "percent_off": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent Off"
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          },
+          "state": {
+            "description": "active | disabled | scheduled | expired | exhausted",
+            "title": "State",
+            "type": "string"
+          },
+          "uses": {
+            "description": "Orders using it that are still alive (pending, paid or shipped)",
+            "title": "Uses",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "id",
+          "code",
+          "uses",
+          "state",
+          "created_at"
+        ],
+        "title": "CouponRead",
+        "type": "object"
+      },
+      "CouponUpdate": {
+        "additionalProperties": false,
+        "description": "Any of these. What the coupon GIVES (kind, percent, amount, cap) can only change while no order has used it.",
+        "properties": {
+          "active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active"
+          },
+          "amount_off_cents": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Off Cents"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "ends_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends At"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "percentage",
+                  "fixed",
+                  "free_shipping"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "max_discount_cents": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Discount Cents"
+          },
+          "max_uses_per_customer": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Uses Per Customer"
+          },
+          "max_uses_total": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Uses Total"
+          },
+          "min_subtotal_cents": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Subtotal Cents"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "percent_off": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent Off"
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          }
+        },
+        "title": "CouponUpdate",
+        "type": "object"
+      },
       "CredentialStatus": {
         "properties": {
           "configured": {
@@ -1593,6 +2150,11 @@
             "format": "date",
             "title": "Day",
             "type": "string"
+          },
+          "discount_cents": {
+            "default": 0,
+            "title": "Discount Cents",
+            "type": "integer"
           },
           "goods_cents": {
             "title": "Goods Cents",
@@ -1855,6 +2417,114 @@
           "delivers_to_real_recipients"
         ],
         "title": "EffectiveEmail",
+        "type": "object"
+      },
+      "EligibilityItem": {
+        "properties": {
+          "options": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/VariantOption"
+            },
+            "title": "Options",
+            "type": "array"
+          },
+          "order_item_id": {
+            "title": "Order Item Id",
+            "type": "integer"
+          },
+          "product_name": {
+            "title": "Product Name",
+            "type": "string"
+          },
+          "purchased": {
+            "title": "Purchased",
+            "type": "integer"
+          },
+          "returnable": {
+            "title": "Returnable",
+            "type": "integer"
+          },
+          "sku": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sku"
+          }
+        },
+        "required": [
+          "order_item_id",
+          "product_name",
+          "sku",
+          "purchased",
+          "returnable"
+        ],
+        "title": "EligibilityItem",
+        "type": "object"
+      },
+      "EligibilityRead": {
+        "properties": {
+          "eligible": {
+            "title": "Eligible",
+            "type": "boolean"
+          },
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EligibilityItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          },
+          "window_days": {
+            "title": "Window Days",
+            "type": "integer"
+          },
+          "window_ends_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Ends At"
+          }
+        },
+        "required": [
+          "eligible",
+          "window_days"
+        ],
+        "title": "EligibilityRead",
         "type": "object"
       },
       "EmailProviderSave": {
@@ -2579,6 +3249,11 @@
       },
       "OrderItemRead": {
         "properties": {
+          "discount_cents": {
+            "default": 0,
+            "title": "Discount Cents",
+            "type": "integer"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -2686,6 +3361,17 @@
       },
       "OrderRead": {
         "properties": {
+          "coupon_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coupon Code"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -2701,6 +3387,11 @@
               }
             ],
             "title": "Currency"
+          },
+          "discount_cents": {
+            "default": 0,
+            "title": "Discount Cents",
+            "type": "integer"
           },
           "guest_email": {
             "anyOf": [
@@ -2927,6 +3618,37 @@
           "page_size"
         ],
         "title": "PaginatedResponse[ClassificationRead]",
+        "type": "object"
+      },
+      "PaginatedResponse_CouponRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CouponRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "PaginatedResponse[CouponRead]",
         "type": "object"
       },
       "PaginatedResponse_DeferredEventRead_": {
@@ -3177,6 +3899,37 @@
         "title": "PaginatedResponse[ReconciliationRead]",
         "type": "object"
       },
+      "PaginatedResponse_RedemptionRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RedemptionRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "PaginatedResponse[RedemptionRead]",
+        "type": "object"
+      },
       "PaginatedResponse_RefundRead_": {
         "properties": {
           "items": {
@@ -3237,6 +3990,37 @@
           "page_size"
         ],
         "title": "PaginatedResponse[RegistrationRead]",
+        "type": "object"
+      },
+      "PaginatedResponse_ReturnRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReturnRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "PaginatedResponse[ReturnRead]",
         "type": "object"
       },
       "PaginatedResponse_ReviewAdminRead_": {
@@ -4361,6 +5145,46 @@
         "title": "ReadinessRead",
         "type": "object"
       },
+      "ReceiveItem": {
+        "additionalProperties": false,
+        "properties": {
+          "condition_note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Condition Note"
+          },
+          "order_item_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Order Item Id",
+            "type": "integer"
+          },
+          "received_quantity": {
+            "description": "What actually arrived (at most what was requested)",
+            "minimum": 0.0,
+            "title": "Received Quantity",
+            "type": "integer"
+          },
+          "restock": {
+            "description": "Put the received units back in stock (only for goods in sellable condition)",
+            "title": "Restock",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "order_item_id",
+          "received_quantity",
+          "restock"
+        ],
+        "title": "ReceiveItem",
+        "type": "object"
+      },
       "ReconciliationRead": {
         "properties": {
           "created_at": {
@@ -4497,6 +5321,66 @@
         "title": "ReconciliationResolve",
         "type": "object"
       },
+      "RedemptionRead": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "discount_cents": {
+            "title": "Discount Cents",
+            "type": "integer"
+          },
+          "guest_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guest Email"
+          },
+          "order_id": {
+            "format": "uuid",
+            "title": "Order Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "total_cents": {
+            "title": "Total Cents",
+            "type": "integer"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "order_id",
+          "status",
+          "discount_cents",
+          "total_cents",
+          "user_id",
+          "guest_email",
+          "created_at"
+        ],
+        "title": "RedemptionRead",
+        "type": "object"
+      },
       "RefreshRequest": {
         "properties": {
           "refresh_token": {
@@ -4590,6 +5474,25 @@
           "created_at"
         ],
         "title": "RefundRead",
+        "type": "object"
+      },
+      "RefundSummary": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "title": "RefundSummary",
         "type": "object"
       },
       "RegisterRequest": {
@@ -4831,6 +5734,400 @@
           "new_password"
         ],
         "title": "ResetPasswordRequest",
+        "type": "object"
+      },
+      "ReturnApprove": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "title": "ReturnApprove",
+        "type": "object"
+      },
+      "ReturnClose": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "description": "What was done (for refunded_outside: how much, and where)",
+            "maxLength": 1000,
+            "minLength": 3,
+            "title": "Note",
+            "type": "string"
+          },
+          "resolution": {
+            "enum": [
+              "refunded_outside",
+              "replacement_sent",
+              "no_refund"
+            ],
+            "title": "Resolution",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resolution",
+          "note"
+        ],
+        "title": "ReturnClose",
+        "type": "object"
+      },
+      "ReturnCreate": {
+        "additionalProperties": false,
+        "description": "What the customer wants to send back. Plain text only (an administrator's screen must escape it).",
+        "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReturnItemCreate"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ReturnCreate",
+        "type": "object"
+      },
+      "ReturnItemCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "order_item_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Order Item Id",
+            "type": "integer"
+          },
+          "quantity": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 1000.0,
+            "title": "Quantity",
+            "type": "integer"
+          },
+          "reason": {
+            "enum": [
+              "damaged",
+              "defective",
+              "wrong_item",
+              "not_as_described",
+              "size_or_fit",
+              "changed_mind",
+              "other"
+            ],
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order_item_id",
+          "quantity",
+          "reason"
+        ],
+        "title": "ReturnItemCreate",
+        "type": "object"
+      },
+      "ReturnItemRead": {
+        "properties": {
+          "condition_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Condition Note"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "options": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/VariantOption"
+            },
+            "title": "Options",
+            "type": "array"
+          },
+          "order_item_id": {
+            "title": "Order Item Id",
+            "type": "integer"
+          },
+          "product_name": {
+            "title": "Product Name",
+            "type": "string"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "integer"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "received_quantity": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received Quantity"
+          },
+          "restock": {
+            "default": false,
+            "title": "Restock",
+            "type": "boolean"
+          },
+          "restocked_quantity": {
+            "default": 0,
+            "title": "Restocked Quantity",
+            "type": "integer"
+          },
+          "sku": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sku"
+          }
+        },
+        "required": [
+          "id",
+          "order_item_id",
+          "product_name",
+          "sku",
+          "quantity",
+          "reason"
+        ],
+        "title": "ReturnItemRead",
+        "type": "object"
+      },
+      "ReturnRead": {
+        "properties": {
+          "admin_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Note"
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "customer_comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Comment"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReturnItemRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "order_id": {
+            "format": "uuid",
+            "title": "Order Id",
+            "type": "string"
+          },
+          "received_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received At"
+          },
+          "refund": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RefundSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rejection_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejection Reason"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "resolution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution"
+          },
+          "resolution_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution Note"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "id",
+          "order_id",
+          "status",
+          "customer_comment",
+          "rejection_reason",
+          "resolution",
+          "requested_at",
+          "decided_at",
+          "received_at",
+          "closed_at",
+          "items"
+        ],
+        "title": "ReturnRead",
+        "type": "object"
+      },
+      "ReturnReceive": {
+        "additionalProperties": false,
+        "description": "What arrived, for EVERY line of the return.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReceiveItem"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ReturnReceive",
+        "type": "object"
+      },
+      "ReturnReject": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "description": "Shown to the customer",
+            "maxLength": 300,
+            "minLength": 3,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "ReturnReject",
         "type": "object"
       },
       "ReviewAdminRead": {
@@ -6530,6 +7827,11 @@
             "title": "Definitions",
             "type": "object"
           },
+          "discount_cents": {
+            "default": 0,
+            "title": "Discount Cents",
+            "type": "integer"
+          },
           "end": {
             "format": "date",
             "title": "End",
@@ -7149,6 +8451,24 @@
           "value"
         ],
         "title": "ValueAdd",
+        "type": "object"
+      },
+      "VariantOption": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "value"
+        ],
+        "title": "VariantOption",
         "type": "object"
       },
       "VariantOptionRead": {
@@ -8152,6 +9472,366 @@
         "summary": "Write Business Profile",
         "tags": [
           "invoices"
+        ]
+      }
+    },
+    "/api/v1/admin/coupons": {
+      "get": {
+        "operationId": "list_coupons_api_v1_admin_coupons_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 50,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "active",
+                    "disabled",
+                    "scheduled",
+                    "expired",
+                    "exhausted"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 10000,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse_CouponRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Coupons",
+        "tags": [
+          "coupons"
+        ]
+      },
+      "post": {
+        "operationId": "create_coupon_api_v1_admin_coupons_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CouponCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CouponRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Coupon",
+        "tags": [
+          "coupons"
+        ]
+      }
+    },
+    "/api/v1/admin/coupons/{coupon_id}": {
+      "delete": {
+        "description": "Only a coupon no order has ever used.",
+        "operationId": "delete_coupon_api_v1_admin_coupons__coupon_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "coupon_id",
+            "required": true,
+            "schema": {
+              "title": "Coupon Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Coupon",
+        "tags": [
+          "coupons"
+        ]
+      },
+      "get": {
+        "operationId": "get_coupon_api_v1_admin_coupons__coupon_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "coupon_id",
+            "required": true,
+            "schema": {
+              "title": "Coupon Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CouponRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Coupon",
+        "tags": [
+          "coupons"
+        ]
+      },
+      "patch": {
+        "description": "Change a coupon. Its code and what it gives (kind, percentage, amount, cap) cannot change once an order has used it: switch it off\n(`active: false`) and create a new one instead.",
+        "operationId": "update_coupon_api_v1_admin_coupons__coupon_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "coupon_id",
+            "required": true,
+            "schema": {
+              "title": "Coupon Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CouponUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CouponRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Coupon",
+        "tags": [
+          "coupons"
+        ]
+      }
+    },
+    "/api/v1/admin/coupons/{coupon_id}/redemptions": {
+      "get": {
+        "description": "The orders that used this coupon, newest first (whatever their status).",
+        "operationId": "list_redemptions_api_v1_admin_coupons__coupon_id__redemptions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "coupon_id",
+            "required": true,
+            "schema": {
+              "title": "Coupon Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 10000,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse_RedemptionRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Redemptions",
+        "tags": [
+          "coupons"
         ]
       }
     },
@@ -10297,6 +11977,482 @@
         "summary": "Top Products",
         "tags": [
           "reports"
+        ]
+      }
+    },
+    "/api/v1/admin/returns": {
+      "get": {
+        "operationId": "list_returns_api_v1_admin_returns_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "requested",
+                    "approved",
+                    "rejected",
+                    "received",
+                    "closed",
+                    "cancelled"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Order Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From Date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To Date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 10000,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse_ReturnRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Returns",
+        "tags": [
+          "returns"
+        ]
+      }
+    },
+    "/api/v1/admin/returns/{return_id}": {
+      "get": {
+        "operationId": "get_return_api_v1_admin_returns__return_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "return_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Return Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReturnRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Return",
+        "tags": [
+          "returns"
+        ]
+      }
+    },
+    "/api/v1/admin/returns/{return_id}/approve": {
+      "post": {
+        "operationId": "approve_return_api_v1_admin_returns__return_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "return_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Return Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ReturnApprove"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReturnRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Approve Return",
+        "tags": [
+          "returns"
+        ]
+      }
+    },
+    "/api/v1/admin/returns/{return_id}/close": {
+      "post": {
+        "description": "Finish a return without NovaCart starting a refund: `refunded_outside` (you refunded the customer at your payment provider),\n`replacement_sent`, or `no_refund`. The note records what was done.",
+        "operationId": "close_return_api_v1_admin_returns__return_id__close_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "return_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Return Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReturnClose"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReturnRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Close Return",
+        "tags": [
+          "returns"
+        ]
+      }
+    },
+    "/api/v1/admin/returns/{return_id}/receive": {
+      "post": {
+        "description": "The goods arrived. For EVERY line say how many arrived and whether they go back in stock (only for goods you can sell again).",
+        "operationId": "receive_return_api_v1_admin_returns__return_id__receive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "return_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Return Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReturnReceive"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReturnRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Receive Return",
+        "tags": [
+          "returns"
+        ]
+      }
+    },
+    "/api/v1/admin/returns/{return_id}/refund": {
+      "post": {
+        "description": "Start the refund of the whole order. Only when received returns bring back EVERY unit of the order (NovaCart refunds whole orders):\notherwise `409 return_not_full`, and the return is closed with a recorded resolution instead.",
+        "operationId": "refund_return_api_v1_admin_returns__return_id__refund_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "return_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Return Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReturnRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Refund Return",
+        "tags": [
+          "returns"
+        ]
+      }
+    },
+    "/api/v1/admin/returns/{return_id}/reject": {
+      "post": {
+        "description": "Refuse a request; the reason is shown to the customer.",
+        "operationId": "reject_return_api_v1_admin_returns__return_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "return_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Return Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReturnReject"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReturnRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reject Return",
+        "tags": [
+          "returns"
         ]
       }
     },
@@ -12742,6 +14898,71 @@
         ]
       }
     },
+    "/api/v1/cart/coupon/preview": {
+      "post": {
+        "description": "What a coupon would do to the cart as it is now (nothing is reserved or used). Tax is worked out at checkout. To use the coupon, send\nthe same code as `coupon_code` in the checkout request: it is checked again there. A code that cannot be used says why\n(`coupon_invalid`, `coupon_minimum_not_met`, `coupon_limit_reached`, `coupon_not_applicable`).",
+        "operationId": "preview_coupon_api_v1_cart_coupon_preview_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "guest_cart_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Guest Cart Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CouponCheck"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CouponPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Coupon",
+        "tags": [
+          "coupons"
+        ]
+      }
+    },
     "/api/v1/cart/items": {
       "post": {
         "operationId": "add_item_api_v1_cart_items_post",
@@ -14148,6 +16369,184 @@
         "summary": "Print Order Invoice",
         "tags": [
           "invoices"
+        ]
+      }
+    },
+    "/api/v1/orders/{order_id}/returns": {
+      "get": {
+        "operationId": "list_order_returns_api_v1_orders__order_id__returns_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Order Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 10000,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse_ReturnRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Order Returns",
+        "tags": [
+          "returns"
+        ]
+      },
+      "post": {
+        "description": "Ask to send back some of the items of a shipped order, within the return period.",
+        "operationId": "request_return_api_v1_orders__order_id__returns_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Order Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReturnCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReturnRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Request Return",
+        "tags": [
+          "returns"
+        ]
+      }
+    },
+    "/api/v1/orders/{order_id}/returns/eligibility": {
+      "get": {
+        "description": "Can this order of yours be returned, until when, and how many of each item are still returnable?",
+        "operationId": "return_eligibility_api_v1_orders__order_id__returns_eligibility_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Order Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EligibilityRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Return Eligibility",
+        "tags": [
+          "returns"
         ]
       }
     },
@@ -16142,6 +18541,165 @@
         "summary": "Adjust Variant Stock",
         "tags": [
           "variants"
+        ]
+      }
+    },
+    "/api/v1/returns": {
+      "get": {
+        "operationId": "list_my_returns_api_v1_returns_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 10000,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse_ReturnRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List My Returns",
+        "tags": [
+          "returns"
+        ]
+      }
+    },
+    "/api/v1/returns/{return_id}": {
+      "get": {
+        "operationId": "get_my_return_api_v1_returns__return_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "return_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Return Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReturnRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get My Return",
+        "tags": [
+          "returns"
+        ]
+      }
+    },
+    "/api/v1/returns/{return_id}/cancel": {
+      "post": {
+        "description": "Withdraw a request that has not been received yet.",
+        "operationId": "cancel_my_return_api_v1_returns__return_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "return_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Return Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReturnRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Cancel My Return",
+        "tags": [
+          "returns"
         ]
       }
     },

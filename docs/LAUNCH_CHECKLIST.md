@@ -36,4 +36,5 @@ done from the code.
 
 | Feature | What is needed |
 |---|---|
+| Coupons and discounts | Which discount types, and whether they can be combined |
 | Customer returns | The returns policy: window, who pays, refund versus replacement |

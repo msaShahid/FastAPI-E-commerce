@@ -90,9 +90,6 @@ an unrecognised state is refused with `422 delivery_state_unknown` and a deliver
    `line_total_cents`, `available` and `unavailable_reason` (`unavailable`, `out_of_stock`, `insufficient_stock`). Show unavailable lines
    as such and block checkout until the shopper removes or reduces them. `cart_digest` is a fingerprint of the lines (you may ignore it).
 3. **Change or remove**: `PATCH /cart/items/{item_id}` `{quantity}`, `DELETE /cart/items/{item_id}`, `DELETE /cart`.
-3b. **Coupon**: let the shopper type a code and call `POST /cart/coupon/preview` `{code}` (guests also send `guest_email`). It answers the discount, the
-   shipping after the coupon and the goods after discount, or a reason code (`coupon_invalid`, `coupon_minimum_not_met`, `coupon_limit_reached`,
-   `coupon_not_applicable`). Nothing is reserved. To use it, send the same code as `coupon_code` in the checkout request; it is checked again there.
 4. **Checkout**: `POST /orders/checkout` with the header **`Idempotency-Key`** (required: generate a UUID per purchase attempt) and a
    body of either `{address_id}` (signed in) or `{shipping_address: {...}}`; a guest must also send `guest_email`.
    - **Retrying the same purchase** (a timeout, a double click): send the **same key** again and you get the same order, charged once.
@@ -104,7 +101,6 @@ an unrecognised state is refused with `422 delivery_state_unknown` and a deliver
      when only a few remain). Nothing is taken.
    - `503` means checkout is not configured; check `checkout_available` from `/store/settings` beforehand.
 5. The `201` response is the **order**: items (each with its frozen `sku`, `variant.options` and price), `subtotal_cents`, `shipping_cents`,
-   `discount_cents` and `coupon_code` (a coupon's discount on the goods; each item also has its `discount_cents`; **total = subtotal - discount + shipping + tax**),
    `tax_cents` (GST **added** on top), `tax_included_cents` (GST already **inside** the listed prices; show "includes GST of ..."),
    `total_cents` (always what the customer pays), `currency`, `status`, `shipping_address`. `tax_snapshot` is the full audit record of the
    calculation: show `tax_cents` / `tax_included_cents`, do not rebuild the arithmetic from it.
@@ -144,7 +140,6 @@ an unrecognised state is refused with `422 delivery_state_unknown` and a deliver
 | Payments | `/admin/payment-providers/...`, `/admin/refunds`, `/admin/reconciliations`, `/admin/disputes`, `/admin/webhook-events` |
 | Reports | `/admin/reports/summary`, `sales-by-day`, `top-products?group_by=variant`, `low-stock` |
 | Reviews | `/admin/reviews` (hide with a reason, publish, delete) |
-| Coupons | `/admin/coupons` (create, list by state, edit, delete if never used, `/{id}/redemptions`) |
 | Tax and GST set-up | `/admin/tax/...` (a second administrator must approve each record), `/admin/business-profile` (seller details printed on invoices) |
 | Invoices | `GET /admin/invoices`, `POST /orders/{id}/invoice` (issue early). A GST order cannot be shipped until the business profile exists (`422 business_profile_incomplete`) |
 | Store and email | `/store/currency`, `/admin/email-providers/...` |

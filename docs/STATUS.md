@@ -18,6 +18,8 @@ This section supersedes the phase notes below, which are kept as history and are
 * Shipments: administrators record carrier, tracking number and link per parcel; customers see them on their orders. No pincode
   serviceability check yet (every address is accepted, recorded on the order); the seam for one exists (`docs/RUNBOOK.md`, 5c).
 * Reviews (customers who bought a product, moderated by administrators) and wishlists: see `docs/REVIEWS_WISHLIST.md`.
+* GST calculator, tax invoices and credit notes: `docs/GST.md`. Coupons: `docs/COUPONS.md`. Customer returns: `docs/RETURNS.md`. Product variants: `docs/VARIANTS.md`.
+* For the frontend: `docs/FRONTEND_API_GUIDE.md`, `docs/openapi.json`, `docs/ERROR_CODES.md`. Before launch: `docs/LAUNCH_CHECKLIST.md`.
 * Migrations: `docs/MIGRATIONS.md`. Operations, monitoring, backups and the go-live checklist: `docs/RUNBOOK.md`.
 * **Not production-ready merely because tests pass.** See the runbook's go-live checklist.
 
@@ -84,13 +86,13 @@ Test cleanup uses TRUNCATE, which does not fire row triggers.
 - Downgrading `b8d4f1a6c230` drops the two columns and therefore any assignments: back up first.
 - Open: `unit` is not checked against an official list (a professional decision).
 
-### Phase 2.4 tax-engine boundary (done; NO GST is calculated)
+### Phase 2.4 tax-engine boundary (the GST calculator was added later: see docs/GST.md)
 - `app/modules/tax/engine.py`: checkout asks a `TaxEngine` for tax. An engine returns a validated
   `TaxResult` (amount + audit snapshot) or **raises**; it can never return nothing or an implicit zero.
   Engines: `NotConfiguredTaxEngine` (default; checkout 503), `FlatInterimTaxEngine` (the pre-GST
   behaviour: one configured percentage on the merchandise subtotal; snapshot says
-  `gst_calculated: false`), `GstTaxEngine` (placeholder: readiness checks, then 503
-  `tax_engine_not_implemented`; it never returns a result).
+  `gst_calculated: false`), `GstTaxEngine` (readiness checks, then the real GST calculation
+  from approved master data: docs/GST.md; it still refuses rather than guess).
 - Selection: `TAX_CALCULATION_ENABLED=true` -> GST engine (takes precedence); else a configured
   `TAX_RATE_PERCENT` -> interim engine; else not configured. Default false/unset = checkout refuses.
 - Readiness (read-only) per cart line: missing classification, unapproved classification, no approved

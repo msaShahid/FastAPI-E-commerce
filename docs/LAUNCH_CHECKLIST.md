@@ -30,11 +30,10 @@ done from the code.
 - [ ] Monitoring: watch `GET /health`, `GET /health/db` and the admin `/admin/lifecycle/health` and `/admin/health/dependencies` endpoints; alert on
       open reconciliations (`/admin/reconciliations`) and on webhook failures.
 - [ ] Load test the checkout path with realistic concurrency on production-like hardware (concurrency is tested for correctness, not for load).
-- [ ] Write the privacy policy, terms and returns policy the storefront must show; decide the returns process (not yet built).
+- [ ] Write the privacy policy, terms and returns policy the storefront must show. The returns workflow is built (`docs/RETURNS.md`; window set by
+      `RETURN_WINDOW_DAYS`, default 7); NovaCart refunds whole orders only, so a partial return is closed with a recorded resolution and refunded by hand.
 
 ## Not built yet (decisions needed)
 
 | Feature | What is needed |
 |---|---|
-| Coupons and discounts | Which discount types, and whether they can be combined |
-| Customer returns | The returns policy: window, who pays, refund versus replacement |

@@ -401,6 +401,15 @@ async def seed_orders(client, admin, sessions, product_ids, variant_ids, provide
     await seed_carts(client, sessions, product_ids, variant_ids)
 
 
+async def seed_payment_mode(client, admin) -> None:
+    """Last, so it cannot affect the demo orders above: switch the built-in DEMO gateway on, so the shop can be tried end to end with fake test details."""
+    r = await client.post(f"{API}/admin/payments/demo/enable", headers=admin, json={"confirm_no_real_money": True})
+    if r.status_code == 200:
+        print("  Payment mode: DEMO (fake test details, no real money): see GET /api/v1/payments/demo/test-details")
+    else:  # most often PROVIDER_SECRETS_KEY is not set in this environment
+        print(f"  Payment mode: demo gateway NOT enabled (HTTP {r.status_code}: {r.text[:120]}). Set PROVIDER_SECRETS_KEY, then POST /api/v1/admin/payments/demo/enable")
+
+
 async def seed_coupons(client, admin) -> None:
     made = 0
     for coupon in data.DEMO_COUPONS:
@@ -484,6 +493,8 @@ async def main() -> None:
             await seed_coupons(client, admin)
             print("Reviews and wishlists...")
             await seed_reviews_and_wishlists(client, sessions)
+            print("Payment mode...")
+            await seed_payment_mode(client, admin)
         await flush_pending_cache()
         await summary()
     finally:

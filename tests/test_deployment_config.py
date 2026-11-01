@@ -68,7 +68,7 @@ def test_the_production_env_template_fails_closed_until_it_is_filled_in():
     from app.core.config import ConfigurationError, Settings
 
     values = {k.lower(): v for k, v in dotenv_values(need(".env.production.example")).items() if v}
-    assert values["environment"] == "production" and values["live_payments_enabled"] == "false"
+    assert values["environment"] == "production" and values["live_payments_enabled"] == "true"   # the kill switch; live stays off until activated
     with pytest.raises(ConfigurationError):
         Settings(_env_file=None, **{k: v for k, v in values.items() if k in (
             "environment", "database_url", "jwt_secret", "stripe_secret_key", "stripe_webhook_secret")})

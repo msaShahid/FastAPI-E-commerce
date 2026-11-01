@@ -474,7 +474,7 @@ async def test_readiness_reports_payment_currency_blockers(client, admin_headers
     monkeypatch.setattr(get_settings(), "payment_currencies_enabled", enabled)
     body = (await client.get(f"{API}/admin/tax/readiness", headers=admin_headers)).json()
     assert {b["code"] for b in body["payments"]["blockers"]} == codes
-    assert body["payments"]["payment_currency"] == store and body["payments"]["live_payments_enabled"] is False
+    assert body["payments"]["payment_currency"] == store and body["payments"]["live_payments_enabled"] is True   # the deployment kill switch (on by default)
 
 
 async def test_readiness_uses_the_default_for_a_new_store_and_flags_a_legacy_store_without_one(client, admin_headers, category, db_session):
@@ -493,6 +493,6 @@ async def test_readiness_uses_the_default_for_a_new_store_and_flags_a_legacy_sto
     assert body["payments"]["payment_currency"] is None
 
 
-def test_live_payments_and_enabled_currencies_default_to_off():
+def test_the_live_payments_kill_switch_defaults_to_on_and_enabled_currencies_to_none():
     s = get_settings()
-    assert s.live_payments_enabled is False
+    assert s.live_payments_enabled is True   # live is still OFF until an administrator activates it (test_payment_modes.py)

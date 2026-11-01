@@ -485,5 +485,5 @@ def test_migration_and_model_use_identical_phase28_guard_sql():
     assert tuple(s.strip() for s in migration) == tuple(s.strip() for s in PROVIDER_FUNCTIONS)
 
 
-def test_live_payments_remain_disabled_by_default():
-    assert get_settings().live_payments_enabled is False
+def test_the_live_payments_kill_switch_is_on_by_default_but_nothing_is_live_until_an_administrator_activates_it():
+    assert get_settings().live_payments_enabled is True   # a deployment-level permission only; activation is tested in test_payment_modes.py

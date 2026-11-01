@@ -205,7 +205,8 @@ def succeeded(pi, amount=2000, currency="inr"):
 # ================================================================================================ catalog, creation, redaction
 async def test_the_catalog_states_what_each_provider_is_verified_to_support(client, admin_headers, world):
     catalog = {c["provider"]: c for c in (await client.get(f"{API}/admin/payment-providers/catalog", headers=admin_headers)).json()}
-    assert set(catalog) == {"stripe", "razorpay"}
+    assert set(catalog) == {"stripe", "razorpay", "demo"}                       # the built-in demo gateway is in the catalog (test mode only)
+    assert catalog["demo"]["modes"] == ["test"] and catalog["demo"]["credential_fields"] == []
     assert catalog["razorpay"]["capabilities"]["currencies"] == ["inr"] and catalog["razorpay"]["capabilities"]["supports_cancel"] is False
     assert catalog["stripe"]["credential_fields"] == ["secret_key"] and catalog["razorpay"]["credential_fields"] == ["key_id", "key_secret"]
     assert "mocked" in catalog["razorpay"]["capabilities"]["verification"]
@@ -400,8 +401,11 @@ async def test_live_configurations_need_every_condition_and_entering_credentials
     assert cfg["status"] == "draft"
     await client.post(f"{base}/validate", headers=admin_headers)
     blocked = (await client.post(f"{base}/enable", headers=admin_headers)).json()["detail"]
-    for reason in ("live_payments_disabled_on_this_deployment", "webhook_not_verified", "sandbox_verification_not_recorded", "production_review_not_recorded"):
+    for reason in ("webhook_not_verified", "sandbox_verification_not_recorded", "production_review_not_recorded"):
         assert reason in blocked
+    assert "live_payments_disabled_on_this_deployment" not in blocked              # the deployment kill switch is ON by default now (live is still off until activated)
+    monkeypatch.setattr(get_settings(), "live_payments_enabled", False)           # ... and when a deployment turns it off, live cannot even be enabled
+    assert "live_payments_disabled_on_this_deployment" in (await client.post(f"{base}/enable", headers=admin_headers)).json()["detail"]
     assert (await client.post(f"{base}/attestations", json={"kind": "production_review", "reference": "review-1"}, headers=admin_headers)).json()["code"] == "sandbox_verification_required"
     await client.post(f"{base}/attestations", json={"kind": "sandbox_verified", "reference": "stripe test-mode run 2026-10-19"}, headers=admin_headers)
     await client.post(f"{base}/attestations", json={"kind": "production_review", "reference": "go-live checklist signed off"}, headers=admin_headers)

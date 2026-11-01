@@ -339,7 +339,7 @@ async def _user_order(client, product_id):
     return h, o.json()["id"]
 
 
-async def test_a_live_stripe_key_is_refused_unless_live_payments_are_enabled(client, admin_headers, category, monkeypatch):
+async def test_a_live_stripe_key_in_the_environment_is_always_refused(client, admin_headers, category, monkeypatch):
     provider = FakeProvider()
     app.dependency_overrides[get_payment_provider] = lambda: provider
     p = await product(client, admin_headers, category, "LIVE")
@@ -351,8 +351,9 @@ async def test_a_live_stripe_key_is_refused_unless_live_payments_are_enabled(cli
     refund = await client.post(f"{API}/payments/{order_id}/refund", headers=admin_headers)
     assert refund.status_code == 503 and refund.json()["code"] == "live_payments_disabled"
     assert provider.refunds == []
-    monkeypatch.setattr(s, "live_payments_enabled", True)  # an explicit decision lifts the guard
-    assert (await client.post(f"{API}/payments", json={"order_id": order_id}, headers=h)).status_code == 201
+    monkeypatch.setattr(s, "live_payments_enabled", True)  # the deployment kill switch does NOT lift it: live gateways are configured in the admin panel
+    again = await client.post(f"{API}/payments", json={"order_id": order_id}, headers=h)
+    assert again.status_code == 503 and again.json()["code"] == "live_payments_disabled"
 
 
 async def test_test_mode_keys_are_unaffected_by_the_live_guard(client, admin_headers, category, monkeypatch):

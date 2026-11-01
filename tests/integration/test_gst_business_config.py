@@ -256,7 +256,7 @@ async def test_a_fresh_business_is_not_ready_and_the_report_says_exactly_why(cli
     assert body["ready"] is False and body["settings_id"] is None
     assert codes == {"no_approved_tax_settings"}
     assert body["flags"] == {"tax_calculation_enabled": False, "tax_classification_required": False}
-    assert body["payments"]["live_payments_enabled"] is False and body["payments"]["payment_currency"] == "usd"
+    assert body["payments"]["live_payments_enabled"] is True and body["payments"]["payment_currency"] == "usd"   # the deployment kill switch (on by default)
     # INR is never assumed: the test store is configured in USD and USD is enabled, so no payment blocker.
     assert body["payments"]["blockers"] == []
     assert body["counts"]["active_products"] == 0
@@ -336,6 +336,9 @@ def test_no_gstin_or_tax_data_is_hardcoded_or_seeded_in_the_platform():
             assert not seeding.search(text_), f"tax data seeded in {path}"
 
 
-def test_tax_activation_flags_default_to_off():
+def test_tax_calculation_defaults_to_off_and_the_live_payments_kill_switch_defaults_to_on():
     s = get_settings()
-    assert s.tax_calculation_enabled is False and s.live_payments_enabled is False
+    assert s.tax_calculation_enabled is False
+    # live_payments_enabled is a deployment-level KILL SWITCH (on by default): live payments are still OFF until an administrator activates them
+    # in the admin panel (payment_settings.live_payments_active starts false). That is tested in test_payment_modes.py.
+    assert s.live_payments_enabled is True

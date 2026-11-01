@@ -356,6 +356,17 @@ def test_no_public_route_can_change_a_payment_or_refund_directly():
         "/api/v1/payments/webhook": ["POST"],                           # the provider, authenticated by signature only
         "/api/v1/payments/webhooks/{provider}": ["POST"],
         "/api/v1/payments/{order_id}/refund": ["POST"],                 # admin: REQUEST a refund
+        # The built-in DEMO gateway. test-details only reads. pay can only complete a payment that was created with the demo gateway, for
+        # the caller's own order, and does so by feeding a SIGNED event through the normal webhook verification (never by editing a record).
+        "/api/v1/payments/demo/pay": ["POST"],
+        "/api/v1/payments/demo/test-details": ["GET"],
+        # The administrator's payment controls (every one requires an administrator: see test_payment_modes.py). They change the store's payment
+        # MODE and settings; none of them edits a payment or a refund record.
+        "/api/v1/admin/payments/overview": ["GET"],
+        "/api/v1/admin/payments/demo/enable": ["POST"],
+        "/api/v1/admin/payments/demo/disable": ["POST"],
+        "/api/v1/admin/payments/live/activate": ["POST"],
+        "/api/v1/admin/payments/live/deactivate": ["POST"],
     }, payment_paths                                                    # nothing edits or deletes a payment record
     mutating_status = {p: m for p, m in ((p, sorted(x.upper() for x in ops)) for p, ops in paths.items())
                        if p.endswith("/status")}

@@ -17,6 +17,8 @@ class StoreSettingsRead(BaseModel):
     delivery_check: str                         # "none": every address is accepted; another value: a check refuses undeliverable ones
     checkout_available: bool                    # false: checkout would answer 503 (see unavailable_reasons)
     payments_available: bool                    # false: paying would be refused for this currency
+    payment_mode: str = "none"                  # demo | test | live | none: show a clear banner for demo and test
+    payment_demo: bool = False                  # true in demo mode: payments are simulated and no real money moves
     unavailable_reasons: list[str] = []
 
 

@@ -40,6 +40,27 @@ class StoreService:
             return "GST is switched on but the business tax configuration is not approved and in force" if blockers else None
         return None if settings.tax_rate_percent is not None else "Tax is not configured"
 
+    async def _payment_mode(self, settings) -> str:
+        """demo | test | live | none, from the gateway the store would use for a NEW payment right now (the public sees only this word)."""
+        from app.modules.payments.repositories.provider_config_repository import (
+            PaymentSettingsRepository,
+            ProviderConfigRepository,
+        )
+
+        preferred = await ProviderConfigRepository(self.repo.db).get_preferred()
+        if preferred is None:  # no stored configuration: the legacy environment Stripe test key, if any
+            from app.modules.payments.repositories.provider_config_repository import (
+                ProviderConfigRepository as _R,
+            )
+
+            return "test" if (not await _R(self.repo.db).any_exists() and settings.stripe_secret_key.startswith("sk_test_")) else "none"
+        if preferred.status != "enabled" or preferred.credentials_status != "valid":
+            return "none"
+        if preferred.mode == "live":
+            live = settings.live_payments_enabled and await PaymentSettingsRepository(self.repo.db).live_active()
+            return "live" if live else "none"
+        return "demo" if preferred.provider == "demo" else "test"
+
     async def read_public_settings(self) -> StoreSettingsRead:
         """What a storefront may know about how buying works here, and why buying might currently be impossible."""
         settings = get_settings()
@@ -55,6 +76,7 @@ class StoreService:
         payments_ok = currency.currency is not None and not currency.warnings
         if currency.currency is not None and not payments_ok:
             reasons.append("Payments are not enabled for the store currency")
+        payment_mode = await self._payment_mode(settings)
         return StoreSettingsRead(
             currency=currency.currency,
             minor_unit_exponent=currency.minor_unit_exponent,
@@ -64,6 +86,8 @@ class StoreService:
             delivery_check=get_delivery_eligibility().policy,
             checkout_available=currency.currency is not None and settings.flat_shipping_cents is not None and tax_reason is None,
             payments_available=payments_ok,
+            payment_mode=payment_mode,
+            payment_demo=payment_mode == "demo",
             unavailable_reasons=reasons,
         )
 

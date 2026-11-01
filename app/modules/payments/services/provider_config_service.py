@@ -12,6 +12,7 @@ Administration of payment provider configurations. Rules enforced here (and re-c
 """
 
 import json
+import secrets
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -22,13 +23,17 @@ from app.core.secrets import SecretCipher, get_cipher, hint
 from app.modules.audit.services.audit_service import AuditService
 from app.modules.auth.models.user import User
 from app.modules.payments.exceptions.provider_exceptions import (
+    LivePaymentsActiveError,
     ProviderConfigConflictError,
     ProviderConfigInvalidError,
     ProviderConfigNotFoundError,
     ProviderNotReadyError,
 )
 from app.modules.payments.models.provider_config import PaymentProviderConfig
-from app.modules.payments.repositories.provider_config_repository import ProviderConfigRepository
+from app.modules.payments.repositories.provider_config_repository import (
+    PaymentSettingsRepository,
+    ProviderConfigRepository,
+)
 from app.modules.payments.services.provider_resolver import build_provider
 from app.modules.store.repositories.store_repository import StoreRepository
 
@@ -100,6 +105,8 @@ class ProviderConfigService:
             "readiness": {"ready_for_use": not blockers and config.status == "enabled", "ready_for_live": not live_blockers,
                           "blockers": blockers, "live_blockers": live_blockers},
             "sandbox_verified_at": config.sandbox_verified_at, "production_review_at": config.production_review_at,
+            "is_demo": config.provider == "demo",
+            "last_check": {"at": config.last_check_at, "ok": config.last_check_ok, "checks": (config.last_check_result or {}).get("checks", [])},
             "version": config.version, "created_by_user_id": config.created_by_user_id,
             "updated_by_user_id": config.updated_by_user_id, "created_at": config.created_at, "updated_at": config.updated_at,
         }
@@ -111,7 +118,7 @@ class ProviderConfigService:
                 "refund_needs_provider_reference": spec.refund_needs_provider_reference, "verification": spec.verification}
 
     def catalog(self) -> list[dict]:
-        return [{"provider": s.name, "label": s.label, "modes": list(MODES), "credential_fields": list(s.credential_fields),
+        return [{"provider": s.name, "label": s.label, "modes": ["test"] if s.name == "demo" else list(MODES), "credential_fields": list(s.credential_fields),
                  "capabilities": self.capabilities(s), "webhook_events": list(s.webhook_events)} for s in SPECS.values()]
 
     async def list_configs(self) -> list[dict]:
@@ -166,7 +173,25 @@ class ProviderConfigService:
         return sorted(set(out))
 
     # ------------------------------------------------------------ operations
+    async def create_demo(self, admin: User) -> dict:
+        """The built-in demo gateway: no credentials to enter (it has none), a webhook secret it generates for itself, TEST mode only.
+        Asking again returns the existing one."""
+        spec = SPECS["demo"]
+        existing = await self.repo.get_by_provider_mode("demo", "test")
+        if existing is not None:
+            return self.view(existing)
+        cipher: SecretCipher = self._cipher_factory()
+        config = await self.repo.create(
+            provider="demo", mode="test", status="draft", credentials_ciphertext=cipher.encrypt("{}"), credential_hint="demo",
+            webhook_secret_ciphertext=cipher.encrypt("demo_whsec_" + secrets.token_hex(24)), webhook_hint="demo", currencies=sorted(spec.currencies),
+            credentials_status="valid", credentials_validated_at=_now(), created_by_user_id=admin.id, updated_by_user_id=admin.id,
+        )
+        await self._audit(admin, "created", config, currencies=config.currencies, demo=True)
+        return self.view(config)
+
     async def create(self, admin: User, *, provider: str, mode: str, credentials, webhook_secret, currencies: list[str] | None) -> dict:
+        if provider.strip().lower() == "demo":
+            raise ProviderConfigInvalidError("use_demo_endpoint", "The demo gateway has no credentials: enable it with POST /admin/payments/demo/enable")
         spec = get_spec(provider.strip().lower())
         if spec is None:
             raise ProviderConfigInvalidError("provider_not_supported", f"Unsupported payment provider. Supported: {', '.join(SPECS)}")
@@ -193,6 +218,8 @@ class ProviderConfigService:
     async def rotate(self, admin: User, config_id: UUID, *, credentials, webhook_secret) -> dict:
         config = await self._get(config_id, lock=True)
         spec = self.spec_of(config)
+        if config.provider == "demo":
+            raise ProviderConfigConflictError("demo_has_no_credentials", "The demo gateway has no credentials or webhook secret to rotate")
         if credentials is None and webhook_secret is None:
             raise ProviderConfigInvalidError("nothing_to_rotate", "Provide new credentials and/or a new webhook secret")
         cipher = self._cipher_factory()
@@ -284,6 +311,8 @@ class ProviderConfigService:
     async def prefer(self, admin: User, config_id: UUID) -> dict:
         config = await self._get(config_id, lock=True)
         spec = self.spec_of(config)
+        if config.provider == "demo" and await PaymentSettingsRepository(self.repo.db).live_active():
+            raise LivePaymentsActiveError("make the demo gateway the store's payment provider")
         if config.status != "enabled" or config.credentials_status != "valid":
             raise ProviderNotReadyError(["not_enabled" if config.status != "enabled" else "credentials_not_valid"])
         store_currency, _ = await StoreRepository(self.repo.db).effective_currency(get_settings().default_store_currency)

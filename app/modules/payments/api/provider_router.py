@@ -13,6 +13,7 @@ from app.core.database import DbSession
 from app.modules.audit.dependencies.audit_deps import AuditServiceDep
 from app.modules.auth.dependencies.auth import AdminUser
 from app.modules.payments.repositories.provider_config_repository import ProviderConfigRepository
+from app.modules.payments.schemas.payment_mode import CheckResult
 from app.modules.payments.schemas.provider_config import (
     AttestationCreate,
     CatalogEntry,
@@ -71,6 +72,16 @@ async def rotate_credentials(config_id: UUID, payload: CredentialsRotate, admin:
 async def validate_credentials(config_id: UUID, admin: AdminUser, service: ServiceDep):
     """Checks the stored credentials against the provider with a harmless authenticated call. Returns a safe reason code."""
     return await service.validate(admin, config_id)
+
+
+@provider_router.post("/{config_id}/check", response_model=CheckResult)
+async def check_provider(config_id: UUID, admin: AdminUser, db: DbSession, audit: AuditServiceDep):
+    """Tests the gateway end to end from the admin panel: the credentials are accepted and are the right mode, the store currency is enabled,
+    a webhook secret is stored and a signed event has arrived, and (in a sandbox) a test payment can be created and cancelled. Nothing is ever
+    charged and no payment is created on a LIVE gateway. The result is kept (and shown on the overview); live payments need a passing check."""
+    from app.modules.payments.services.payment_mode_service import PaymentModeService
+
+    return await PaymentModeService(db, audit).run_checks(admin, config_id)
 
 
 @provider_router.put("/{config_id}/currencies", response_model=ProviderConfigRead)

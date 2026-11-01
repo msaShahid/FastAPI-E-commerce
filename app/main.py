@@ -31,7 +31,9 @@ from app.modules.coupons.api.router import coupons_router
 from app.modules.email_settings.api.router import email_settings_router
 from app.modules.invoices.api.router import invoices_router
 from app.modules.orders.api.router import order_router
+from app.modules.payments.api.demo_router import demo_router
 from app.modules.payments.api.lifecycle_router import lifecycle_router
+from app.modules.payments.api.mode_router import payment_mode_router
 from app.modules.payments.api.provider_router import provider_router
 from app.modules.payments.api.router import payment_router
 from app.modules.products.api.router import product_router
@@ -127,6 +129,8 @@ app.include_router(wishlist_router, prefix=settings.api_v1_prefix)
 app.include_router(invoices_router, prefix=settings.api_v1_prefix)
 app.include_router(coupons_router, prefix=settings.api_v1_prefix)
 app.include_router(returns_router, prefix=settings.api_v1_prefix)
+app.include_router(payment_mode_router, prefix=settings.api_v1_prefix)
+app.include_router(demo_router, prefix=settings.api_v1_prefix)
 
 
 app.include_router(graphql_router, prefix="/graphql")

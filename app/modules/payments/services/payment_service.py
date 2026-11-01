@@ -90,9 +90,9 @@ class PaymentService:
 
     @staticmethod
     def _assert_live_payments_allowed() -> None:
-        """A live Stripe key is refused unless LIVE_PAYMENTS_ENABLED is set. Test keys are unaffected."""
-        settings = get_settings()
-        if settings.stripe_secret_key.startswith(("sk_live_", "rk_live_")) and not settings.live_payments_enabled:
+        """A live Stripe key supplied through the ENVIRONMENT is always refused: live gateways are configured, tested and activated in the
+        admin panel (credentials stored encrypted), never in environment variables. Test keys are unaffected."""
+        if get_settings().stripe_secret_key.startswith(("sk_live_", "rk_live_")):
             raise LivePaymentsDisabledError()
 
     def _assert_currency_payable(self, code: str):

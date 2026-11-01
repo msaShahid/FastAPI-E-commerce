@@ -32,18 +32,33 @@ class SelectedProvider:
     config: PaymentProviderConfig
 
 
-def build_provider(config: PaymentProviderConfig, cipher: SecretCipher, *, previous_webhook_secret: bool = False) -> PaymentProvider:
+def build_provider(
+    config: PaymentProviderConfig, cipher: SecretCipher, *, previous_webhook_secret: bool = False, db: AsyncSession | None = None,
+) -> PaymentProvider:
     """An adapter for a stored configuration, whatever its state (reconciliation must keep working when it is disabled)."""
     spec = get_spec(config.provider)
     credentials = json.loads(cipher.decrypt(config.credentials_ciphertext))
     blob = config.previous_webhook_secret_ciphertext if previous_webhook_secret else config.webhook_secret_ciphertext
-    return spec.factory(credentials, cipher.decrypt(blob) if blob else None)
+    adapter = spec.factory(credentials, cipher.decrypt(blob) if blob else None)
+    if db is not None and hasattr(adapter, "bind_session"):  # the built-in demo gateway keeps its small state in the caller's transaction
+        adapter.bind_session(db)
+    return adapter
 
 
 class ProviderResolver:
     def __init__(self, db: AsyncSession, *, cipher_factory=get_cipher) -> None:
         self.repo = ProviderConfigRepository(db)
+        self._db = db
         self._cipher_factory = cipher_factory
+
+    async def live_payments_active(self) -> bool:
+        """Live payments need BOTH the deployment's permission (LIVE_PAYMENTS_ENABLED, a kill switch that is on by default) and an
+        administrator's explicit activation in the admin panel."""
+        from app.modules.payments.repositories.provider_config_repository import (
+            PaymentSettingsRepository,
+        )
+
+        return get_settings().live_payments_enabled and await PaymentSettingsRepository(self._db).live_active()
 
     async def uses_configurations(self) -> bool:
         return await self.repo.any_exists()
@@ -62,13 +77,17 @@ class ProviderResolver:
         if currency.lower() not in set(config.currencies) & spec.currencies:
             raise PaymentProviderUnavailableError(
                 "provider_currency_not_supported", f"{spec.label} is not enabled for {currency.upper()} on this store")
-        if config.mode == "live" and not get_settings().live_payments_enabled:
-            raise PaymentProviderUnavailableError("provider_mode_not_allowed", "Live payments are not enabled on this deployment")
-        return SelectedProvider(build_provider(config, self._cipher_factory()), config)
+        live_active = await self.live_payments_active()
+        if config.mode == "live" and not live_active:
+            raise PaymentProviderUnavailableError(
+                "provider_mode_not_allowed", "Live payments are not activated for this store: an administrator must activate them in the admin panel")
+        if config.provider == "demo" and live_active:
+            raise PaymentProviderUnavailableError("provider_mode_not_allowed", "The demo gateway cannot take payments while live payments are active")
+        return SelectedProvider(build_provider(config, self._cipher_factory(), db=self._db), config)
 
     async def provider_for_config(self, config_id) -> PaymentProvider | None:
         config = await self.repo.get(config_id)
-        return None if config is None else build_provider(config, self._cipher_factory())
+        return None if config is None else build_provider(config, self._cipher_factory(), db=self._db)
 
     async def webhook_verifiers(self, provider_name: str) -> list[tuple[PaymentProviderConfig, PaymentProvider]]:
         cipher = self._cipher_factory()

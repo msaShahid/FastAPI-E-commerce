@@ -143,7 +143,8 @@ class OrderLifecycleService:
         if order.status != OrderStatus.PENDING:
             return False
         await self.orders.update_status(order, OrderStatus.PAID, None, "payment confirmed by the payment provider")
-        await self._audit("order.paid", "order", order.id, details={"payment_id": str(payment.id)})
+        order.paid_in_demo_mode = payment.provider == "demo"  # a demo payment moves no real money: such orders are flagged everywhere
+        await self._audit("order.paid", "order", order.id, details={"payment_id": str(payment.id), "demo": order.paid_in_demo_mode})
         return True
 
     # ------------------------------------------------------------ fulfilment (admin)

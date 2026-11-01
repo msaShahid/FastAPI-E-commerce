@@ -19,8 +19,14 @@ class PaymentRead(BaseModel):
     currency: str
     provider: str
     client_secret: str | None = None
+    demo: bool = False   # true when this payment is with the built-in DEMO gateway: no real money moves
 
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="after")
+    def _demo_from_provider(self) -> "PaymentRead":
+        self.demo = self.provider == "demo"
+        return self
 
 
 class RefundRead(BaseModel):

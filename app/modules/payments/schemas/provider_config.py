@@ -83,6 +83,12 @@ class Readiness(BaseModel):
     live_blockers: list[str]
 
 
+class LastCheck(BaseModel):
+    at: datetime | None = None
+    ok: bool | None = None
+    checks: list[dict] = []
+
+
 class ProviderConfigRead(BaseModel):
     """Sanitized: no secret, ciphertext or decryptable value is ever included."""
 
@@ -99,6 +105,8 @@ class ProviderConfigRead(BaseModel):
     readiness: Readiness
     sandbox_verified_at: datetime | None
     production_review_at: datetime | None
+    is_demo: bool = False             # the built-in simulator: never real money
+    last_check: LastCheck = LastCheck()
     version: int
     created_by_user_id: UUID | None
     updated_by_user_id: UUID | None

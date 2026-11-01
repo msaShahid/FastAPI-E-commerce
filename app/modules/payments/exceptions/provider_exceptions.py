@@ -41,3 +41,21 @@ class ProviderNotReadyError(ConflictError):
     def __init__(self, blockers: list[str]) -> None:
         super().__init__("This provider cannot be enabled yet: " + ", ".join(blockers))
         self.blockers = blockers
+
+
+class LivePaymentsActiveError(ConflictError):
+    code = "live_payments_active"
+
+    def __init__(self, what: str = "do that") -> None:
+        super().__init__(f"Live payments are active, so you cannot {what}. Deactivate live payments first (an explicit step).")
+
+
+class LiveActivationBlockedError(ConflictError):
+    """Live payments were NOT activated: lists the safe reasons (never secrets). Nothing changed."""
+
+    code = "live_activation_blocked"
+
+    def __init__(self, blockers: list[str]) -> None:
+        super().__init__("Live payments cannot be activated yet: " + ", ".join(blockers))
+        self.blockers = blockers
+

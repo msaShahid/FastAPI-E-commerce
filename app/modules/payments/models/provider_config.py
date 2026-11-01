@@ -40,6 +40,7 @@ class PaymentProviderConfig(Base, TimestampMixin):
         CheckConstraint("credentials_status IN ('unvalidated', 'valid', 'invalid')", name="ck_provider_configs_cred_status"),
         CheckConstraint("webhook_status IN ('unverified', 'verified')", name="ck_provider_configs_webhook_status"),
         CheckConstraint("NOT is_preferred OR status = 'enabled'", name="ck_provider_configs_preferred_enabled"),
+        CheckConstraint("provider <> 'demo' OR mode = 'test'", name="ck_provider_configs_demo_is_test"),  # the demo gateway can never be live
         CheckConstraint(
             "status <> 'enabled' OR (credentials_status = 'valid' AND credentials_ciphertext IS NOT NULL)",
             name="ck_provider_configs_enabled_valid",
@@ -71,6 +72,10 @@ class PaymentProviderConfig(Base, TimestampMixin):
     sandbox_verification_ref: Mapped[str | None] = mapped_column(Text, default=None)
     production_review_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     production_review_ref: Mapped[str | None] = mapped_column(Text, default=None)
+    # The outcome of the administrator's last "test this gateway" run (see PaymentModeService.run_checks); safe codes only.
+    last_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    last_check_ok: Mapped[bool | None] = mapped_column(default=None)
+    last_check_result: Mapped[dict | None] = mapped_column(JSONB, default=None)
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")  # +1 on every credential change/rotation
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), default=None)
     updated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), default=None)

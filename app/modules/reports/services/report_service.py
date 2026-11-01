@@ -91,7 +91,8 @@ class ReportService:
     # ------------------------------------------------------------------------------------------------ reports
     async def sales_by_day(self, start: date | None, end: date | None) -> SalesByDay:
         p = await self._period(start, end)
-        return SalesByDay(**self._header(p), days=await self._days(p), excluded_orders=await self.repo.excluded_orders(p["s"], p["e"], p["cur"]))
+        return SalesByDay(**self._header(p), days=await self._days(p), excluded_orders=await self.repo.excluded_orders(p["s"], p["e"], p["cur"]),
+                           demo_orders_excluded=await self.repo.demo_orders(p["s"], p["e"]))
 
     async def summary(self, start: date | None, end: date | None) -> Summary:
         p = await self._period(start, end)
@@ -105,7 +106,8 @@ class ReportService:
             refunded_cents=total("refunded_cents"), net_cents=total("net_cents"), average_order_cents=average,
             orders_by_status={status: int(n) for status, n in await self.repo.orders_by_status(p["s"], p["e"])},
             new_customers=int(await self.repo.new_customers(p["s"], p["e"])), open_refunds=int(await self.repo.open_refunds()),
-            excluded_orders=await self.repo.excluded_orders(p["s"], p["e"], p["cur"]), definitions=DEFINITIONS,
+            excluded_orders=await self.repo.excluded_orders(p["s"], p["e"], p["cur"]), demo_orders_excluded=await self.repo.demo_orders(p["s"], p["e"]),
+            definitions=DEFINITIONS,
         )
 
     async def top_products(self, start: date | None, end: date | None, by: str, limit: int, group_by: str = "product") -> TopProducts:

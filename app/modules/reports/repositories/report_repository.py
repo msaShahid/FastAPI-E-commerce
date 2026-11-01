@@ -13,7 +13,8 @@ FIRST_PAID = """
 WITH first_paid AS (
     SELECT DISTINCT ON (h.order_id) h.order_id, h.created_at AS paid_at
     FROM order_status_history h
-    WHERE upper(h.to_status) = 'PAID' AND h.created_at >= :s AND h.created_at < :e
+    JOIN orders od ON od.id = h.order_id
+    WHERE upper(h.to_status) = 'PAID' AND NOT od.paid_in_demo_mode AND h.created_at >= :s AND h.created_at < :e
     ORDER BY h.order_id, h.created_at
 )
 """
@@ -53,6 +54,12 @@ class ReportRepository:
             FROM refunds r WHERE r.status = 'succeeded' AND r.currency = :cur AND r.updated_at >= :s AND r.updated_at < :e GROUP BY 1""",
             s=s, e=e, tz=tz, cur=cur,
         )
+
+    async def demo_orders(self, s: datetime, e: datetime) -> int:
+        """Orders paid through the DEMO gateway in the period: never counted as sales."""
+        return (await self._rows(
+            "SELECT count(DISTINCT h.order_id) FROM order_status_history h JOIN orders od ON od.id = h.order_id "
+            "WHERE upper(h.to_status) = 'PAID' AND od.paid_in_demo_mode AND h.created_at >= :s AND h.created_at < :e", s=s, e=e))[0][0]
 
     async def excluded_orders(self, s: datetime, e: datetime, cur: str) -> int:
         row = await self._rows(

@@ -31,6 +31,7 @@ class DayRow(BaseModel):
 class SalesByDay(ReportPeriod):
     days: list[DayRow]        # every day in the range, zero-filled, oldest first
     excluded_orders: int      # paid orders in another currency or with none recorded: never added into these totals
+    demo_orders_excluded: int = 0   # orders paid through the DEMO gateway (no real money): never counted as sales
 
 
 class Summary(ReportPeriod):
@@ -49,6 +50,7 @@ class Summary(ReportPeriod):
     new_customers: int
     open_refunds: int                  # right now, whatever the period: requested, pending or uncertain
     excluded_orders: int
+    demo_orders_excluded: int = 0
     definitions: dict[str, str]
 
 

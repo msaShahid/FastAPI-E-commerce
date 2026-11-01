@@ -1088,6 +1088,61 @@
         "title": "ChangePasswordRequest",
         "type": "object"
       },
+      "CheckItem": {
+        "properties": {
+          "check": {
+            "title": "Check",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "check",
+          "status",
+          "required",
+          "message"
+        ],
+        "title": "CheckItem",
+        "type": "object"
+      },
+      "CheckResult": {
+        "properties": {
+          "checked_at": {
+            "format": "date-time",
+            "title": "Checked At",
+            "type": "string"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/CheckItem"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "checked_at",
+          "checks"
+        ],
+        "title": "CheckResult",
+        "type": "object"
+      },
       "CheckoutRequest": {
         "properties": {
           "address_id": {
@@ -2290,6 +2345,139 @@
         "title": "DeferredEventRead",
         "type": "object"
       },
+      "DemoEnable": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm_no_real_money": {
+            "description": "Must be true: you confirm that demo payments move no real money and are for testing only",
+            "title": "Confirm No Real Money",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "confirm_no_real_money"
+        ],
+        "title": "DemoEnable",
+        "type": "object"
+      },
+      "DemoPayRequest": {
+        "additionalProperties": false,
+        "description": "Pay with FAKE test details. Send only the one detail that matches the method: the demo gateway never receives an expiry date, a CVC, a\nname or anything else, and refuses any number or id that is not on its published test list (so real details are never accepted).",
+        "properties": {
+          "bank": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bank"
+          },
+          "card_number": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Card Number"
+          },
+          "method": {
+            "default": "card",
+            "enum": [
+              "card",
+              "upi",
+              "netbanking"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "order_id": {
+            "format": "uuid",
+            "title": "Order Id",
+            "type": "string"
+          },
+          "upi_id": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upi Id"
+          }
+        },
+        "required": [
+          "order_id"
+        ],
+        "title": "DemoPayRequest",
+        "type": "object"
+      },
+      "DemoPayResult": {
+        "properties": {
+          "demo": {
+            "default": true,
+            "title": "Demo",
+            "type": "boolean"
+          },
+          "failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "order_id": {
+            "format": "uuid",
+            "title": "Order Id",
+            "type": "string"
+          },
+          "order_status": {
+            "title": "Order Status",
+            "type": "string"
+          },
+          "payment_id": {
+            "format": "uuid",
+            "title": "Payment Id",
+            "type": "string"
+          },
+          "payment_status": {
+            "title": "Payment Status",
+            "type": "string"
+          },
+          "succeeded": {
+            "title": "Succeeded",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "order_id",
+          "payment_id",
+          "succeeded",
+          "payment_status",
+          "order_status",
+          "message"
+        ],
+        "title": "DemoPayResult",
+        "type": "object"
+      },
       "DisputeRead": {
         "properties": {
           "amount_cents": {
@@ -2808,6 +2996,150 @@
         "title": "ForgotPasswordRequest",
         "type": "object"
       },
+      "GatewaySummary": {
+        "properties": {
+          "connection": {
+            "title": "Connection",
+            "type": "string"
+          },
+          "credentials_status": {
+            "title": "Credentials Status",
+            "type": "string"
+          },
+          "currencies": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Currencies",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_demo": {
+            "title": "Is Demo",
+            "type": "boolean"
+          },
+          "is_preferred": {
+            "title": "Is Preferred",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "last_check_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Check At"
+          },
+          "last_check_ok": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Check Ok"
+          },
+          "live_blockers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Live Blockers",
+            "type": "array"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "ready_for_live": {
+            "title": "Ready For Live",
+            "type": "boolean"
+          },
+          "ready_for_use": {
+            "title": "Ready For Use",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "webhook_status": {
+            "title": "Webhook Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "label",
+          "mode",
+          "status",
+          "is_preferred",
+          "is_demo",
+          "connection",
+          "credentials_status",
+          "webhook_status",
+          "last_check_at",
+          "last_check_ok",
+          "ready_for_use",
+          "ready_for_live",
+          "live_blockers",
+          "currencies"
+        ],
+        "title": "GatewaySummary",
+        "type": "object"
+      },
+      "GatewayToSetUp": {
+        "properties": {
+          "credential_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Credential Fields",
+            "type": "array"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "modes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Modes",
+            "type": "array"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "label",
+          "modes",
+          "credential_fields"
+        ],
+        "title": "GatewayToSetUp",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -2949,6 +3281,44 @@
         "title": "InvoiceSummary",
         "type": "object"
       },
+      "LastCheck": {
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "checks": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "ok": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ok"
+          }
+        },
+        "title": "LastCheck",
+        "type": "object"
+      },
       "LifecycleHealth": {
         "description": "Is the order/payment lifecycle healthy? Read-only.",
         "properties": {
@@ -3014,6 +3384,126 @@
           "sweep_overdue"
         ],
         "title": "LifecycleHealth",
+        "type": "object"
+      },
+      "LiveActivate": {
+        "additionalProperties": false,
+        "properties": {
+          "config_id": {
+            "description": "The LIVE gateway configuration to take payments with",
+            "format": "uuid",
+            "title": "Config Id",
+            "type": "string"
+          },
+          "confirmation": {
+            "description": "Type exactly: ACTIVATE LIVE PAYMENTS",
+            "title": "Confirmation",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "config_id",
+          "confirmation"
+        ],
+        "title": "LiveActivate",
+        "type": "object"
+      },
+      "LiveDeactivate": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "minLength": 3,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "LiveDeactivate",
+        "type": "object"
+      },
+      "LiveState": {
+        "properties": {
+          "activated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activated At"
+          },
+          "activated_by_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activated By User Id"
+          },
+          "activation_blockers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Activation Blockers",
+            "type": "array"
+          },
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "can_activate": {
+            "title": "Can Activate",
+            "type": "boolean"
+          },
+          "config_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Id"
+          },
+          "deployment_allows_live": {
+            "title": "Deployment Allows Live",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deployment_allows_live",
+          "active",
+          "activated_at",
+          "activated_by_user_id",
+          "config_id",
+          "can_activate",
+          "activation_blockers"
+        ],
+        "title": "LiveState",
         "type": "object"
       },
       "LoginRequest": {
@@ -3387,6 +3877,11 @@
               }
             ],
             "title": "Currency"
+          },
+          "demo_payment": {
+            "default": false,
+            "title": "Demo Payment",
+            "type": "boolean"
           },
           "discount_cents": {
             "default": 0,
@@ -4285,6 +4780,68 @@
         "title": "PaymentCreate",
         "type": "object"
       },
+      "PaymentOverview": {
+        "properties": {
+          "gateways": {
+            "items": {
+              "$ref": "#/components/schemas/GatewaySummary"
+            },
+            "title": "Gateways",
+            "type": "array"
+          },
+          "live": {
+            "$ref": "#/components/schemas/LiveState"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "payment_mode": {
+            "title": "Payment Mode",
+            "type": "string"
+          },
+          "payments_open": {
+            "title": "Payments Open",
+            "type": "boolean"
+          },
+          "preferred": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GatewaySummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "to_set_up": {
+            "items": {
+              "$ref": "#/components/schemas/GatewayToSetUp"
+            },
+            "title": "To Set Up",
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "payment_mode",
+          "payments_open",
+          "message",
+          "preferred",
+          "live",
+          "gateways",
+          "to_set_up",
+          "warnings"
+        ],
+        "title": "PaymentOverview",
+        "type": "object"
+      },
       "PaymentRead": {
         "properties": {
           "amount_cents": {
@@ -4305,6 +4862,11 @@
           "currency": {
             "title": "Currency",
             "type": "string"
+          },
+          "demo": {
+            "default": false,
+            "title": "Demo",
+            "type": "boolean"
           },
           "id": {
             "format": "uuid",
@@ -6807,6 +7369,11 @@
             "title": "Days",
             "type": "array"
           },
+          "demo_orders_excluded": {
+            "default": 0,
+            "title": "Demo Orders Excluded",
+            "type": "integer"
+          },
           "end": {
             "format": "date",
             "title": "End",
@@ -7780,6 +8347,16 @@
             ],
             "title": "Minor Unit Exponent"
           },
+          "payment_demo": {
+            "default": false,
+            "title": "Payment Demo",
+            "type": "boolean"
+          },
+          "payment_mode": {
+            "default": "none",
+            "title": "Payment Mode",
+            "type": "string"
+          },
           "payments_available": {
             "title": "Payments Available",
             "type": "boolean"
@@ -7826,6 +8403,11 @@
             },
             "title": "Definitions",
             "type": "object"
+          },
+          "demo_orders_excluded": {
+            "default": 0,
+            "title": "Demo Orders Excluded",
+            "type": "integer"
           },
           "discount_cents": {
             "default": 0,
@@ -7982,6 +8564,76 @@
         ],
         "title": "TaxTreatment",
         "type": "string"
+      },
+      "TestDetail": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "outcome": {
+            "title": "Outcome",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "outcome",
+          "description"
+        ],
+        "title": "TestDetail",
+        "type": "object"
+      },
+      "TestDetails": {
+        "properties": {
+          "banks": {
+            "items": {
+              "$ref": "#/components/schemas/TestDetail"
+            },
+            "title": "Banks",
+            "type": "array"
+          },
+          "cards": {
+            "items": {
+              "$ref": "#/components/schemas/TestDetail"
+            },
+            "title": "Cards",
+            "type": "array"
+          },
+          "demo_active": {
+            "title": "Demo Active",
+            "type": "boolean"
+          },
+          "notice": {
+            "title": "Notice",
+            "type": "string"
+          },
+          "other": {
+            "title": "Other",
+            "type": "string"
+          },
+          "upi_ids": {
+            "items": {
+              "$ref": "#/components/schemas/TestDetail"
+            },
+            "title": "Upi Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "demo_active",
+          "notice",
+          "cards",
+          "upi_ids",
+          "banks",
+          "other"
+        ],
+        "title": "TestDetails",
+        "type": "object"
       },
       "TokenPair": {
         "properties": {
@@ -9048,6 +9700,11 @@
             "title": "Id",
             "type": "string"
           },
+          "is_demo": {
+            "default": false,
+            "title": "Is Demo",
+            "type": "boolean"
+          },
           "is_preferred": {
             "title": "Is Preferred",
             "type": "boolean"
@@ -9055,6 +9712,12 @@
           "label": {
             "title": "Label",
             "type": "string"
+          },
+          "last_check": {
+            "$ref": "#/components/schemas/LastCheck",
+            "default": {
+              "checks": []
+            }
           },
           "mode": {
             "title": "Mode",
@@ -10881,6 +11544,55 @@
         ]
       }
     },
+    "/api/v1/admin/payment-providers/{config_id}/check": {
+      "post": {
+        "description": "Tests the gateway end to end from the admin panel: the credentials are accepted and are the right mode, the store currency is enabled,\na webhook secret is stored and a signed event has arrived, and (in a sandbox) a test payment can be created and cancelled. Nothing is ever\ncharged and no payment is created on a LIVE gateway. The result is kept (and shown on the overview); live payments need a passing check.",
+        "operationId": "check_provider_api_v1_admin_payment_providers__config_id__check_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "config_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Config Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Check Provider",
+        "tags": [
+          "payment-providers"
+        ]
+      }
+    },
     "/api/v1/admin/payment-providers/{config_id}/credentials": {
       "put": {
         "description": "Rotates credentials and/or the webhook secret (write-only). New payments on this configuration PAUSE until it is validated\nand enabled again; existing payments keep reconciling. The previous webhook secret keeps verifying until retired.",
@@ -11334,6 +12046,201 @@
         "summary": "Retire Previous Webhook Secret",
         "tags": [
           "payment-providers"
+        ]
+      }
+    },
+    "/api/v1/admin/payments/demo/disable": {
+      "post": {
+        "description": "Stop the demo gateway taking new payments. The store is left with NO payment gateway until you select one.",
+        "operationId": "disable_demo_mode_api_v1_admin_payments_demo_disable_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentOverview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Disable Demo Mode",
+        "tags": [
+          "payment-modes"
+        ]
+      }
+    },
+    "/api/v1/admin/payments/demo/enable": {
+      "post": {
+        "description": "Switch the store to DEMO mode: the built-in gateway takes payments with fake test details and no real money moves. Needs no credentials.\nRefused while live payments are active.",
+        "operationId": "enable_demo_mode_api_v1_admin_payments_demo_enable_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemoEnable"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentOverview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Enable Demo Mode",
+        "tags": [
+          "payment-modes"
+        ]
+      }
+    },
+    "/api/v1/admin/payments/live/activate": {
+      "post": {
+        "description": "The explicit approval to take REAL payments. Refused (409 live_activation_blocked, listing why) unless the chosen live gateway has valid\ncredentials, a verified webhook, the sandbox and production-review attestations and a passing gateway check no older than a day, and\n`confirmation` is exactly \"ACTIVATE LIVE PAYMENTS\". It then becomes the store's payment gateway.",
+        "operationId": "activate_live_payments_api_v1_admin_payments_live_activate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LiveActivate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentOverview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Activate Live Payments",
+        "tags": [
+          "payment-modes"
+        ]
+      }
+    },
+    "/api/v1/admin/payments/live/deactivate": {
+      "post": {
+        "description": "Stop taking real payments at once. The store is left with NO gateway (nothing, in particular not the demo gateway, takes over).\nPayments already made keep being reconciled and refunded.",
+        "operationId": "deactivate_live_payments_api_v1_admin_payments_live_deactivate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LiveDeactivate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentOverview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Deactivate Live Payments",
+        "tags": [
+          "payment-modes"
+        ]
+      }
+    },
+    "/api/v1/admin/payments/overview": {
+      "get": {
+        "description": "Everything about how this store takes payments, in one call: the current mode (`demo`, `test`, `live` or `none`), whether customers can\npay right now, each gateway's connection status, whether live payments can be activated and what still blocks it.",
+        "operationId": "payments_overview_api_v1_admin_payments_overview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentOverview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Payments Overview",
+        "tags": [
+          "payment-modes"
         ]
       }
     },
@@ -16831,6 +17738,75 @@
         "summary": "Create Payment",
         "tags": [
           "payments"
+        ]
+      }
+    },
+    "/api/v1/payments/demo/pay": {
+      "post": {
+        "description": "Completes a payment that was started (POST /payments) with the DEMO gateway, using one of the published fake test details. It goes through\nthe same signed-event verification and order lifecycle as a live payment. A declined test card leaves the order unpaid, and you can try\nagain. Anything that is not a listed test detail is refused (422 demo_only_test_details) without being recorded or echoed.\nA signed-in customer pays their own orders; a guest uses the order's payment cookie, exactly as for POST /payments.",
+        "operationId": "pay_with_test_details_api_v1_payments_demo_pay_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemoPayRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoPayResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Pay With Test Details",
+        "tags": [
+          "demo-payments"
+        ]
+      }
+    },
+    "/api/v1/payments/demo/test-details": {
+      "get": {
+        "description": "Public. The fake cards, UPI ids and banks the demo gateway accepts, and whether the demo gateway is the store's current gateway (so a\nstorefront can show a clear \"DEMO MODE\" banner and the test details).",
+        "operationId": "test_details_api_v1_payments_demo_test_details_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestDetails"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Test Details",
+        "tags": [
+          "demo-payments"
         ]
       }
     },

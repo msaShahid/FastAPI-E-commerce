@@ -12,6 +12,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from app.core.money import CURRENCIES
+from app.core.payments.demo_provider import SIGNATURE_HEADER as DEMO_SIGNATURE_HEADER
+from app.core.payments.demo_provider import DemoPaymentProvider
 from app.core.payments.interface import PaymentProvider
 from app.core.payments.razorpay_provider import RazorpayPaymentProvider
 from app.core.payments.stripe_provider import StripePaymentProvider
@@ -45,7 +47,19 @@ def _razorpay(credentials: dict, webhook_secret: str | None) -> PaymentProvider:
     )
 
 
+def _demo(credentials: dict, webhook_secret: str | None) -> PaymentProvider:
+    return DemoPaymentProvider(webhook_secret=webhook_secret)
+
+
 SPECS: dict[str, ProviderSpec] = {
+    "demo": ProviderSpec(
+        name="demo", label="Demo gateway (no real money)", currencies=frozenset(c.code for c in CURRENCIES.values() if c.payment_verified),
+        supports_cancel=True, supports_full_refund=True, refund_needs_provider_reference=False, dispute_events=False,
+        webhook_events=("payment_intent.succeeded", "payment_intent.payment_failed"),
+        credential_fields=(), signature_header=DEMO_SIGNATURE_HEADER,
+        verification="a built-in simulator: it never contacts a real gateway, never moves real money and never receives real card details",
+        factory=_demo,
+    ),
     "stripe": ProviderSpec(
         name="stripe", label="Stripe", currencies=frozenset(c.code for c in CURRENCIES.values() if c.payment_verified),
         supports_cancel=True, supports_full_refund=True, refund_needs_provider_reference=False, dispute_events=True,

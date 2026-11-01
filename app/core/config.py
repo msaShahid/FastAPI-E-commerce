@@ -160,9 +160,11 @@ class Settings(BaseSettings):
     # currencies verified by this platform (app/core/money.py) are accepted here.
     payment_currencies_enabled: str = ""
 
-    # Live Stripe keys (sk_live_/rk_live_) are refused unless this is true. Keep false: payment
-    # currency handling (INR) is not finished. Test keys are unaffected.
-    live_payments_enabled: bool = False
+    # A deployment-level KILL SWITCH for live payments. It is ON by default because live payments are controlled in the admin panel
+    # (a live gateway must be configured, verified, tested and explicitly ACTIVATED there; nothing here activates anything). Set it
+    # to false to make this deployment refuse live payments no matter what the admin panel says. Live keys can never be supplied here:
+    # gateway credentials are entered in the admin panel and stored encrypted.
+    live_payments_enabled: bool = True
 
     # When true, a product must point at an APPROVED tax classification to be activated
     # or ordered; checkout refuses anything else (HTTP 422, product_tax_unassigned).

@@ -89,6 +89,9 @@ class Order(Base, TimestampMixin):
 
     subtotal_cents: Mapped[int] = mapped_column(Integer)
     # What a coupon took off the GOODS (total = subtotal - discount + shipping + tax). Frozen with the order (database trigger).
+    # True when the order was paid through the built-in DEMO gateway (no real money): such orders are excluded from sales reports and
+    # get no tax invoice. Set once, when the payment succeeds.
+    paid_in_demo_mode: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
     discount_cents: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     coupon_id: Mapped[int | None] = mapped_column(ForeignKey("coupons.id", ondelete="RESTRICT"), default=None)
     coupon_code: Mapped[str | None] = mapped_column(String(32), default=None)

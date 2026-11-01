@@ -9,9 +9,13 @@ done from the code.
       environment used to build it (PostgreSQL 16, Redis); Docker, CI and your data are not yet proven.
 - [ ] **(you)** Production database is **PostgreSQL 15 or newer** (variants need it). Take a backup, run `alembic upgrade head`, and
       check `alembic current` shows the latest revision. Read `docs/VARIANTS.md` before the first deployment of the variants migrations.
-- [ ] **(you)** Payment accounts: create the Stripe (and, if used, Razorpay) accounts, set the keys through the admin provider screens,
-      run each provider's readiness check, and complete a real test-mode payment, a refund, and a webhook delivery end to end. Until
-      then `LIVE_PAYMENTS_ENABLED` must stay `false`. **Payments have only been tested against a fake provider.**
+- [ ] **(you)** Payment accounts (`docs/PAYMENTS.md`): until the client has them, run in **demo mode** (`POST /admin/payments/demo/enable`: fake details, no real
+      money, orders flagged and left out of sales reports and invoices). When the client has Stripe / Razorpay accounts, enter their TEST credentials in the admin panel,
+      run the gateway check, point the gateway's webhook at the URL it shows and complete a sandbox payment, a refund and a webhook delivery end to end. Then, with
+      their LIVE credentials, validate, check, record the two attestations and explicitly activate live payments. All from the admin panel; no redeploy.
+      **The real Stripe and Razorpay adapters have never made a real call: the sandbox rehearsal is how that is verified.**
+- [ ] Set `PROVIDER_SECRETS_KEY` once (it encrypts the gateway credentials stored through the admin panel). Leave `LIVE_PAYMENTS_ENABLED=true` (a kill switch; live is still
+      OFF until an administrator activates it). Never put a live gateway key in an environment variable: it is always refused.
 - [ ] **(you)** Email: configure a real email service in the admin email settings and send yourself a password reset and a verification email.
 - [ ] **(you)** GST: the GST calculator and tax invoices are built (`docs/GST.md`) but OFF by default; the store uses an interim flat rate until you
       switch it on. Have your tax professional confirm the assumptions listed in `docs/GST.md`, enter the registration, rates per HSN, configuration and

@@ -13,6 +13,7 @@ Generated from the code by `python -m scripts.export_api_docs` (do not edit by h
 | 404 | `coupon_not_found` | Coupon not found | `coupons.exceptions.coupon_exceptions.CouponNotFoundError` |
 | 404 | `email_provider_not_configured` |  | `email_settings.exceptions.email_exceptions.EmailProviderNotFoundError` |
 | 404 | `invoice_not_found` | No invoice has been issued for this order | `invoices.exceptions.invoice_exceptions.InvoiceNotFoundError` |
+| 404 | `no_demo_payment` | There is no open demo payment for this order | `payments.exceptions.demo_exceptions.NoDemoPaymentError` |
 | 404 | `option_not_found` | Option or option value not found | `variants.exceptions.variant_exceptions.OptionNotFoundError` |
 | 404 | `provider_config_not_found` | Payment provider configuration not found | `payments.exceptions.provider_exceptions.ProviderConfigNotFoundError` |
 | 404 | `return_not_found` | Return not found | `returns.exceptions.return_exceptions.ReturnNotFoundError` |
@@ -30,11 +31,15 @@ Generated from the code by `python -m scripts.export_api_docs` (do not edit by h
 | 409 | `coupon_code_exists` | A coupon with this code already exists | `coupons.exceptions.coupon_exceptions.CouponCodeExistsError` |
 | 409 | `coupon_in_use` | This coupon has been used by orders, so you cannot change that. Switch it off instead (active: false). | `coupons.exceptions.coupon_exceptions.CouponInUseError` |
 | 409 | `currency_conflicts_with_payment` |  | `orders.exceptions.order_exceptions.CurrencyConflictsWithPaymentError` |
+| 409 | `demo_gateway_inactive` | The demo gateway is not active on this store | `payments.exceptions.demo_exceptions.DemoGatewayInactiveError` |
 | 409 | `duplicate_tracking_number` | This tracking number is already recorded for this order and carrier | `shipments.exceptions.shipment_exceptions.DuplicateTrackingError` |
 | 409 | `email_provider_active` | This email service is the active one. Switch to another service (or deactivate) before deleting it. | `email_settings.exceptions.email_exceptions.EmailProviderActiveError` |
 | 409 | `idempotency_key_reused` | This Idempotency-Key was already used with a different request. Use a new key for a different checkout. | `orders.exceptions.order_exceptions.IdempotencyKeyConflictError` |
 | 409 | `invalid_shipment_status_change` |  | `shipments.exceptions.shipment_exceptions.InvalidShipmentStatusChangeError` |
 | 409 | `last_admin` | This is the last active administrator: demoting or deactivating it would leave nobody able to administer the store. Promote or create another administrator first. | `users.exceptions.user_exceptions.LastAdminError` |
+| 409 | `live_activation_blocked` | Live payments were NOT activated: lists the safe reasons (never secrets). Nothing changed. | `payments.exceptions.provider_exceptions.LiveActivationBlockedError` |
+| 409 | `live_payments_active` | Live payments are active, so you cannot do that. Deactivate live payments first (an explicit step). | `payments.exceptions.provider_exceptions.LivePaymentsActiveError` |
+| 409 | `not_a_demo_payment` | This order's payment was not started with the demo gateway | `payments.exceptions.demo_exceptions.NotADemoPaymentError` |
 | 409 | `option_value_in_use` | A variant uses this value, so it cannot be removed | `variants.exceptions.variant_exceptions.OptionValueInUseError` |
 | 409 | `options_locked` | This product already has variants, so its option sets cannot be redefined. Add values to an option instead. | `variants.exceptions.variant_exceptions.OptionsLockedError` |
 | 409 | `order_currency_known` | This order already has a recorded currency, which can never be changed | `orders.exceptions.order_exceptions.OrderCurrencyAlreadyKnownError` |
@@ -73,6 +78,7 @@ Generated from the code by `python -m scripts.export_api_docs` (do not edit by h
 | 422 | `delivery_country_not_supported` | Delivery outside India is not supported | `tax.engine.DeliveryCountryNotSupportedError` |
 | 422 | `delivery_not_available` | We cannot deliver to this address. | `orders.exceptions.order_exceptions.DeliveryNotAvailableError` |
 | 422 | `delivery_state_unknown` | We could not recognise the delivery state. Please choose the state from the list. | `tax.engine.DeliveryStateUnknownError` |
+| 422 | `demo_only_test_details` | This is the demo gateway: only the listed test details are accepted. Never enter real card or account details here. | `payments.exceptions.demo_exceptions.DemoOnlyTestDetailsError` |
 | 422 | `email_provider_test_failed` | The provider's connection test failed. Carries only a fixed error code and its fixed explanation, never server text. | `email_settings.exceptions.email_exceptions.EmailProviderTestFailedError` |
 | 422 | `evidence_not_specific_to_order` | The evidence does not demonstrably concern THIS order, so it cannot establish its currency. | `orders.exceptions.order_exceptions.EvidenceNotSpecificToOrderError` |
 | 422 | `invalid_email_provider_settings` | Invalid request | `email_settings.exceptions.email_exceptions.InvalidEmailProviderSettingsError` |
@@ -116,4 +122,4 @@ Generated from the code by `python -m scripts.export_api_docs` (do not edit by h
 | 503 | `tax_engine_not_implemented` | GST calculation is not available yet | `tax.engine.TaxEngineUnavailableError` |
 | 503 | `tax_not_configured` | Tax calculation is not configured | `tax.engine.TaxNotConfiguredError` |
 
-111 codes.
+117 codes.

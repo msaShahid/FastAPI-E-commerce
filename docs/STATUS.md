@@ -18,6 +18,7 @@ This section supersedes the phase notes below, which are kept as history and are
 * Shipments: administrators record carrier, tracking number and link per parcel; customers see them on their orders. No pincode
   serviceability check yet (every address is accepted, recorded on the order); the seam for one exists (`docs/RUNBOOK.md`, 5c).
 * Reviews (customers who bought a product, moderated by administrators) and wishlists: see `docs/REVIEWS_WISHLIST.md`.
+* Payments (demo mode, test mode, live mode, all from the admin panel): `docs/PAYMENTS.md`.
 * GST calculator, tax invoices and credit notes: `docs/GST.md`. Coupons: `docs/COUPONS.md`. Customer returns: `docs/RETURNS.md`. Product variants: `docs/VARIANTS.md`.
 * For the frontend: `docs/FRONTEND_API_GUIDE.md`, `docs/openapi.json`, `docs/ERROR_CODES.md`. Before launch: `docs/LAUNCH_CHECKLIST.md`.
 * Migrations: `docs/MIGRATIONS.md`. Operations, monitoring, backups and the go-live checklist: `docs/RUNBOOK.md`.

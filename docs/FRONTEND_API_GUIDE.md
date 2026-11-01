@@ -111,8 +111,14 @@ an unrecognised state is refused with `422 delivery_state_unknown` and a deliver
 
 ## 6. Paying, orders and shipping
 
-- **Pay**: `POST /payments` `{order_id}` returns the payment (`client_secret`, `provider`, `amount_cents`, `currency`). Complete it with the
-  provider's own browser SDK, using the `provider` field to choose. A guest pays with the cookie from checkout; a signed-in customer with
+- **Check the payment mode first**: `GET /store/settings` has `payment_mode` (`demo`, `test`, `live` or `none`) and `payment_demo`. `none`: do not offer
+  payment. `demo` or `test`: show a clear banner ("Demo mode: no real money") on the payment page.
+- **Pay**: `POST /payments` `{order_id}` returns the payment (`client_secret`, `provider`, `amount_cents`, `currency`, `demo`). If `provider` is `demo`,
+  the customer pays with FAKE test details: show the details from `GET /payments/demo/test-details` (cards, UPI ids, banks), let them choose one, and send
+  `POST /payments/demo/pay {order_id, method: "card"|"upi"|"netbanking", card_number | upi_id | bank}`: the answer says `succeeded` or a `failure_code` and
+  `message` (a declined test card leaves the order unpaid; they can try again). Send ONLY that one field (never an expiry or CVC: they are rejected), and never
+  send a real card: anything not on the published list is refused with `422 demo_only_test_details`. Otherwise (`stripe`, `razorpay`) complete the payment with
+  the provider's own browser SDK, using the `provider` field to choose. A guest pays with the cookie from checkout; a signed-in customer with
   their token. **Never mark an order paid from the browser**: the provider confirms to the server by webhook, and the order's `status`
   changes to `paid` a moment later, so **poll `GET /orders/{id}`** (guests: `GET /orders/guest/{id}`) until it does.
 - **Statuses**: `pending` (unpaid; cancelled automatically after `pending_order_timeout_minutes`), `paid`, `fulfilled` (shipped),
@@ -147,7 +153,7 @@ an unrecognised state is refused with `422 delivery_state_unknown` and a deliver
 | Catalogue | `/categories`, `/products` (create, edit, images; `stock` can only be changed with a `stock_reason`) |
 | Options, variants, stock | `/products/{id}/options`, `/variants`, `/variants/bulk`, `/variants/missing-combinations`, `/stock`, `/stock-history`, `/convert-to-variants` |
 | Orders and shipping | `GET /orders/admin`, `PATCH /orders/{id}/status`, `/orders/{id}/shipments`, `/admin/orders/{id}/cancel-and-refund`, `/payments/{id}/refund` |
-| Payments | `/admin/payment-providers/...`, `/admin/refunds`, `/admin/reconciliations`, `/admin/disputes`, `/admin/webhook-events` |
+| Payments | `GET /admin/payments/overview` (current mode, gateways, whether live can be activated), `POST /admin/payments/demo/enable|disable`, `/admin/payment-providers/...` (credentials, validate, `check`, enable, select, attestations), `POST /admin/payments/live/activate|deactivate`, `/admin/refunds`, `/admin/reconciliations`, `/admin/disputes`, `/admin/webhook-events` |
 | Reports | `/admin/reports/summary`, `sales-by-day`, `top-products?group_by=variant`, `low-stock` |
 | Reviews | `/admin/reviews` (hide with a reason, publish, delete) |
 | Coupons | `/admin/coupons` (create, list by state, edit, delete if never used, `/{id}/redemptions`) |

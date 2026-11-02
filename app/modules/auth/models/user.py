@@ -33,4 +33,7 @@ class User(Base, TimestampMixin):
     )
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+
+    # When the owner proved control of `email` (a verification link, a password-reset link, or a confirmed email change).
+    # NULL = never proven. Changing the address clears it.
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)

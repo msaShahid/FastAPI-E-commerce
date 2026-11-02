@@ -65,6 +65,33 @@ If you update `.env` or change API environment variables, recreate the API conta
 docker compose up -d --force-recreate api
 ```
 
+## Clean rebuild (development only)
+
+Use this to start again from an empty database, for example after pulling new migrations or when the code and the
+database are out of step. **It deletes the development database** (`down -v` removes the database volumes), so never
+run it against production or against data you want to keep.
+
+```bash
+docker compose down -v
+docker compose up -d --build
+docker compose exec api alembic upgrade head
+docker compose exec api alembic current
+docker compose exec api alembic check
+docker compose exec api python -m scripts.seed
+```
+
+| Command | What it does |
+|---|---|
+| `docker compose down -v` | Stops the stack and deletes its volumes (the development database and Redis data). |
+| `docker compose up -d --build` | Rebuilds the image and starts everything in the background. |
+| `alembic upgrade head` | Creates all the tables by running every migration. |
+| `alembic current` | Shows the database's migration version. It must say `(head)`. |
+| `alembic check` | Confirms the models and the migrations agree. It should report that no new upgrade operations were detected. |
+| `python -m scripts.seed` | Loads the demo shop (users, products, orders, coupons, reviews). Development only; it refuses to run in staging or production. |
+
+Set `PROVIDER_SECRETS_KEY` in `.env` first if you want the seed to switch the demo payment gateway on (it prints how
+to do it later if the key is missing). Run `docker compose exec api pytest -q` afterwards to check everything.
+
 ## Tests
 
 ```bash

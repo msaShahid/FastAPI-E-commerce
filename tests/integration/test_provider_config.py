@@ -395,6 +395,7 @@ async def test_a_provider_that_does_not_support_the_stores_currency_cannot_be_pr
 
 
 async def test_live_configurations_need_every_condition_and_entering_credentials_never_enables_live(client, admin_headers, world, monkeypatch):
+    monkeypatch.setattr(get_settings(), "live_payments_enabled", True)   # start from the default (kill switch on), whatever the developer's .env says
     await set_inr(client, admin_headers)
     cfg = (await add(client, admin_headers, "stripe", "live")).json()
     base = f"{API}/admin/payment-providers/{cfg['id']}"

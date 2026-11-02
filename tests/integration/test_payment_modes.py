@@ -75,6 +75,7 @@ class FakeStripe(PaymentProvider):
 def world(monkeypatch):
     w = World()
     monkeypatch.setattr(get_settings(), "provider_secrets_key", SecretStr(Fernet.generate_key().decode()))
+    monkeypatch.setattr(get_settings(), "live_payments_enabled", True)   # the deployment kill switch is on: these tests do not depend on the developer's .env
     monkeypatch.setitem(SPECS, "stripe", replace(SPECS["stripe"], factory=lambda c, wh: FakeStripe(w, c["secret_key"], wh)))
     return w
 

@@ -251,7 +251,10 @@ async def _blocker_codes(client, h):
     return body, {b["code"] for b in body["blockers"]}
 
 
-async def test_a_fresh_business_is_not_ready_and_the_report_says_exactly_why(client, admin_headers):
+async def test_a_fresh_business_is_not_ready_and_the_report_says_exactly_why(client, admin_headers, monkeypatch):
+    # (independent of the developer's .env: the report simply echoes the switches, so set them)
+    for name, value in (("tax_calculation_enabled", False), ("tax_classification_required", False), ("live_payments_enabled", True)):
+        monkeypatch.setattr(get_settings(), name, value)
     body, codes = await _blocker_codes(client, admin_headers)
     assert body["ready"] is False and body["settings_id"] is None
     assert codes == {"no_approved_tax_settings"}
@@ -337,7 +340,9 @@ def test_no_gstin_or_tax_data_is_hardcoded_or_seeded_in_the_platform():
 
 
 def test_tax_calculation_defaults_to_off_and_the_live_payments_kill_switch_defaults_to_on():
-    s = get_settings()
+    from app.core.config import Settings
+
+    s = type("Defaults", (), {name: Settings.model_fields[name].default for name in ("tax_calculation_enabled", "live_payments_enabled")})  # the CODE's defaults, not this machine's .env
     assert s.tax_calculation_enabled is False
     # live_payments_enabled is a deployment-level KILL SWITCH (on by default): live payments are still OFF until an administrator activates them
     # in the admin panel (payment_settings.live_payments_active starts false). That is tested in test_payment_modes.py.

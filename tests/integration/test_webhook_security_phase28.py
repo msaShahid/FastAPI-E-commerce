@@ -16,7 +16,6 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
-from app.core.config import get_settings
 from app.core.payments.exceptions import InvalidWebhookSignatureError
 from app.core.payments.interface import PaymentIntentResult, RefundResult
 from app.core.payments.stripe_provider import StripePaymentProvider
@@ -486,4 +485,6 @@ def test_migration_and_model_use_identical_phase28_guard_sql():
 
 
 def test_the_live_payments_kill_switch_is_on_by_default_but_nothing_is_live_until_an_administrator_activates_it():
-    assert get_settings().live_payments_enabled is True   # a deployment-level permission only; activation is tested in test_payment_modes.py
+    from app.core.config import Settings
+
+    assert Settings.model_fields["live_payments_enabled"].default is True   # the CODE's default: a deployment-level permission only; activation is tested in test_payment_modes.py

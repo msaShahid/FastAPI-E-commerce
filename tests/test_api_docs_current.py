@@ -3,13 +3,18 @@ contract that no longer exists. Regenerate with:  docker compose exec api python
 
 from pathlib import Path
 
+import pytest
+
 from scripts.export_api_docs import DOCS, error_codes_text, openapi_text
 
 HELP = "regenerate with: docker compose exec api python -m scripts.export_api_docs"
 
 
 def _read(name: str) -> str:
-    return (Path(DOCS) / name).read_text(encoding="utf-8").replace("\r\n", "\n")
+    path = Path(DOCS) / name
+    if not path.exists():  # a container image that does not ship docs/ (these files are checked wherever the repository is checked out)
+        pytest.skip(f"{path} is not present in this environment")
+    return path.read_text(encoding="utf-8").replace("\r\n", "\n")
 
 
 def test_the_published_openapi_file_matches_the_application():

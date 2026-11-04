@@ -1,6 +1,9 @@
-from fastapi import APIRouter, Request, status
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Request, status
 
 from app.core.rate_limit import cart_limit, limiter
+from app.core.storage.interface import StorageService
 from app.modules.cart.dependencies.cart_deps import CartServiceDep
 from app.modules.cart.dependencies.cart_identity import CartOwnerDep
 from app.modules.cart.models.cart import Cart
@@ -10,18 +13,22 @@ from app.modules.cart.Schemas.cart import (
     CartRead,
 )
 from app.modules.cart.services.cart_view import build_cart_read
+from app.modules.categories.dependencies.category_deps import get_storage_service
 
 cart_router = APIRouter(prefix="/cart", tags=["cart"])
 
 
-def _to_cart_read(cart: Cart) -> CartRead:
-    return build_cart_read(cart)
+StorageDep = Annotated[StorageService, Depends(get_storage_service)]
+
+
+def _to_cart_read(cart: Cart, storage: StorageService) -> CartRead:
+    return build_cart_read(cart, storage)
 
 
 @cart_router.get("", response_model=CartRead)
-async def get_cart(owner: CartOwnerDep, service: CartServiceDep) -> CartRead:
+async def get_cart(owner: CartOwnerDep, service: CartServiceDep, storage: StorageDep) -> CartRead:
     cart = await service.get_cart(owner.user_id, guest_token=owner.guest_token)
-    return _to_cart_read(cart)
+    return _to_cart_read(cart, storage)
 
 
 @cart_router.post(
@@ -29,7 +36,7 @@ async def get_cart(owner: CartOwnerDep, service: CartServiceDep) -> CartRead:
 )
 @limiter.limit(cart_limit)
 async def add_item(
-    request: Request, payload: CartItemCreate, owner: CartOwnerDep, service: CartServiceDep
+    request: Request, payload: CartItemCreate, owner: CartOwnerDep, service: CartServiceDep, storage: StorageDep
 ) -> CartRead:
     cart = await service.add_item(
         user_id=owner.user_id,
@@ -38,12 +45,12 @@ async def add_item(
         variant_id=payload.variant_id,
         quantity=payload.quantity,
     )
-    return _to_cart_read(cart)
+    return _to_cart_read(cart, storage)
 
 
 @cart_router.patch("/items/{item_id}", response_model=CartRead)
 async def update_item(
-    item_id: int, payload: CartItemUpdate, owner: CartOwnerDep, service: CartServiceDep
+    item_id: int, payload: CartItemUpdate, owner: CartOwnerDep, service: CartServiceDep, storage: StorageDep
 ) -> CartRead:
     cart = await service.update_item_quantity(
         user_id=owner.user_id,
@@ -51,17 +58,17 @@ async def update_item(
         item_id=item_id,
         quantity=payload.quantity,
     )
-    return _to_cart_read(cart)
+    return _to_cart_read(cart, storage)
 
 
 @cart_router.delete("/items/{item_id}", response_model=CartRead)
 async def remove_item(
-    item_id: int, owner: CartOwnerDep, service: CartServiceDep
+    item_id: int, owner: CartOwnerDep, service: CartServiceDep, storage: StorageDep
 ) -> CartRead:
     cart = await service.remove_item(
         user_id=owner.user_id, guest_token=owner.guest_token, item_id=item_id
     )
-    return _to_cart_read(cart)
+    return _to_cart_read(cart, storage)
 
 
 @cart_router.delete("", status_code=status.HTTP_204_NO_CONTENT)

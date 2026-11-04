@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.modules.auth.dependencies.auth import AdminUser
 from app.modules.store.dependencies.store_deps import StoreServiceDep
 from app.modules.store.schemas.store import (
+    PaymentConfigRead,
     StateRead,
     StoreCurrencyRead,
     StoreCurrencyUpdate,
@@ -24,6 +25,13 @@ async def get_store_settings(service: StoreServiceDep) -> StoreSettingsRead:
     """Public: how buying works in this store (currency, shipping, free-shipping threshold, unpaid-order window) and whether
     checkout and payments are currently possible, so a storefront can say so instead of failing."""
     return await service.read_public_settings()
+
+
+@store_router.get("/payment-config", response_model=PaymentConfigRead)
+async def get_payment_config(service: StoreServiceDep) -> PaymentConfigRead:
+    """Public: which gateway a new payment would use right now and the PUBLIC key a browser needs for it (a Stripe publishable key or a
+    Razorpay key id). `browser_ready` is false while that key is missing. Never returns a secret."""
+    return await service.read_payment_config()
 
 
 @store_router.get("/states", response_model=list[StateRead])

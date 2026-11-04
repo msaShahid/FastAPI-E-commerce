@@ -5,7 +5,7 @@ from app.modules.auth.models.user import User
 from app.modules.orders.services.eligibility import get_delivery_eligibility
 from app.modules.store.exceptions.store_exceptions import StoreCurrencyLockedError
 from app.modules.store.repositories.store_repository import StoreRepository
-from app.modules.store.schemas.store import StoreCurrencyRead, StoreSettingsRead
+from app.modules.store.schemas.store import PaymentConfigRead, StoreCurrencyRead, StoreSettingsRead
 
 
 class StoreService:
@@ -60,6 +60,29 @@ class StoreService:
             live = settings.live_payments_enabled and await PaymentSettingsRepository(self.repo.db).live_active()
             return "live" if live else "none"
         return "demo" if preferred.provider == "demo" else "test"
+
+    async def read_payment_config(self) -> PaymentConfigRead:
+        """The gateway for a new payment, as a browser may see it. Uses the very same decision as the mode word in /store/settings, so
+        the two can never disagree: where that says "none", nothing is offered here either."""
+        from app.modules.payments.repositories.provider_config_repository import (
+            ProviderConfigRepository,
+        )
+
+        settings = get_settings()
+        mode = await self._payment_mode(settings)
+        if mode == "none":
+            return PaymentConfigRead()
+        repo = ProviderConfigRepository(self.repo.db)
+        preferred = await repo.get_preferred()
+        if preferred is None:  # the legacy environment Stripe (the mode word above already checked there is no stored configuration)
+            key = settings.stripe_publishable_key
+            return PaymentConfigRead(provider="stripe", mode=mode, publishable_key=key, browser_ready=bool(key), currencies=sorted(settings.enabled_payment_currencies()))
+        if preferred.provider == "demo":
+            return PaymentConfigRead(provider="demo", mode="demo", demo=True, browser_ready=True, currencies=sorted(preferred.currencies))
+        return PaymentConfigRead(
+            provider=preferred.provider, mode=mode, publishable_key=preferred.public_identifier,
+            browser_ready=bool(preferred.public_identifier), currencies=sorted(preferred.currencies),
+        )
 
     async def read_public_settings(self) -> StoreSettingsRead:
         """What a storefront may know about how buying works here, and why buying might currently be impossible."""

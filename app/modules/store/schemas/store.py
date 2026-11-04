@@ -22,6 +22,18 @@ class StoreSettingsRead(BaseModel):
     unavailable_reasons: list[str] = []
 
 
+class PaymentConfigRead(BaseModel):
+    """Public: what a browser needs to start paying with the gateway the store would use for a NEW payment right now. Only values that are
+    public by design appear here (a publishable key or a public key id): never a secret, a hint of one, or a webhook detail."""
+
+    provider: str | None = None                 # demo | stripe | razorpay | null when no gateway can take a payment now
+    mode: str = "none"                          # demo | test | live | none (the same word /store/settings shows)
+    demo: bool = False
+    publishable_key: str | None = None          # Stripe: the pk_... key. Razorpay: the public key id. Demo: null (it needs none)
+    browser_ready: bool = False                 # false: a browser cannot start a payment yet (for example Stripe has no publishable key saved)
+    currencies: list[str] = []                  # currencies this gateway is enabled for on this store
+
+
 class StateRead(BaseModel):
     code: str    # the two-digit GST state code (27 = Maharashtra)
     name: str

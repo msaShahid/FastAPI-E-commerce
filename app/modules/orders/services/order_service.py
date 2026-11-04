@@ -20,6 +20,7 @@ from app.modules.cart.exceptions.cart_exceptions import (
 )
 from app.modules.cart.repositories.cart_repository import CartRepository
 from app.modules.cart.services.cart_digest import cart_digest
+from app.modules.cart.services.cart_view import line_state
 from app.modules.coupons.services.coupon_service import evaluate as evaluate_coupon
 from app.modules.coupons.services.coupon_service import find_by_code as find_coupon
 from app.modules.coupons.services.coupon_service import snapshot as coupon_snapshot_of
@@ -40,6 +41,7 @@ from app.modules.orders.exceptions.order_exceptions import (
 )
 from app.modules.orders.models.order import Order
 from app.modules.orders.repositories.order_repository import OrderRepository
+from app.modules.orders.schemas.quote import CartQuote, QuoteBlocking, QuoteLine, QuoteTax
 from app.modules.orders.services.eligibility import (
     DeliveryDecision,
     DeliveryEligibility,
@@ -50,6 +52,7 @@ from app.modules.products.repositories.product_repository import ProductReposito
 from app.modules.products.services.product_view import effective_price
 from app.modules.tax.engine import (
     FlatInterimTaxEngine,
+    GstTaxEngine,
     NotConfiguredTaxEngine,
     TaxEngine,
     TaxLine,
@@ -179,6 +182,111 @@ class OrderService:
         if not isinstance(result, TaxResult):  # defence in depth: never trust "something else"
             raise CheckoutNotConfiguredError()
         return result
+
+    async def quote(
+        self, *, cart, user_id: UUID | None, guest_email: str | None = None, address_id: int | None = None,
+        shipping_address: ShippingAddressInput | None = None, coupon_code: str | None = None,
+    ) -> CartQuote:
+        """What checkout would charge for `cart` as it is now: the same steps in the same order as `checkout` (current prices, coupon, shipping on
+        what is paid for the goods, tax on the discounted amounts), but READ-ONLY: no lock, no stock change, no price-snapshot refresh, no coupon use.
+        tests/integration/test_cart_quote.py compares this with real checkouts, so the two cannot drift apart unnoticed.
+
+        Missing things do not fail the quote: with no address a GST tax is reported as unknown (`requires_address`), and unset shipping or tax
+        configuration is reported by reason. A coupon that cannot apply, an undeliverable address or a tax problem raise the same errors as checkout."""
+        is_guest = user_id is None
+        code = self.currency
+        if code is None and self.store_repository is not None:
+            code, _ = await self.store_repository.effective_currency(get_settings().default_store_currency)  # a read: never initialises the currency
+        if code is None:
+            raise StoreCurrencyNotConfiguredError()
+        currency = get_currency(code)
+        engine_name = (
+            "gst" if isinstance(self.tax_engine, GstTaxEngine) else "flat_interim" if self.tax_engine.is_configured else "not_configured"
+        )
+        configured = self.tax_engine.is_configured
+
+        items = sorted(cart.items, key=lambda i: (i.product_id, i.variant_id or 0))  # the order checkout uses (it decides how a discount rounds)
+        if not items:
+            return CartQuote(
+                currency=currency.code, minor_unit_exponent=currency.exponent, lines=[], subtotal_cents=0, discount_cents=0,
+                shipping_reason="cart_empty",
+                tax=QuoteTax(status="live" if configured else "not_active", engine=engine_name, reason="cart_empty"),
+            )
+
+        prices, blocking, price_changed = [], [], False
+        for item in items:
+            price, _stock, reason = line_state(item)
+            prices.append(price)
+            if reason is not None:
+                blocking.append(QuoteBlocking(item_id=item.id, reason=reason))
+            price_changed = price_changed or item.price_cents_snapshot != price
+        values = [p * i.quantity for p, i in zip(prices, items, strict=True)]
+        subtotal_cents = sum(values)
+
+        shipping_cents: int | None
+        shipping_reason = None
+        try:
+            shipping_cents = self._calculate_shipping(subtotal_cents)
+        except CheckoutNotConfiguredError:
+            shipping_cents, shipping_reason = None, "not_configured"
+
+        discount = Discount(0, 0)
+        coupon = None
+        shares = [0] * len(items)
+        if coupon_code:
+            coupon = await find_coupon(self.repository.db, coupon_code)
+            discount = await evaluate_coupon(
+                self.repository.db, coupon, subtotal_cents=subtotal_cents, shipping_cents=shipping_cents or 0,
+                user_id=user_id, guest_email=guest_email if is_guest else None,
+            )
+            if discount.goods_cents:
+                if shipping_cents is not None:
+                    shipping_cents = self._calculate_shipping(subtotal_cents - discount.goods_cents)  # the threshold counts what is paid for the goods
+                shares = share_discount(discount.goods_cents, values)
+            elif shipping_cents is not None:
+                shipping_cents = 0  # a free-shipping coupon
+        net_subtotal_cents = subtotal_cents - discount.goods_cents
+
+        columns: dict = {}
+        if shipping_address is not None or address_id is not None:
+            columns = await self._resolve_shipping_snapshot(
+                user_id=user_id, is_guest=is_guest, address_id=address_id, shipping_address=shipping_address,
+            )
+        elif not is_guest:
+            columns = await self._resolve_shipping_snapshot(user_id=user_id, is_guest=False, address_id=None, shipping_address=None)  # the saved default, if any
+        if columns:
+            delivery = await self.delivery_eligibility.check(columns)
+            if not delivery.deliverable:
+                raise DeliveryNotAvailableError(delivery.reason)
+
+        requires_address = False
+        if not configured:
+            tax = QuoteTax(status="not_active", engine=engine_name, reason="not_configured")
+        elif engine_name == "gst" and not columns.get("shipping_state"):
+            tax, requires_address = QuoteTax(status="live", engine=engine_name, reason="address_required"), True
+        elif shipping_cents is None:
+            tax = QuoteTax(status="live", engine=engine_name, reason="not_configured")  # tax is worked out on goods AND shipping
+        else:
+            lines_for_tax = [
+                {"product_id": i.product_id, "quantity": i.quantity, "price_cents_snapshot": p, "discount_cents": s}
+                for i, p, s in zip(items, prices, shares, strict=True)
+            ]
+            result = await self._calculate_tax(
+                order_items_data=lines_for_tax, locked_products={i.product_id: i.product for i in items},
+                subtotal_cents=net_subtotal_cents, shipping_cents=shipping_cents, shipping_columns=columns,
+            )
+            tax = QuoteTax(status="live", engine=result.snapshot.get("engine") or engine_name, added_cents=result.tax_paise)
+
+        total_cents = None
+        if shipping_cents is not None and tax.added_cents is not None:
+            total_cents = net_subtotal_cents + shipping_cents + tax.added_cents
+        return CartQuote(
+            currency=currency.code, minor_unit_exponent=currency.exponent,
+            lines=[QuoteLine(item_id=i.id, line_total_cents=v, discount_cents=s) for i, v, s in zip(items, values, shares, strict=True)],
+            subtotal_cents=subtotal_cents, discount_cents=discount.goods_cents, coupon_code=coupon.code if coupon else None,
+            shipping_cents=shipping_cents, shipping_reason=shipping_reason, tax=tax, total_cents=total_cents,
+            blocking=blocking, price_changed=price_changed, requires_address=requires_address,
+        )
 
     @staticmethod
     def _request_fingerprint(

@@ -7,7 +7,10 @@ class CartItemNotFoundError(NotFoundError):
 
 
 class InsufficientStockError(InvalidStateError):
-    """Exact stock is not public, so this names a number only when stock is at or below the low-stock display threshold."""
+    """Exact stock is not public, so this names a number only when stock is at or below the low-stock display threshold.
+    When it does, the number is also sent as `available` so a client need not read it out of the wording."""
+
+    code = "insufficient_stock"
 
     def __init__(self, available: int) -> None:
         from app.core.config import get_settings
@@ -15,19 +18,27 @@ class InsufficientStockError(InvalidStateError):
         settings = get_settings()
         show = available <= settings.low_stock_display_threshold or settings.public_stock_visibility == "exact"
         super().__init__(f"Only {available} unit(s) available in stock" if show else "Not enough stock for that quantity")
+        self.extra = {"available": available} if show else None
 
 
 class ProductUnavailableError(InvalidStateError):
+    code = "product_unavailable"
+
     def __init__(self) -> None:
         super().__init__("This product is no longer available")
 
 
 class CartFullError(ConflictError):
+    """The cart already holds the maximum number of different products (`limit` says how many)."""
+
+    code = "cart_full"
+
     def __init__(self, limit: int) -> None:
         super().__init__(
             f"A cart can hold at most {limit} different products. "
             "Remove one, or check out, before adding another."
         )
+        self.extra = {"limit": limit}
 
 
 class VariantRequiredError(InvalidStateError):

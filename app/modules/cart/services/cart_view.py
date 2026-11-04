@@ -1,6 +1,11 @@
 """How a cart line is shown: the variant chosen, its CURRENT effective price, and whether it can still be bought."""
 
-from app.modules.cart.Schemas.cart import CartItemRead, CartItemVariantSummary, CartRead
+from app.modules.cart.Schemas.cart import (
+    CartItemProductSummary,
+    CartItemRead,
+    CartItemVariantSummary,
+    CartRead,
+)
 from app.modules.cart.services.cart_digest import cart_digest
 from app.modules.products.schemas.product import VariantOptionRead
 from app.modules.products.services.product_view import effective_price
@@ -25,7 +30,16 @@ def line_state(item) -> tuple[int, int, str | None]:
     return price, stock, None
 
 
-def build_cart_read(cart) -> CartRead:
+def _product_summary(product, storage) -> CartItemProductSummary:
+    image_path = getattr(product, "image_path", None)
+    return CartItemProductSummary(
+        id=product.id, name=product.name, slug=product.slug, price_cents=product.price_cents,
+        image_url=storage.get_url(path=image_path) if storage is not None and image_path else None,
+    )
+
+
+def build_cart_read(cart, storage=None) -> CartRead:
+    """`storage` turns a product's stored image path into the URL the catalogue shows; without it lines carry no image."""
     items, subtotal = [], 0
     for item in cart.items:
         current_price, _stock, reason = line_state(item)
@@ -33,7 +47,7 @@ def build_cart_read(cart) -> CartRead:
         subtotal += line_total
         variant = getattr(item, "variant_obj", None)
         items.append(CartItemRead(
-            id=item.id, product=item.product, quantity=item.quantity, price_cents_snapshot=item.price_cents_snapshot,
+            id=item.id, product=_product_summary(item.product, storage), quantity=item.quantity, price_cents_snapshot=item.price_cents_snapshot,
             price_changed=item.price_cents_snapshot != current_price, line_total_cents=line_total,
             current_price_cents=current_price, available=reason is None, unavailable_reason=reason,
             variant=None if variant is None else CartItemVariantSummary(

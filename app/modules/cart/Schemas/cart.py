@@ -26,7 +26,8 @@ class CartItemProductSummary(BaseModel):
     id: int
     name: str
     slug: str
-    price_cents: int 
+    price_cents: int
+    image_url: str | None = None             # the product's image (same form as in the catalogue), so a cart can show a thumbnail
 
     model_config = {"from_attributes": True}
 

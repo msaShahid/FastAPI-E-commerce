@@ -30,6 +30,7 @@ from app.modules.categories.api.router import category_router
 from app.modules.coupons.api.router import coupons_router
 from app.modules.email_settings.api.router import email_settings_router
 from app.modules.invoices.api.router import invoices_router
+from app.modules.orders.api.quote_router import quote_router
 from app.modules.orders.api.router import order_router
 from app.modules.payments.api.demo_router import demo_router
 from app.modules.payments.api.lifecycle_router import lifecycle_router
@@ -41,6 +42,7 @@ from app.modules.reports.api.router import reports_router
 from app.modules.returns.api.router import returns_router
 from app.modules.reviews.api.router import admin_reviews_router, reviews_router, summaries_router
 from app.modules.shipments.api.router import shipment_router
+from app.modules.site_config.api.router import site_config_router
 from app.modules.store.api.router import store_router
 from app.modules.tax.api.router import tax_router
 from app.modules.users.api.router import users_router
@@ -112,6 +114,8 @@ app.include_router(category_router, prefix=settings.api_v1_prefix)
 app.include_router(product_router, prefix=settings.api_v1_prefix)
 app.include_router(cart_router, prefix=settings.api_v1_prefix)
 app.include_router(order_router, prefix=settings.api_v1_prefix)
+app.include_router(quote_router, prefix=settings.api_v1_prefix)
+app.include_router(site_config_router, prefix=settings.api_v1_prefix)
 app.include_router(payment_router, prefix=settings.api_v1_prefix)
 app.include_router(audit_router, prefix=settings.api_v1_prefix)
 app.include_router(tax_router, prefix=settings.api_v1_prefix)
@@ -133,7 +137,13 @@ app.include_router(payment_mode_router, prefix=settings.api_v1_prefix)
 app.include_router(demo_router, prefix=settings.api_v1_prefix)
 
 
-app.include_router(graphql_router, prefix="/graphql")
+def _require_graphql_enabled() -> None:
+    """Checked on every request (not at import), so the switch is honoured in tests and by a restarted deployment alike."""
+    if not get_settings().graphql_enabled:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+
+app.include_router(graphql_router, prefix="/graphql", dependencies=[Depends(_require_graphql_enabled)])
 
 @app.get("/health", tags=["health"])
 def health_check() -> dict:

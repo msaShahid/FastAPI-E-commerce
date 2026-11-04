@@ -59,7 +59,7 @@ def error_codes_text() -> str:
         "# Error codes", "",
         "Generated from the code by `python -m scripts.export_api_docs` (do not edit by hand). Every error body is "
         "`{\"detail\": ..., \"request_id\": ...}`; where the error has a stable code it also has `\"code\"`. Branch on `code`, never on the "
-        "wording of `detail`. Errors without a code (a missing resource, an invalid token, not enough stock) are identified by their HTTP status.", "",
+        "wording of `detail`. Errors without a code (for example a missing resource) are identified by their HTTP status.", "",
         "| HTTP | code | meaning (default wording) | defined in |", "|---|---|---|---|",
     ]
     for code, (status, meaning, name, module) in sorted(rows.items(), key=lambda kv: (kv[1][0], kv[0])):

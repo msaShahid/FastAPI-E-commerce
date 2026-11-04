@@ -30,6 +30,7 @@ def _error(
     detail: str | list,
     headers: dict[str, str] | None = None,
     code: str | None = None,
+    extra: dict | None = None,
 ) -> JSONResponse:
     """
     Every error body carries the request id. The header is set here too because
@@ -40,6 +41,8 @@ def _error(
     content = {"detail": detail, "request_id": request_id}
     if code is not None:
         content["code"] = code  # stable, machine-readable (only exceptions that define one)
+    if extra:
+        content.update(extra)  # small structured facts that belong to the code (e.g. `available`, `limit`); never new free text
     response = JSONResponse(status_code=status_code, content=content, headers=headers)
     if request_id:
         response.headers[REQUEST_ID_HEADER] = request_id
@@ -54,7 +57,9 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(ConflictError)
     async def handle_conflict(request: Request, exc: ConflictError) -> JSONResponse:
-        return _error(request, status.HTTP_409_CONFLICT, exc.message, code=getattr(exc, "code", None))
+        return _error(
+            request, status.HTTP_409_CONFLICT, exc.message, code=getattr(exc, "code", None), extra=getattr(exc, "extra", None)
+        )
 
     @app.exception_handler(ForbiddenError)
     async def handle_forbidden(request: Request, exc: ForbiddenError) -> JSONResponse:
@@ -79,7 +84,10 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(InvalidStateError)
     async def handle_invalid_state(request: Request, exc: InvalidStateError) -> JSONResponse:
-        return _error(request, status.HTTP_422_UNPROCESSABLE_ENTITY, exc.message, code=getattr(exc, "code", None))
+        return _error(
+            request, status.HTTP_422_UNPROCESSABLE_ENTITY, exc.message,
+            code=getattr(exc, "code", None), extra=getattr(exc, "extra", None),
+        )
 
     @app.exception_handler(ServiceUnavailableError)
     async def handle_service_unavailable(

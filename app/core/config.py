@@ -79,6 +79,25 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
 
+    # Refresh-token reuse grace window. Rotation revokes the token just used, so two requests that carry the SAME refresh token a moment
+    # apart (two browser tabs, a retried request, two app instances) look like theft and used to sign the customer out everywhere.
+    # Inside this window a replay of a just-rotated token is answered with a SIBLING token in the same family (audited, at most
+    # `refresh_reuse_grace_max_replays` times) instead of revoking the family. Outside it, reuse still revokes the whole family.
+    # 0 switches the window off (the strict behaviour).
+    refresh_reuse_grace_seconds: int = Field(default=10, ge=0, le=60)
+    refresh_reuse_grace_max_replays: int = Field(default=3, ge=1, le=10)
+
+    # /graphql is a second, richer way in to the same data. The storefront does not use it, so production deployments can switch it off
+    # (GRAPHQL_ENABLED=false answers 404). On by default so existing deployments keep working.
+    graphql_enabled: bool = True
+
+    # --- Storefront cache hook (docs/REVALIDATE_HOOK.md) ---
+    # After a change is committed the backend tells the storefront which cached reads are stale. Both unset = no calls (the storefront's own
+    # short cache lifetimes are the safety net). The secret is shared with the storefront (REVALIDATE_HMAC_SECRET there), 32+ characters.
+    frontend_revalidate_url: str | None = None
+    frontend_revalidate_secret: SecretStr | None = None
+    frontend_revalidate_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
+
     # --- CORS ---
     # The API is called with credentials (cookies -- see the guest cart
     # token, and the Authorization header) from CORSMiddleware in
@@ -180,6 +199,9 @@ class Settings(BaseSettings):
      # --- Payments (Stripe) ---
     stripe_secret_key: str
     stripe_webhook_secret: str
+    # The PUBLISHABLE key (pk_...) of the environment-configured Stripe account, used only when no stored configuration exists (see
+    # ProviderResolver). Public by design: the browser needs it to show the card form. Stored configurations keep theirs in the database.
+    stripe_publishable_key: str | None = None
 
     # --- Orders ---
     # Checkout decrements stock immediately (see OrderService.checkout),
@@ -306,6 +328,14 @@ class Settings(BaseSettings):
     # Retry delay after attempt n: base * 2**(n-1), capped.
     jobs_retry_base_seconds: float = Field(default=30.0, ge=0)
     jobs_retry_max_seconds: float = Field(default=3600.0, ge=0)
+
+    @model_validator(mode="after")
+    def _revalidate_hook_is_coherent(self) -> "Settings":
+        if bool(self.frontend_revalidate_url) != bool(self.frontend_revalidate_secret):
+            raise ConfigurationError("FRONTEND_REVALIDATE_URL and FRONTEND_REVALIDATE_SECRET must be set together (or both left unset)")
+        if self.frontend_revalidate_secret and len(self.frontend_revalidate_secret.get_secret_value()) < 32:
+            raise ConfigurationError("FRONTEND_REVALIDATE_SECRET must be at least 32 characters")
+        return self
 
     @model_validator(mode="after")
     def _environment_and_jwt_algorithm_are_known(self) -> "Settings":

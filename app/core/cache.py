@@ -280,6 +280,30 @@ async def close_cache() -> None:
 # stale-order job -- without each one having to remember.
 
 _PENDING_KEY = "cache_pending_namespaces"
+_FRONTEND_KEY = "frontend_pending_tags"
+
+# table name -> storefront cache tags (docs/REVALIDATE_HOOK.md). Only ORM writes are seen here: a bulk stock decrement (checkout) is
+# deliberately NOT announced, because the storefront shows availability states, not counts, and its short cache lifetime covers those.
+_TABLE_FRONTEND_TAGS: dict[str, tuple[str, ...]] = {
+    "products": ("catalogue",), "product_variants": ("catalogue",), "product_options": ("catalogue",), "product_option_values": ("catalogue",),
+    "categories": ("catalogue",), "product_reviews": (),
+    "store_settings": ("store-settings",), "payment_provider_configs": ("store-settings",), "payment_settings": ("store-settings",),
+    "site_config_versions": ("site-config",),  # a new version = published or rolled back; saving a draft changes nothing the storefront can see
+}
+
+
+def _frontend_tags_for(obj) -> set[str]:
+    table = getattr(obj, "__tablename__", "")
+    if table not in _TABLE_FRONTEND_TAGS:
+        return set()
+    tags = set(_TABLE_FRONTEND_TAGS[table])
+    if table == "products" and getattr(obj, "id", None) is not None:
+        tags.add(f"product:{obj.id}")
+    elif table in ("product_variants", "product_options", "product_reviews") and getattr(obj, "product_id", None) is not None:
+        tags.add(f"product:{obj.product_id}")
+    elif table == "categories" and getattr(obj, "id", None) is not None:
+        tags.add(f"category:{obj.id}")
+    return tags
 
 # table name -> namespaces whose cached entries embed rows of that table.
 # A product list embeds its category, so category edits stale both.
@@ -302,6 +326,9 @@ def _collect_changed_namespaces(session: Session, flush_context) -> None:
         namespaces = _TABLE_NAMESPACES.get(getattr(obj, "__tablename__", ""))
         if namespaces:
             pending.update(namespaces)
+        tags = _frontend_tags_for(obj)
+        if tags:
+            session.info.setdefault(_FRONTEND_KEY, set()).update(tags)
 
 
 @event.listens_for(Session, "do_orm_execute")
@@ -323,6 +350,7 @@ def _forget_on_rollback(session: Session, previous_transaction) -> None:
     # (invalidating too much is harmless; too little would serve stale data).
     if previous_transaction.parent is None:
         session.info.pop(_PENDING_KEY, None)
+        session.info.pop(_FRONTEND_KEY, None)
 
 
 def note_changed(session: Session | AsyncSession, *namespaces: str) -> None:
@@ -331,12 +359,23 @@ def note_changed(session: Session | AsyncSession, *namespaces: str) -> None:
     target.info.setdefault(_PENDING_KEY, set()).update(namespaces)
 
 
+def note_frontend_changed(session: Session | AsyncSession, *tags: str) -> None:
+    """For writers the hooks above cannot see (raw SQL): mark storefront tags stale so flush_pending() announces them after the commit."""
+    target = getattr(session, "sync_session", session)
+    target.info.setdefault(_FRONTEND_KEY, set()).update(tags)
+
+
 async def flush_pending(session: AsyncSession) -> None:
     """
     Call right AFTER committing ``session``. Invalidates what the
     transaction changed. Never raises: the data is already committed, so a
     cache problem must not turn a successful request into an error.
     """
+    frontend = session.info.pop(_FRONTEND_KEY, None)
+    if frontend:
+        from app.core.revalidate import schedule_notify
+
+        schedule_notify(frontend)  # fire and forget: never delays or fails the request
     pending = session.info.pop(_PENDING_KEY, None)
     if not pending:
         return

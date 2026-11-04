@@ -242,6 +242,86 @@
         "title": "AddressUpdate",
         "type": "object"
       },
+      "AdminSiteConfig": {
+        "properties": {
+          "draft": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft"
+          },
+          "draft_differs_from_published": {
+            "title": "Draft Differs From Published",
+            "type": "boolean"
+          },
+          "draft_updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Updated At"
+          },
+          "published": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "published",
+          "draft",
+          "draft_updated_at",
+          "draft_differs_from_published"
+        ],
+        "title": "AdminSiteConfig",
+        "type": "object"
+      },
+      "AnnouncementNs": {
+        "additionalProperties": false,
+        "properties": {
+          "link": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Link"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "maxLength": 200,
+            "title": "Text",
+            "type": "string"
+          },
+          "visible": {
+            "title": "Visible",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "visible",
+          "text"
+        ],
+        "title": "AnnouncementNs",
+        "type": "object"
+      },
       "ApproveRequest": {
         "description": "`note` is mandatory only when self-approval is explicitly enabled and used.",
         "properties": {
@@ -667,6 +747,17 @@
             "title": "Id",
             "type": "integer"
           },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -801,6 +892,108 @@
           "options"
         ],
         "title": "CartItemVariantSummary",
+        "type": "object"
+      },
+      "CartQuote": {
+        "properties": {
+          "blocking": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/QuoteBlocking"
+            },
+            "title": "Blocking",
+            "type": "array"
+          },
+          "coupon_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coupon Code"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "discount_cents": {
+            "title": "Discount Cents",
+            "type": "integer"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/QuoteLine"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "minor_unit_exponent": {
+            "title": "Minor Unit Exponent",
+            "type": "integer"
+          },
+          "price_changed": {
+            "default": false,
+            "title": "Price Changed",
+            "type": "boolean"
+          },
+          "requires_address": {
+            "default": false,
+            "title": "Requires Address",
+            "type": "boolean"
+          },
+          "shipping_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shipping Cents"
+          },
+          "shipping_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shipping Reason"
+          },
+          "subtotal_cents": {
+            "title": "Subtotal Cents",
+            "type": "integer"
+          },
+          "tax": {
+            "$ref": "#/components/schemas/QuoteTax"
+          },
+          "total_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Cents"
+          }
+        },
+        "required": [
+          "currency",
+          "minor_unit_exponent",
+          "lines",
+          "subtotal_cents",
+          "discount_cents",
+          "tax"
+        ],
+        "title": "CartQuote",
         "type": "object"
       },
       "CartRead": {
@@ -2478,6 +2671,34 @@
         "title": "DemoPayResult",
         "type": "object"
       },
+      "DisplayNs": {
+        "additionalProperties": false,
+        "description": "Presentation only: there is deliberately no currency here (the store currency is fixed in store settings).",
+        "properties": {
+          "formatLocale": {
+            "maxLength": 20,
+            "minLength": 2,
+            "title": "Formatlocale",
+            "type": "string"
+          },
+          "symbolStyle": {
+            "default": "symbol",
+            "enum": [
+              "symbol",
+              "narrowSymbol",
+              "code",
+              "name"
+            ],
+            "title": "Symbolstyle",
+            "type": "string"
+          }
+        },
+        "required": [
+          "formatLocale"
+        ],
+        "title": "DisplayNs",
+        "type": "object"
+      },
       "DisputeRead": {
         "properties": {
           "amount_cents": {
@@ -2982,6 +3203,25 @@
         "title": "FieldSpec",
         "type": "object"
       },
+      "FooterNs": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "title": "FooterNs",
+        "type": "object"
+      },
       "ForgotPasswordRequest": {
         "properties": {
           "email": {
@@ -3386,6 +3626,57 @@
         "title": "LifecycleHealth",
         "type": "object"
       },
+      "Link": {
+        "additionalProperties": false,
+        "properties": {
+          "href": {
+            "title": "Href",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "visible": {
+            "default": true,
+            "title": "Visible",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "label",
+          "href"
+        ],
+        "title": "Link",
+        "type": "object"
+      },
+      "LinkGroup": {
+        "additionalProperties": false,
+        "properties": {
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/Link"
+            },
+            "maxItems": 20,
+            "title": "Links",
+            "type": "array"
+          },
+          "title": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "links"
+        ],
+        "title": "LinkGroup",
+        "type": "object"
+      },
       "LiveActivate": {
         "additionalProperties": false,
         "properties": {
@@ -3637,6 +3928,33 @@
           "items"
         ],
         "title": "MissingCombinations",
+        "type": "object"
+      },
+      "NavigationNs": {
+        "additionalProperties": false,
+        "properties": {
+          "footer": {
+            "items": {
+              "$ref": "#/components/schemas/LinkGroup"
+            },
+            "maxItems": 6,
+            "title": "Footer",
+            "type": "array"
+          },
+          "header": {
+            "items": {
+              "$ref": "#/components/schemas/Link"
+            },
+            "maxItems": 12,
+            "title": "Header",
+            "type": "array"
+          }
+        },
+        "required": [
+          "header",
+          "footer"
+        ],
+        "title": "NavigationNs",
         "type": "object"
       },
       "OptionRead": {
@@ -4766,6 +5084,58 @@
         "title": "PaginatedResponse[WebhookEventRead]",
         "type": "object"
       },
+      "PaymentConfigRead": {
+        "description": "Public: what a browser needs to start paying with the gateway the store would use for a NEW payment right now. Only values that are\npublic by design appear here (a publishable key or a public key id): never a secret, a hint of one, or a webhook detail.",
+        "properties": {
+          "browser_ready": {
+            "default": false,
+            "title": "Browser Ready",
+            "type": "boolean"
+          },
+          "currencies": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Currencies",
+            "type": "array"
+          },
+          "demo": {
+            "default": false,
+            "title": "Demo",
+            "type": "boolean"
+          },
+          "mode": {
+            "default": "none",
+            "title": "Mode",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "publishable_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publishable Key"
+          }
+        },
+        "title": "PaymentConfigRead",
+        "type": "object"
+      },
       "PaymentCreate": {
         "properties": {
           "order_id": {
@@ -5593,6 +5963,237 @@
           "credentials"
         ],
         "title": "ProviderConfigCreate",
+        "type": "object"
+      },
+      "PublicSiteConfig": {
+        "description": "What the storefront fetches. `settings`, `sections` and `flags` hold only what an administrator set: the storefront fills the rest from its defaults.",
+        "properties": {
+          "config_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Version"
+          },
+          "flags": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Flags",
+            "type": "object"
+          },
+          "schema_version": {
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "sections": {
+            "additionalProperties": true,
+            "title": "Sections",
+            "type": "object"
+          },
+          "settings": {
+            "additionalProperties": true,
+            "title": "Settings",
+            "type": "object"
+          }
+        },
+        "title": "PublicSiteConfig",
+        "type": "object"
+      },
+      "PublishRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_published_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Refuse if someone published since you loaded the page",
+            "title": "Expected Published Version"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "title": "PublishRequest",
+        "type": "object"
+      },
+      "PublishableKeyUpdate": {
+        "additionalProperties": false,
+        "description": "Stripe only. The publishable key (pk_...) is PUBLIC by design: the browser needs it to show the card form.",
+        "properties": {
+          "publishable_key": {
+            "maxLength": 200,
+            "minLength": 10,
+            "title": "Publishable Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "publishable_key"
+        ],
+        "title": "PublishableKeyUpdate",
+        "type": "object"
+      },
+      "QuoteBlocking": {
+        "properties": {
+          "item_id": {
+            "title": "Item Id",
+            "type": "integer"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "item_id",
+          "reason"
+        ],
+        "title": "QuoteBlocking",
+        "type": "object"
+      },
+      "QuoteLine": {
+        "properties": {
+          "discount_cents": {
+            "default": 0,
+            "title": "Discount Cents",
+            "type": "integer"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "integer"
+          },
+          "line_total_cents": {
+            "title": "Line Total Cents",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "item_id",
+          "line_total_cents"
+        ],
+        "title": "QuoteLine",
+        "type": "object"
+      },
+      "QuoteRequest": {
+        "description": "Everything is optional: with no address the quote still answers, and says which amounts need one.",
+        "properties": {
+          "address_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address Id"
+          },
+          "coupon_code": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coupon Code"
+          },
+          "guest_email": {
+            "anyOf": [
+              {
+                "format": "email",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guest Email"
+          },
+          "shipping_address": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShippingAddressPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "QuoteRequest",
+        "type": "object"
+      },
+      "QuoteTax": {
+        "description": "`status` is \"live\" when checkout would charge tax now (GST or the interim flat rate), \"not_active\" when tax is not configured.\n`added_cents` is None while it cannot be known yet; `reason` then says why (address_required | not_configured | cart_empty).\nTax is ADDED to the total today; `included_cents` is for tax-inclusive pricing and is 0 until that is switched on.",
+        "properties": {
+          "added_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Added Cents"
+          },
+          "engine": {
+            "title": "Engine",
+            "type": "string"
+          },
+          "included_cents": {
+            "default": 0,
+            "title": "Included Cents",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "status": {
+            "enum": [
+              "live",
+              "not_active"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "engine"
+        ],
+        "title": "QuoteTax",
         "type": "object"
       },
       "Readiness": {
@@ -7022,6 +7623,25 @@
         "title": "ReviewUpdate",
         "type": "object"
       },
+      "RollbackRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "title": "RollbackRequest",
+        "type": "object"
+      },
       "RoundingPolicy": {
         "enum": [
           "line_half_up",
@@ -7409,6 +8029,102 @@
         "title": "SalesByDay",
         "type": "object"
       },
+      "Section": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "order": {
+            "title": "Order",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": 1,
+            "maximum": 1.0,
+            "minimum": 1.0,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "type": {
+            "enum": [
+              "hero",
+              "banner",
+              "product_row",
+              "rich_text"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "visible": {
+            "default": true,
+            "title": "Visible",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "order",
+          "data"
+        ],
+        "title": "Section",
+        "type": "object"
+      },
+      "SectionsDoc": {
+        "additionalProperties": false,
+        "properties": {
+          "home": {
+            "items": {
+              "$ref": "#/components/schemas/Section"
+            },
+            "maxItems": 30,
+            "title": "Home",
+            "type": "array"
+          }
+        },
+        "title": "SectionsDoc",
+        "type": "object"
+      },
+      "SeoNs": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "titleTemplate": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Titletemplate"
+          }
+        },
+        "title": "SeoNs",
+        "type": "object"
+      },
       "SettingsCreate": {
         "description": "Every choice is required and explicit. There are no defaults: the business decides.",
         "properties": {
@@ -7468,6 +8184,88 @@
           "effective_from"
         ],
         "title": "SettingsCreate",
+        "type": "object"
+      },
+      "SettingsDoc": {
+        "additionalProperties": false,
+        "properties": {
+          "announcement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnnouncementNs"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "countries": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 250,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Countries"
+          },
+          "display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DisplayNs"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "footer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FooterNs"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "navigation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NavigationNs"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "seo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SeoNs"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "site": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SiteNs"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "SettingsDoc",
         "type": "object"
       },
       "SettingsRead": {
@@ -8020,6 +8818,54 @@
         ],
         "title": "ShippingTaxTreatment",
         "type": "string"
+      },
+      "SiteConfigDocument": {
+        "additionalProperties": false,
+        "properties": {
+          "flags": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Flags",
+            "type": "object"
+          },
+          "sections": {
+            "$ref": "#/components/schemas/SectionsDoc"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/SettingsDoc"
+          }
+        },
+        "title": "SiteConfigDocument",
+        "type": "object"
+      },
+      "SiteNs": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "tagline": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tagline"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "SiteNs",
+        "type": "object"
       },
       "StateRead": {
         "properties": {
@@ -9315,6 +10161,129 @@
           "variants"
         ],
         "title": "VariantsBulk",
+        "type": "object"
+      },
+      "VersionPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/VersionSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "VersionPage",
+        "type": "object"
+      },
+      "VersionRead": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By User Id"
+          },
+          "document": {
+            "additionalProperties": true,
+            "title": "Document",
+            "type": "object"
+          },
+          "is_published": {
+            "default": false,
+            "title": "Is Published",
+            "type": "boolean"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "note",
+          "created_by_user_id",
+          "created_at",
+          "document"
+        ],
+        "title": "VersionRead",
+        "type": "object"
+      },
+      "VersionSummary": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By User Id"
+          },
+          "is_published": {
+            "default": false,
+            "title": "Is Published",
+            "type": "boolean"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "note",
+          "created_by_user_id",
+          "created_at"
+        ],
+        "title": "VersionSummary",
         "type": "object"
       },
       "WebhookEventRead": {
@@ -11857,6 +12826,65 @@
         ]
       }
     },
+    "/api/v1/admin/payment-providers/{config_id}/publishable-key": {
+      "put": {
+        "description": "Stripe: save the publishable key (pk_...) the storefront's card form needs. It is public by design; the secret key stays write-only.",
+        "operationId": "set_publishable_key_api_v1_admin_payment_providers__config_id__publishable_key_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "config_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Config Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishableKeyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__modules__payments__schemas__provider_config__ProviderConfigRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Publishable Key",
+        "tags": [
+          "payment-providers"
+        ]
+      }
+    },
     "/api/v1/admin/payment-providers/{config_id}/readiness": {
       "get": {
         "operationId": "provider_readiness_api_v1_admin_payment_providers__config_id__readiness_get",
@@ -13572,6 +14600,317 @@
         "summary": "Moderate Review",
         "tags": [
           "reviews"
+        ]
+      }
+    },
+    "/api/v1/admin/site-config": {
+      "get": {
+        "operationId": "get_admin_site_config_api_v1_admin_site_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSiteConfig"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Admin Site Config",
+        "tags": [
+          "site-config"
+        ]
+      }
+    },
+    "/api/v1/admin/site-config/draft": {
+      "delete": {
+        "operationId": "discard_draft_api_v1_admin_site_config_draft_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSiteConfig"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Discard Draft",
+        "tags": [
+          "site-config"
+        ]
+      },
+      "put": {
+        "description": "Saves the working draft (the whole document). Validated against the limits the storefront can render. The storefront does not see it yet.",
+        "operationId": "save_draft_api_v1_admin_site_config_draft_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SiteConfigDocument"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSiteConfig"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Draft",
+        "tags": [
+          "site-config"
+        ]
+      }
+    },
+    "/api/v1/admin/site-config/publish": {
+      "post": {
+        "description": "Publishes the draft as a new version. The storefront is told right after the commit.",
+        "operationId": "publish_api_v1_admin_site_config_publish_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Publish",
+        "tags": [
+          "site-config"
+        ]
+      }
+    },
+    "/api/v1/admin/site-config/rollback/{version}": {
+      "post": {
+        "description": "Publishes a copy of an earlier version as a NEW version (history is never rewritten).",
+        "operationId": "rollback_api_v1_admin_site_config_rollback__version__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RollbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Rollback",
+        "tags": [
+          "site-config"
+        ]
+      }
+    },
+    "/api/v1/admin/site-config/versions": {
+      "get": {
+        "operationId": "list_versions_api_v1_admin_site_config_versions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 10000,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Versions",
+        "tags": [
+          "site-config"
+        ]
+      }
+    },
+    "/api/v1/admin/site-config/versions/{version}": {
+      "get": {
+        "operationId": "get_version_api_v1_admin_site_config_versions__version__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Version",
+        "tags": [
+          "site-config"
         ]
       }
     },
@@ -16063,6 +17402,71 @@
           }
         ],
         "summary": "Update Item",
+        "tags": [
+          "cart"
+        ]
+      }
+    },
+    "/api/v1/cart/quote": {
+      "post": {
+        "description": "What checkout would charge for this cart right now: subtotal, coupon discount, shipping, tax and total, worked out by the same rules as\ncheckout (see `OrderService.quote`). Nothing is reserved or used. Works for guests and signed-in customers. Without an address a GST tax and the\ntotal are `null` with `requires_address` true; with one they are filled in. Amounts use CURRENT prices: if a line's price moved since it was\nadded, `price_changed` is true and checkout will ask the customer to confirm the new price first.",
+        "operationId": "quote_cart_api_v1_cart_quote_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "guest_cart_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Guest Cart Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CartQuote"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Quote Cart",
         "tags": [
           "cart"
         ]
@@ -19731,6 +21135,28 @@
         ]
       }
     },
+    "/api/v1/site-config": {
+      "get": {
+        "description": "Public: the published storefront configuration. Short-lived caching; the storefront is also told when it changes.",
+        "operationId": "get_site_config_api_v1_site_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicSiteConfig"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Site Config",
+        "tags": [
+          "site-config"
+        ]
+      }
+    },
     "/api/v1/store/currency": {
       "get": {
         "description": "Public: the currency all prices are in (and its minor-unit exponent), for formatting.",
@@ -19793,6 +21219,28 @@
           }
         ],
         "summary": "Set Store Currency",
+        "tags": [
+          "store"
+        ]
+      }
+    },
+    "/api/v1/store/payment-config": {
+      "get": {
+        "description": "Public: which gateway a new payment would use right now and the PUBLIC key a browser needs for it (a Stripe publishable key or a\nRazorpay key id). `browser_ready` is false while that key is missing. Never returns a secret.",
+        "operationId": "get_payment_config_api_v1_store_payment_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentConfigRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Payment Config",
         "tags": [
           "store"
         ]

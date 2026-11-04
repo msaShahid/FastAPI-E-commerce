@@ -166,3 +166,14 @@ an unrecognised state is refused with `422 delivery_state_unknown` and a deliver
 The product detail for an administrator additionally has exact `stock`, `base_price_cents`, each variant's `status` and exact `stock`, and the
 ids needed to rename or remove option values (`options[].id`, `options[].value_ids`). Every change to a product's options or variants answers with the
 updated product, so a screen can redraw from the response.
+
+## Added for the Next.js storefront
+
+- **Cart errors have codes:** `insufficient_stock` (with `available` only when stock is at or below the low-stock display threshold), `product_unavailable`, `cart_full` (with `limit`). Registration answers `email_already_registered` or `username_taken`. See `ERROR_CODES.md`.
+- **Cart lines carry `product.image_url`** (the same URL the catalogue shows).
+- **`POST /cart/quote`:** what checkout would charge right now (subtotal, coupon discount, shipping, tax, total) by the same rules as checkout, read-only. Body: optional `coupon_code`, `address_id` or `shipping_address`, `guest_email`. Without an address a GST tax and the total are `null` and `requires_address` is true. `price_changed` and `blocking` say what checkout would ask the customer to confirm or refuse.
+- **`GET /store/payment-config`:** the gateway a new payment would use and its PUBLIC key (a Stripe publishable key or a Razorpay key id); `browser_ready` is false until a Stripe publishable key is saved (`PUT /admin/payment-providers/{id}/publishable-key`).
+- **`GET /site-config`** (public) and `/admin/site-config/*` (draft, publish, versions, rollback): the storefront's navigation, announcement, home sections and feature flags.
+- **Refresh tokens:** a replay of a just-rotated refresh token inside `REFRESH_REUSE_GRACE_SECONDS` (default 10) returns a new pair in the same family instead of signing the customer out; it is audited as `auth.refresh_replay_accepted`.
+- **Cache hook:** after a commit the backend tells the storefront which cached reads are stale (`docs/REVALIDATE_HOOK.md`); configure `FRONTEND_REVALIDATE_URL` and `FRONTEND_REVALIDATE_SECRET`.
+

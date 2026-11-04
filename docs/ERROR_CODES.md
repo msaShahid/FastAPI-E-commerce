@@ -1,6 +1,6 @@
 # Error codes
 
-Generated from the code by `python -m scripts.export_api_docs` (do not edit by hand). Every error body is `{"detail": ..., "request_id": ...}`; where the error has a stable code it also has `"code"`. Branch on `code`, never on the wording of `detail`. Errors without a code (a missing resource, an invalid token, not enough stock) are identified by their HTTP status.
+Generated from the code by `python -m scripts.export_api_docs` (do not edit by hand). Every error body is `{"detail": ..., "request_id": ...}`; where the error has a stable code it also has `"code"`. Branch on `code`, never on the wording of `detail`. Errors without a code (for example a missing resource) are identified by their HTTP status.
 
 | HTTP | code | meaning (default wording) | defined in |
 |---|---|---|---|
@@ -26,6 +26,7 @@ Generated from the code by `python -m scripts.export_api_docs` (do not edit by h
 | 409 | `cancel_and_refund_not_allowed` |  | `orders.exceptions.order_exceptions.CancelAndRefundNotAllowedError` |
 | 409 | `cancellation_not_allowed` | Only an unpaid (pending) order can be cancelled. A paid order needs a refund first, and the | `orders.exceptions.order_exceptions.CancellationNotAllowedError` |
 | 409 | `cancellation_unconfirmed` | The order could not be cancelled yet because the payment provider could not confirm the payment state. Nothing was changed; this is being reconciled. Try again shortly. | `orders.exceptions.order_exceptions.CancellationUnconfirmedError` |
+| 409 | `cart_full` | The cart already holds the maximum number of different products (`limit` says how many). | `cart.exceptions.cart_exceptions.CartFullError` |
 | 409 | `classification_exists` | A classification with this kind and code already exists | `tax.exceptions.tax_exceptions.DuplicateClassificationError` |
 | 409 | `classification_in_use` | This classification cannot be retired: it still has draft or approved rules | `tax.exceptions.tax_exceptions.ClassificationInUseError` |
 | 409 | `coupon_code_exists` | A coupon with this code already exists | `coupons.exceptions.coupon_exceptions.CouponCodeExistsError` |
@@ -33,6 +34,7 @@ Generated from the code by `python -m scripts.export_api_docs` (do not edit by h
 | 409 | `currency_conflicts_with_payment` |  | `orders.exceptions.order_exceptions.CurrencyConflictsWithPaymentError` |
 | 409 | `demo_gateway_inactive` | The demo gateway is not active on this store | `payments.exceptions.demo_exceptions.DemoGatewayInactiveError` |
 | 409 | `duplicate_tracking_number` | This tracking number is already recorded for this order and carrier | `shipments.exceptions.shipment_exceptions.DuplicateTrackingError` |
+| 409 | `email_already_registered` | An account with this email already exists. | `auth.exceptions.auth_exceptions.EmailAlreadyExistsError` |
 | 409 | `email_provider_active` | This email service is the active one. Switch to another service (or deactivate) before deleting it. | `email_settings.exceptions.email_exceptions.EmailProviderActiveError` |
 | 409 | `idempotency_key_reused` | This Idempotency-Key was already used with a different request. Use a new key for a different checkout. | `orders.exceptions.order_exceptions.IdempotencyKeyConflictError` |
 | 409 | `invalid_shipment_status_change` |  | `shipments.exceptions.shipment_exceptions.InvalidShipmentStatusChangeError` |
@@ -57,12 +59,14 @@ Generated from the code by `python -m scripts.export_api_docs` (do not edit by h
 | 409 | `return_not_full` | NovaCart refunds a whole order at a time, and this return does not bring back every unit of it. Close the return with the resolution 'refunded_outside' once you have refunded the customer at your payment provider, or 'replacement_sent' / 'no_refund'. | `returns.exceptions.return_exceptions.ReturnNotFullError` |
 | 409 | `rule_overlap` | An approved rule already applies to this classification in that period | `tax.exceptions.tax_exceptions.RuleOverlapError` |
 | 409 | `settings_overlap` | An approved tax configuration already applies in that period. Retire it first, then approve the new one. | `tax.exceptions.tax_exceptions.SettingsOverlapError` |
+| 409 | `site_config_changed` | The published configuration changed since you loaded it: reload and review before publishing | `site_config.exceptions.site_config_exceptions.PublishedElsewhereError` |
 | 409 | `sku_already_exists` |  | `variants.exceptions.variant_exceptions.SkuInUseError` |
 | 409 | `status_change_not_allowed` | An administrator asked for a status change that would bypass payment, stock or refund handling. | `orders.exceptions.order_exceptions.StatusChangeNotAllowedError` |
 | 409 | `stock_changed` | The product's stock is not what the administrator allocated against: nothing was changed, review and send again. | `variants.exceptions.variant_exceptions.StockChangedError` |
 | 409 | `store_currency_locked` | The store currency is fixed once it has been set and cannot be changed. Orders keep the currency they were placed in. | `store.exceptions.store_exceptions.StoreCurrencyLockedError` |
 | 409 | `tax_master_immutable` | Only draft records can be edited. Approved records are closed or retired and replaced by a new record. | `tax.exceptions.tax_exceptions.ImmutableTaxRecordError` |
 | 409 | `tax_master_invalid_transition` |  | `tax.exceptions.tax_exceptions.InvalidTaxTransitionError` |
+| 409 | `username_taken` | This username is already taken. | `auth.exceptions.auth_exceptions.UsernameAlreadyExistsError` |
 | 409 | `variant_combination_exists` | That combination already exists | `variants.exceptions.variant_exceptions.VariantCombinationExistsError` |
 | 409 | `variant_in_use` | This variant has stock history, or is in a cart or an order, so it cannot be deleted. Set it to inactive instead. | `variants.exceptions.variant_exceptions.VariantInUseError` |
 | 409 | `wishlist_full` |  | `reviews.exceptions.review_exceptions.WishlistFullError` |
@@ -81,6 +85,7 @@ Generated from the code by `python -m scripts.export_api_docs` (do not edit by h
 | 422 | `demo_only_test_details` | This is the demo gateway: only the listed test details are accepted. Never enter real card or account details here. | `payments.exceptions.demo_exceptions.DemoOnlyTestDetailsError` |
 | 422 | `email_provider_test_failed` | The provider's connection test failed. Carries only a fixed error code and its fixed explanation, never server text. | `email_settings.exceptions.email_exceptions.EmailProviderTestFailedError` |
 | 422 | `evidence_not_specific_to_order` | The evidence does not demonstrably concern THIS order, so it cannot establish its currency. | `orders.exceptions.order_exceptions.EvidenceNotSpecificToOrderError` |
+| 422 | `insufficient_stock` | Exact stock is not public, so this names a number only when stock is at or below the low-stock display threshold. | `cart.exceptions.cart_exceptions.InsufficientStockError` |
 | 422 | `invalid_email_provider_settings` | Invalid request | `email_settings.exceptions.email_exceptions.InvalidEmailProviderSettingsError` |
 | 422 | `invalid_money_amount` | Invalid request | `core.money.InvalidMoneyError` |
 | 422 | `invalid_report_range` | Invalid request | `reports.exceptions.report_exceptions.InvalidReportRangeError` |
@@ -96,6 +101,7 @@ Generated from the code by `python -m scripts.export_api_docs` (do not edit by h
 | 422 | `product_not_convertible` | Invalid request | `variants.exceptions.variant_exceptions.ProductNotConvertibleError` |
 | 422 | `product_tax_classification_required` | An active product needs an approved tax classification | `products.exceptions.product_exceptions.ProductTaxRequiredError` |
 | 422 | `product_tax_unassigned` |  | `orders.exceptions.order_exceptions.ProductTaxUnassignedError` |
+| 422 | `product_unavailable` | This product is no longer available | `cart.exceptions.cart_exceptions.ProductUnavailableError` |
 | 422 | `reconciliation_not_open` | This reconciliation record does not exist or is already resolved | `payments.exceptions.payment_exceptions.ReconciliationNotOpenError` |
 | 422 | `return_item_invalid` | Invalid request | `returns.exceptions.return_exceptions.ReturnItemInvalidError` |
 | 422 | `return_quantity_exceeded` |  | `returns.exceptions.return_exceptions.ReturnQuantityExceededError` |
@@ -103,6 +109,8 @@ Generated from the code by `python -m scripts.export_api_docs` (do not edit by h
 | 422 | `return_window_closed` |  | `returns.exceptions.return_exceptions.ReturnWindowClosedError` |
 | 422 | `returns_disabled` | This store does not accept online return requests. Please contact the store. | `returns.exceptions.return_exceptions.ReturnsDisabledError` |
 | 422 | `self_approval_note_required` | Self-approval requires a written note | `tax.exceptions.tax_exceptions.SelfApprovalNoteRequiredError` |
+| 422 | `site_config_no_draft` | There is no draft to publish: save one first | `site_config.exceptions.site_config_exceptions.NoDraftError` |
+| 422 | `site_config_unchanged` | That is already the published configuration | `site_config.exceptions.site_config_exceptions.NothingToChangeError` |
 | 422 | `stock_allocation_mismatch` |  | `variants.exceptions.variant_exceptions.StockAllocationMismatchError` |
 | 422 | `stock_reason_required` | Changing stock needs a reason (stock_reason, at least 3 characters) | `products.exceptions.product_exceptions.StockReasonRequiredError` |
 | 422 | `stock_would_be_negative` |  | `variants.exceptions.variant_exceptions.StockWouldBeNegativeError` |
@@ -122,4 +130,4 @@ Generated from the code by `python -m scripts.export_api_docs` (do not edit by h
 | 503 | `tax_engine_not_implemented` | GST calculation is not available yet | `tax.engine.TaxEngineUnavailableError` |
 | 503 | `tax_not_configured` | Tax calculation is not configured | `tax.engine.TaxNotConfiguredError` |
 
-117 codes.
+125 codes.

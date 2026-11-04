@@ -21,6 +21,7 @@ from app.modules.payments.schemas.provider_config import (
     CurrenciesUpdate,
     ProviderConfigCreate,
     ProviderConfigRead,
+    PublishableKeyUpdate,
     ValidationResult,
     WebhookStatus,
 )
@@ -82,6 +83,12 @@ async def check_provider(config_id: UUID, admin: AdminUser, db: DbSession, audit
     from app.modules.payments.services.payment_mode_service import PaymentModeService
 
     return await PaymentModeService(db, audit).run_checks(admin, config_id)
+
+
+@provider_router.put("/{config_id}/publishable-key", response_model=ProviderConfigRead)
+async def set_publishable_key(config_id: UUID, payload: PublishableKeyUpdate, admin: AdminUser, service: ServiceDep):
+    """Stripe: save the publishable key (pk_...) the storefront's card form needs. It is public by design; the secret key stays write-only."""
+    return await service.set_publishable_key(admin, config_id, payload.publishable_key)
 
 
 @provider_router.put("/{config_id}/currencies", response_model=ProviderConfigRead)

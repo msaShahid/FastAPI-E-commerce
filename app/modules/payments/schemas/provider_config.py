@@ -31,6 +31,12 @@ class CredentialsRotate(_Strict):
     webhook_secret: SecretStr | None = None
 
 
+class PublishableKeyUpdate(_Strict):
+    """Stripe only. The publishable key (pk_...) is PUBLIC by design: the browser needs it to show the card form."""
+
+    publishable_key: str = Field(min_length=10, max_length=200)
+
+
 class CurrenciesUpdate(_Strict):
     currencies: list[str] = Field(max_length=30)
 

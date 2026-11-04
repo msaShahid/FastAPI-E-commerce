@@ -173,6 +173,20 @@ class ProviderConfigService:
         return sorted(set(out))
 
     # ------------------------------------------------------------ operations
+    async def set_publishable_key(self, admin: User, config_id: UUID, value: str) -> dict:
+        """Saves the PUBLIC key a browser needs (Stripe's pk_...). Not a secret, so it is stored as given and shown back in full."""
+        config = await self._get(config_id, lock=True)
+        if config.provider != "stripe":
+            raise ProviderConfigInvalidError("publishable_key_not_applicable", "Only Stripe uses a publishable key (Razorpay's public key id comes with its credentials)")
+        key = value.strip()
+        if not key.startswith(("pk_test_", "pk_live_")) or not key.startswith(f"pk_{config.mode}_"):
+            raise ProviderConfigInvalidError("credentials_mode_mismatch", f"The publishable key does not look like a {config.mode}-mode Stripe key")
+        config.public_identifier = key
+        config.updated_by_user_id = admin.id
+        await self._audit(admin, "publishable_key_set", config)
+        await self.repo.db.flush()
+        return self.view(config)
+
     async def create_demo(self, admin: User) -> dict:
         """The built-in demo gateway: no credentials to enter (it has none), a webhook secret it generates for itself, TEST mode only.
         Asking again returns the existing one."""
@@ -227,7 +241,9 @@ class ProviderConfigService:
         if credentials is not None:
             parsed, public_id, credential_hint = self.parse_credentials(spec, config.mode, credentials)
             config.credentials_ciphertext = cipher.encrypt(json.dumps(parsed))
-            config.credential_hint, config.public_identifier = credential_hint, public_id
+            config.credential_hint = credential_hint
+            if public_id is not None:  # a Stripe rotation does not carry the publishable key: keep the one already saved
+                config.public_identifier = public_id
             config.credentials_status, config.credentials_validated_at = "unvalidated", None
             # evidence gathered for the OLD credentials does not carry over to new ones
             config.sandbox_verified_at = config.sandbox_verification_ref = None

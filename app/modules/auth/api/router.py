@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Cookie, Request, Response, status
 
 from app.core.rate_limit import limiter
+from app.modules.audit.dependencies.audit_deps import AuditServiceDep
 from app.modules.auth.dependencies.auth import AccountServiceDep, AuthServiceDep, CurrentUser
 from app.modules.auth.schemas.auth import (
     ChangeEmailRequest,
@@ -99,9 +100,9 @@ async def get_me(current_user: CurrentUser) -> UserRead:
 @auth_router.post("/refresh", response_model=TokenPair)
 @limiter.limit("20/minute")
 async def refresh(
-    request: Request, payload: RefreshRequest, service: AuthServiceDep
+    request: Request, payload: RefreshRequest, service: AuthServiceDep, audit: AuditServiceDep
 ) -> TokenPair:
-    return await service.refresh(refresh_token=payload.refresh_token)
+    return await service.refresh(refresh_token=payload.refresh_token, audit=audit)
 
 
 _RESET_SENT = MessageResponse(detail="If an account exists for that address, an email is on its way.")

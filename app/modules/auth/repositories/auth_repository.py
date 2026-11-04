@@ -128,6 +128,23 @@ class AuthRepository:
         token.revoked = True
         await self.db.flush()
 
+    async def rotate_refresh_token(self, token: RefreshToken, *, now: datetime) -> None:
+        """Revoke a token because it was exchanged for a new one. Remembers WHEN, which is what the reuse grace window looks at."""
+        token.revoked = True
+        token.rotated_at = now
+        await self.db.flush()
+
+    async def record_grace_replay(self, token: RefreshToken) -> None:
+        token.grace_replays = (token.grace_replays or 0) + 1
+        await self.db.flush()
+
+    async def family_has_active_token(self, family_id: uuid.UUID) -> bool:
+        """False once a logout, a password change or reuse detection has revoked the whole family: no replay is benign then."""
+        result = await self.db.execute(
+            select(RefreshToken.id).where(RefreshToken.family_id == family_id, RefreshToken.revoked.is_(False)).limit(1)
+        )
+        return result.first() is not None
+
     async def revoke_family(self, family_id: uuid.UUID) -> None:
 
         await self.db.execute(

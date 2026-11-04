@@ -1,6 +1,7 @@
 import logging
 from datetime import UTC, datetime
 
+from app.core.config import get_settings
 from app.core.security import (
     TokenError,
     TokenType,
@@ -73,7 +74,22 @@ class AuthService:
 
         return TokenPair(access_token=access_token, refresh_token=refresh_token)
 
-    async def refresh(self, *, refresh_token: str) -> TokenPair:
+    async def _is_benign_replay(self, stored, now: datetime) -> bool:
+        """Is this revoked token a token that was rotated a moment ago and presented again by a second tab, a retry or another
+        instance (benign), rather than reuse of a stolen token? Only a REAL rotation inside the grace window counts, only a limited
+        number of times, and never once the family itself has been shut down (logout, password change, earlier reuse detection)."""
+        settings = get_settings()
+        if settings.refresh_reuse_grace_seconds <= 0:
+            return False
+        rotated_at = getattr(stored, "rotated_at", None)
+        if rotated_at is None or (now - rotated_at).total_seconds() > settings.refresh_reuse_grace_seconds:
+            return False
+        if (getattr(stored, "grace_replays", 0) or 0) >= settings.refresh_reuse_grace_max_replays:
+            return False
+        return await self.repository.family_has_active_token(stored.family_id)
+
+    async def refresh(self, *, refresh_token: str, audit=None) -> TokenPair:
+        """Exchange a refresh token for a new pair (rotation). `audit` (an AuditService) records a benign replay when given."""
 
         try:
             payload = decode_token(refresh_token)
@@ -89,31 +105,47 @@ class AuthService:
         if stored is None:
             raise InvalidRefreshTokenError()
 
+        now = datetime.now(UTC)
+        replay = False
         if stored.revoked:
+            if await self._is_benign_replay(stored, now):
+                replay = True
+            else:
+                logger.warning(
+                    "Refresh token reuse detected for jti=%s (family_id=%s, user_id=%s); "
+                    "revoking entire token family.",
+                    jti,
+                    stored.family_id,
+                    stored.user_id,
+                )
+                await self.repository.revoke_family(stored.family_id)
+                # Persist the revocation NOW: the request fails below, and get_db
+                # rolls back on an exception, which would silently undo it.
+                await self.repository.commit()
+                raise InvalidRefreshTokenError()
 
-            logger.warning(
-                "Refresh token reuse detected for jti=%s (family_id=%s, user_id=%s); "
-                "revoking entire token family.",
-                jti,
-                stored.family_id,
-                stored.user_id,
-            )
-            await self.repository.revoke_family(stored.family_id)
-            # Persist the revocation NOW: the request fails below, and get_db
-            # rolls back on an exception, which would silently undo it.
-            await self.repository.commit()
+        if stored.expires_at < now:
             raise InvalidRefreshTokenError()
-
-        if stored.expires_at < datetime.now(UTC):
-            raise InvalidRefreshTokenError()
-
 
         user = await self.repository.get_user_by_id(stored.user_id)
         if user is None or not user.is_active:
             raise InvalidRefreshTokenError()
 
-        # Rotation: revoke the one just used BEFORE issuing a new one.
-        await self.repository.revoke_refresh_token(stored)
+        if replay:
+            # A benign race: leave the family as it is and hand this caller its OWN new token in the same family.
+            await self.repository.record_grace_replay(stored)
+            logger.info("Refresh token replay inside the grace window accepted (jti=%s, family_id=%s)", jti, stored.family_id)
+            if audit is not None:
+                await audit.log(
+                    actor_user_id=stored.user_id,
+                    action="auth.refresh_replay_accepted",
+                    target_type="refresh_token",
+                    target_id=stored.jti,
+                    details={"family_id": str(stored.family_id), "replays": stored.grace_replays},
+                )
+        else:
+            # Rotation: revoke the one just used BEFORE issuing a new one.
+            await self.repository.rotate_refresh_token(stored, now=now)
 
         subject = payload["sub"]
         new_access_token = create_access_token(subject=subject)

@@ -2,11 +2,19 @@ from app.core.exceptions import BadRequestError, ConflictError, UnauthorizedErro
 
 
 class EmailAlreadyExistsError(ConflictError):
+    """An account with this email already exists."""
+
+    code = "email_already_registered"
+
     def __init__(self, email: str) -> None:
         super().__init__("An account with this email already exists")
 
 
 class UsernameAlreadyExistsError(ConflictError):
+    """This username is already taken."""
+
+    code = "username_taken"
+
     def __init__(self, username: str) -> None:
         super().__init__("This username is already taken")
 

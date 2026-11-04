@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, SmallInteger, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -25,3 +25,8 @@ class RefreshToken(Base, TimestampMixin):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
     revoked: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
+    # Set only when this token was revoked BY ROTATION (a refresh), never by logout, a password change or reuse detection.
+    # Within the reuse grace window a replay of such a token is a benign race, not theft.
+    rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    grace_replays: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")

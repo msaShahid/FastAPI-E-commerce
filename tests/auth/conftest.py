@@ -16,6 +16,8 @@ class FakeRefreshToken:
     expires_at: datetime
     family_id: uuid.UUID = field(default_factory=uuid.uuid4)
     revoked: bool = False
+    rotated_at: datetime | None = None
+    grace_replays: int = 0
 
 
 class FakeAuthRepository:
@@ -83,6 +85,25 @@ class FakeAuthRepository:
         for token in self.refresh_tokens.values():
             if token.family_id == family_id:
                 token.revoked = True
+
+    async def rotate_refresh_token(self, token: FakeRefreshToken, *, now: datetime) -> None:
+        token.revoked = True
+        token.rotated_at = now
+
+    async def record_grace_replay(self, token: FakeRefreshToken) -> None:
+        token.grace_replays += 1
+
+    async def family_has_active_token(self, family_id: uuid.UUID) -> bool:
+        return any(t.family_id == family_id and not t.revoked for t in self.refresh_tokens.values())
+
+
+@pytest.fixture
+def strict_refresh(monkeypatch):
+    """The reuse grace window OFF: any replay of a rotated token is theft. The tests about reuse detection run in this mode;
+    tests/auth/test_refresh_grace.py covers the window itself."""
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "refresh_reuse_grace_seconds", 0)
 
 
 @pytest.fixture

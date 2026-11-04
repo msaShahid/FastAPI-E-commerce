@@ -95,7 +95,7 @@ async def test_refresh_rotates_the_refresh_token(auth_service):
     assert new_tokens.refresh_token != tokens.refresh_token
 
 
-async def test_reusing_a_rotated_refresh_token_is_rejected(auth_service):
+async def test_reusing_a_rotated_refresh_token_is_rejected(auth_service, strict_refresh):
 
     await auth_service.register(username="shahid", email="shahid@example.com", password="pass1234")
     tokens = await auth_service.login(email="shahid@example.com", password="pass1234")
@@ -106,7 +106,7 @@ async def test_reusing_a_rotated_refresh_token_is_rejected(auth_service):
         await auth_service.refresh(refresh_token=tokens.refresh_token)
 
 
-async def test_reusing_a_revoked_refresh_token_revokes_the_entire_family(auth_service):
+async def test_reusing_a_revoked_refresh_token_revokes_the_entire_family(auth_service, strict_refresh):
     """
     Replaying a refresh token that was already rotated away is treated
     as a compromise signal: the whole chain of tokens from that login
@@ -133,7 +133,7 @@ async def test_reusing_a_revoked_refresh_token_revokes_the_entire_family(auth_se
         await auth_service.refresh(refresh_token=rotated.refresh_token)
 
 
-async def test_unrelated_token_families_are_not_affected_by_reuse_detection(auth_service):
+async def test_unrelated_token_families_are_not_affected_by_reuse_detection(auth_service, strict_refresh):
     """
     Reuse detected on one login's token chain must not affect a
     different login's tokens -- e.g. the same user logged in on a

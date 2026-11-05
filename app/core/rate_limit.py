@@ -47,6 +47,14 @@ def cart_limit() -> str:
     return get_settings().rate_limit_cart
 
 
+def register_limit() -> str:
+    return get_settings().rate_limit_register
+
+
+def login_limit() -> str:
+    return get_settings().rate_limit_login
+
+
 def warn_if_forwarded_headers_untrusted(environ: Mapping[str, str] | None = None) -> bool:
     """True (and a warning) when a staging/production process starts with no FORWARDED_ALLOW_IPS: uvicorn then trusts
     X-Forwarded-For only from 127.0.0.1, so behind a proxy on another address every client looks like the proxy."""

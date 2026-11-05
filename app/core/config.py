@@ -272,6 +272,10 @@ class Settings(BaseSettings):
     rate_limit_checkout: str = "10/minute"
     rate_limit_payment: str = "15/minute"
     rate_limit_cart: str = "60/minute"
+    # Per client address. Defaults are the production values; raise them only on a development or test stack (a browser test suite signs in
+    # many times from one address and would otherwise be refused after a few).
+    rate_limit_register: str = "5/minute"
+    rate_limit_login: str = "10/minute"
     # Applied to EVERY limited route (in memory, per process) while Redis is unreachable, so an outage neither turns requests into
     # errors nor switches limiting off completely.
     rate_limit_fallback: str = "30/minute"

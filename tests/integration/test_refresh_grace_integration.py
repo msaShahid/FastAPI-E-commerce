@@ -35,6 +35,22 @@ async def test_two_tabs_refreshing_with_the_same_token_at_the_same_time_both_sta
     assert (await refresh(client, tb["refresh_token"])).status_code == 200
 
 
+async def test_a_flood_of_concurrent_replays_is_forgiven_only_up_to_the_limit_then_it_is_treated_as_theft(client, db_session):
+    from sqlalchemy import select
+
+    from app.core.config import get_settings
+    from app.modules.auth.models.refresh_token import RefreshToken
+
+    tokens = await session_tokens(client)
+    limit = get_settings().refresh_reuse_grace_max_replays
+    results = await asyncio.gather(*[refresh(client, tokens["refresh_token"]) for _ in range(limit + 3)])
+    codes = sorted(r.status_code for r in results)
+    # one real rotation, `limit` forgiven replays; the rest look like theft and shut the family down
+    assert codes.count(200) == 1 + limit and codes.count(401) == 2, codes
+    rows = (await db_session.execute(select(RefreshToken))).scalars().all()
+    assert rows and all(row.revoked for row in rows)  # no token survives to fork from
+
+
 async def test_a_replay_is_recorded_in_the_audit_log(client, db_session):
     tokens = await session_tokens(client)
     assert (await refresh(client, tokens["refresh_token"])).status_code == 200

@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Cookie, Request, Response, status
 
-from app.core.rate_limit import limiter
+from app.core.rate_limit import limiter, login_limit, register_limit
 from app.modules.audit.dependencies.audit_deps import AuditServiceDep
 from app.modules.auth.dependencies.auth import AccountServiceDep, AuthServiceDep, CurrentUser
 from app.modules.auth.schemas.auth import (
@@ -43,7 +43,7 @@ async def _merge_guest_cart_if_any(
 @auth_router.post(
     "/register", response_model=UserRead, status_code=status.HTTP_201_CREATED
 )
-@limiter.limit("5/minute")
+@limiter.limit(register_limit)
 async def register(
     request: Request,
     response: Response,
@@ -69,7 +69,7 @@ async def register(
 
 
 @auth_router.post("/login", response_model=TokenPair)
-@limiter.limit("10/minute")
+@limiter.limit(login_limit)
 async def login(
     request: Request,
     response: Response,

@@ -28,6 +28,27 @@ async def test_checkout_is_limited_per_client_and_the_limit_is_configurable(clie
     assert codes[2:] == [429, 429] and 429 not in codes[:2]  # the first two reach checkout (and fail on the empty cart), the rest are refused
 
 
+async def test_register_and_login_limits_default_to_the_production_values_and_are_configurable(client, monkeypatch):
+    s = get_settings()
+    assert (s.rate_limit_register, s.rate_limit_login) == ("5/minute", "10/minute")  # production behaviour is unchanged unless configured
+    monkeypatch.setattr(s, "rate_limit_register", "2/minute")
+    monkeypatch.setattr(s, "rate_limit_login", "2/minute")
+    limiter.reset()
+    body = {"username": "limited", "email": "limited@example.com", "password": "UserPass123!"}
+    reg = await statuses(lambda: client.post(f"{API}/auth/register", json=body), 3)
+    assert reg[2] == 429 and 429 not in reg[:2]
+    limiter.reset()
+    logins = await statuses(lambda: client.post(f"{API}/auth/login", json={"email": body["email"], "password": body["password"]}), 3)
+    assert logins[2] == 429 and 429 not in logins[:2]
+
+
+async def test_the_quote_shares_the_configurable_cart_limit(client, monkeypatch):
+    monkeypatch.setattr(get_settings(), "rate_limit_cart", "2/minute")
+    limiter.reset()
+    codes = await statuses(lambda: client.post(f"{API}/cart/quote", json={}), 3)
+    assert codes[2] == 429 and 429 not in codes[:2]
+
+
 async def test_payment_creation_is_limited(client, admin_headers, monkeypatch):
     monkeypatch.setattr(get_settings(), "rate_limit_payment", "2/minute")
     limiter.reset()

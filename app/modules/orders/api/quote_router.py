@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request
 
-from app.core.rate_limit import limiter
+from app.core.rate_limit import cart_limit, limiter
 from app.modules.cart.dependencies.cart_deps import CartServiceDep
 from app.modules.cart.dependencies.cart_identity import CartOwnerDep
 from app.modules.orders.dependencies.order_deps import OrderServiceDep
@@ -11,7 +11,7 @@ quote_router = APIRouter(prefix="/cart", tags=["cart"])
 
 
 @quote_router.post("/quote", response_model=CartQuote)
-@limiter.limit("30/minute")
+@limiter.limit(cart_limit)
 async def quote_cart(request: Request, payload: QuoteRequest, owner: CartOwnerDep, carts: CartServiceDep, orders: OrderServiceDep) -> CartQuote:
     """What checkout would charge for this cart right now: subtotal, coupon discount, shipping, tax and total, worked out by the same rules as
     checkout (see `OrderService.quote`). Nothing is reserved or used. Works for guests and signed-in customers. Without an address a GST tax and the

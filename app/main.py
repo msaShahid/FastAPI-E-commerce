@@ -41,6 +41,7 @@ from app.modules.products.api.router import product_router
 from app.modules.reports.api.router import reports_router
 from app.modules.returns.api.router import returns_router
 from app.modules.reviews.api.router import admin_reviews_router, reviews_router, summaries_router
+from app.modules.roles.api.router import roles_router
 from app.modules.shipments.api.router import shipment_router
 from app.modules.site_config.api.router import site_config_router
 from app.modules.store.api.router import store_router
@@ -116,6 +117,7 @@ app.include_router(cart_router, prefix=settings.api_v1_prefix)
 app.include_router(order_router, prefix=settings.api_v1_prefix)
 app.include_router(quote_router, prefix=settings.api_v1_prefix)
 app.include_router(site_config_router, prefix=settings.api_v1_prefix)
+app.include_router(roles_router, prefix=settings.api_v1_prefix)
 app.include_router(payment_router, prefix=settings.api_v1_prefix)
 app.include_router(audit_router, prefix=settings.api_v1_prefix)
 app.include_router(tax_router, prefix=settings.api_v1_prefix)

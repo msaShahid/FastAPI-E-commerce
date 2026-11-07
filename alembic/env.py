@@ -48,6 +48,7 @@ from app.modules.returns.models.return_request import ReturnRequest, ReturnReque
 from app.modules.reviews.models.product_review import ProductReview  # noqa: F401
 from app.modules.shipments.models.order_shipment import OrderShipment  # noqa: F401
 from app.modules.site_config.models.site_config import SiteConfigState, SiteConfigVersion  # noqa: F401
+from app.modules.roles.models.staff_role import StaffRole, StaffRoleAssignment  # noqa: F401
 from app.modules.store.models.store_settings import StoreSettings  # noqa: F401
 from app.modules.tax.models.tax import (  # noqa: F401
     BusinessTaxSettings,

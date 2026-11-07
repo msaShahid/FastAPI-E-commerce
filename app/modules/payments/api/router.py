@@ -6,10 +6,11 @@ from app.core.exceptions import NotFoundError
 from app.core.payments.exceptions import InvalidWebhookSignatureError
 from app.core.payments.registry import get_spec
 from app.core.rate_limit import limiter, payment_limit
-from app.modules.auth.dependencies.auth import AdminUser, OptionalUser
+from app.modules.auth.dependencies.auth import OptionalUser
 from app.modules.cart.dependencies.cart_identity import guest_payment_cookie_name
 from app.modules.payments.dependencies.payment_deps import PaymentServiceDep
 from app.modules.payments.schemas.payment import PaymentCreate, PaymentRead, RefundRead
+from app.modules.roles.dependencies.permission_deps import RefundsIssue
 
 payment_router = APIRouter(prefix="/payments", tags=["payments"])
 
@@ -59,7 +60,7 @@ async def create_payment(
 )
 async def request_refund(
     order_id: UUID,
-    admin: AdminUser,
+    admin: RefundsIssue,
     service: PaymentServiceDep,
 ) -> RefundRead:
     """

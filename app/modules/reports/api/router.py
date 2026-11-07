@@ -8,10 +8,10 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from app.core.database import DbSession
 from app.core.rate_limit import limiter
-from app.modules.auth.dependencies.auth import AdminUser
 from app.modules.reports.repositories.report_repository import ReportRepository
 from app.modules.reports.schemas.reports import LowStockItem, SalesByDay, Summary, TopProducts
 from app.modules.reports.services.report_service import ReportService
+from app.modules.roles.dependencies.permission_deps import ReportsRead
 from app.modules.store.repositories.store_repository import StoreRepository
 from app.shared.pagination.schemas import PageParams, PaginatedResponse
 
@@ -29,14 +29,14 @@ End = Annotated[date | None, Query(description="Last day (inclusive). Default: t
 
 @reports_router.get("/summary", response_model=Summary)
 @limiter.limit("30/minute")
-async def summary(request: Request, _admin: AdminUser, service: ServiceDep, start: Start = None, end: End = None) -> Summary:
+async def summary(request: Request, _admin: ReportsRead, service: ServiceDep, start: Start = None, end: End = None) -> Summary:
     """Headline numbers for a period: orders sold, units, gross, refunds, net, average order, orders by status, new customers."""
     return await service.summary(start, end)
 
 
 @reports_router.get("/sales-by-day", response_model=SalesByDay)
 @limiter.limit("30/minute")
-async def sales_by_day(request: Request, _admin: AdminUser, service: ServiceDep, start: Start = None, end: End = None) -> SalesByDay:
+async def sales_by_day(request: Request, _admin: ReportsRead, service: ServiceDep, start: Start = None, end: End = None) -> SalesByDay:
     """One row per day (zero-filled), ready to chart."""
     return await service.sales_by_day(start, end)
 
@@ -44,7 +44,7 @@ async def sales_by_day(request: Request, _admin: AdminUser, service: ServiceDep,
 @reports_router.get("/top-products", response_model=TopProducts)
 @limiter.limit("30/minute")
 async def top_products(
-    request: Request, _admin: AdminUser, service: ServiceDep, start: Start = None, end: End = None,
+    request: Request, _admin: ReportsRead, service: ServiceDep, start: Start = None, end: End = None,
     by: Literal["revenue", "units"] = "revenue", limit: Annotated[int, Query(ge=1, le=50)] = 10,
     group_by: Annotated[Literal["product", "variant"], Query(description="'variant' lists each size/colour separately")] = "product",
 ) -> TopProducts:
@@ -54,7 +54,7 @@ async def top_products(
 @reports_router.get("/low-stock", response_model=PaginatedResponse[LowStockItem])
 @limiter.limit("30/minute")
 async def low_stock(
-    request: Request, _admin: AdminUser, service: ServiceDep, params: PageParams = Depends(),
+    request: Request, _admin: ReportsRead, service: ServiceDep, params: PageParams = Depends(),
     threshold: Annotated[int, Query(ge=0, le=10000, description="Products with this many units or fewer")] = 10,
     include_inactive: Annotated[bool, Query(description="Also list draft and archived products")] = False,
 ) -> PaginatedResponse[LowStockItem]:

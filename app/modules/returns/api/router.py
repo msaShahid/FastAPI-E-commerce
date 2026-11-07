@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query, status
 
 from app.core.database import DbSession
 from app.modules.audit.dependencies.audit_deps import AuditServiceDep
-from app.modules.auth.dependencies.auth import AdminUser, CurrentUser
+from app.modules.auth.dependencies.auth import CurrentUser
 from app.modules.payments.dependencies.lifecycle_deps import LifecycleServiceDep
 from app.modules.returns.schemas.returns import (
     EligibilityRead,
@@ -20,6 +20,7 @@ from app.modules.returns.schemas.returns import (
     ReturnReject,
 )
 from app.modules.returns.services.return_service import ReturnService
+from app.modules.roles.dependencies.permission_deps import RefundsIssue, ReturnsManage, ReturnsRead
 from app.shared.pagination.schemas import PageParams, PaginatedResponse
 
 returns_router = APIRouter(tags=["returns"])
@@ -71,7 +72,7 @@ async def cancel_my_return(return_id: uuid.UUID, user: CurrentUser, service: Ser
 # ---------------------------------------------------------------------------------------------- administrators
 @returns_router.get("/admin/returns", response_model=PaginatedResponse[ReturnRead])
 async def list_returns(
-    _admin: AdminUser, service: ServiceDep, params: PageParams = Depends(),
+    _admin: ReturnsRead, service: ServiceDep, params: PageParams = Depends(),
     status_filter: Annotated[Literal["requested", "approved", "rejected", "received", "closed", "cancelled"] | None, Query(alias="status")] = None,
     order_id: uuid.UUID | None = None, from_date: date | None = None, to_date: date | None = None,
 ):
@@ -80,36 +81,36 @@ async def list_returns(
 
 
 @returns_router.get("/admin/returns/{return_id}", response_model=ReturnRead)
-async def get_return(return_id: uuid.UUID, _admin: AdminUser, service: ServiceDep):
+async def get_return(return_id: uuid.UUID, _admin: ReturnsRead, service: ServiceDep):
     return await service.admin_get(return_id)
 
 
 @returns_router.post("/admin/returns/{return_id}/approve", response_model=ReturnRead)
-async def approve_return(return_id: uuid.UUID, admin: AdminUser, service: ServiceDep, payload: ReturnApprove | None = None):
+async def approve_return(return_id: uuid.UUID, admin: ReturnsManage, service: ServiceDep, payload: ReturnApprove | None = None):
     return await service.approve(return_id, admin, payload.note if payload else None)
 
 
 @returns_router.post("/admin/returns/{return_id}/reject", response_model=ReturnRead)
-async def reject_return(return_id: uuid.UUID, payload: ReturnReject, admin: AdminUser, service: ServiceDep):
+async def reject_return(return_id: uuid.UUID, payload: ReturnReject, admin: ReturnsManage, service: ServiceDep):
     """Refuse a request; the reason is shown to the customer."""
     return await service.reject(return_id, admin, payload.reason)
 
 
 @returns_router.post("/admin/returns/{return_id}/receive", response_model=ReturnRead)
-async def receive_return(return_id: uuid.UUID, payload: ReturnReceive, admin: AdminUser, service: ServiceDep):
+async def receive_return(return_id: uuid.UUID, payload: ReturnReceive, admin: ReturnsManage, service: ServiceDep):
     """The goods arrived. For EVERY line say how many arrived and whether they go back in stock (only for goods you can sell again)."""
     return await service.receive(return_id, admin, payload)
 
 
 @returns_router.post("/admin/returns/{return_id}/refund", response_model=ReturnRead)
-async def refund_return(return_id: uuid.UUID, admin: AdminUser, service: ServiceDep, lifecycle: LifecycleServiceDep):
+async def refund_return(return_id: uuid.UUID, admin: RefundsIssue, service: ServiceDep, lifecycle: LifecycleServiceDep):
     """Start the refund of the whole order. Only when received returns bring back EVERY unit of the order (NovaCart refunds whole orders):
     otherwise `409 return_not_full`, and the return is closed with a recorded resolution instead."""
     return await service.refund(return_id, admin, lifecycle)
 
 
 @returns_router.post("/admin/returns/{return_id}/close", response_model=ReturnRead)
-async def close_return(return_id: uuid.UUID, payload: ReturnClose, admin: AdminUser, service: ServiceDep):
+async def close_return(return_id: uuid.UUID, payload: ReturnClose, admin: ReturnsManage, service: ServiceDep):
     """Finish a return without NovaCart starting a refund: `refunded_outside` (you refunded the customer at your payment provider),
     `replacement_sent`, or `no_refund`. The note records what was done."""
     return await service.close(return_id, admin, payload)

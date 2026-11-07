@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Query, Request, status
 from app.core.database import DbSession
 from app.core.rate_limit import limiter
 from app.modules.audit.dependencies.audit_deps import AuditServiceDep
-from app.modules.auth.dependencies.auth import AdminUser, CurrentUser
+from app.modules.auth.dependencies.auth import CurrentUser
 from app.modules.reviews.schemas.reviews import (
     ReviewAdminRead,
     ReviewCreate,
@@ -17,6 +17,7 @@ from app.modules.reviews.schemas.reviews import (
     ReviewUpdate,
 )
 from app.modules.reviews.services.review_service import ReviewService
+from app.modules.roles.dependencies.permission_deps import ReviewsModerate
 from app.shared.pagination.schemas import PageParams, PaginatedResponse
 
 reviews_router = APIRouter(prefix="/products", tags=["reviews"])
@@ -80,7 +81,7 @@ async def delete_my_review(product_id: int, user: CurrentUser, service: ServiceD
 # ---------------------------------------------------------------------------------------------- administrators
 @admin_reviews_router.get("", response_model=PaginatedResponse[ReviewAdminRead])
 async def admin_list_reviews(
-    _admin: AdminUser, service: ServiceDep, params: PageParams = Depends(),
+    _admin: ReviewsModerate, service: ServiceDep, params: PageParams = Depends(),
     status_filter: Annotated[Literal["published", "hidden"] | None, Query(alias="status")] = None,
     product_id: int | None = None, rating: Annotated[int | None, Query(ge=1, le=5)] = None,
 ):
@@ -89,11 +90,11 @@ async def admin_list_reviews(
 
 
 @admin_reviews_router.patch("/{review_id}", response_model=ReviewAdminRead)
-async def moderate_review(review_id: int, payload: ReviewModeration, admin: AdminUser, service: ServiceDep):
+async def moderate_review(review_id: int, payload: ReviewModeration, admin: ReviewsModerate, service: ServiceDep):
     """Hide a review (a reason is required) or publish it again."""
     return await service.moderate(review_id, payload, admin)
 
 
 @admin_reviews_router.delete("/{review_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_review(review_id: int, admin: AdminUser, service: ServiceDep) -> None:
+async def delete_review(review_id: int, admin: ReviewsModerate, service: ServiceDep) -> None:
     await service.admin_delete(review_id, admin)

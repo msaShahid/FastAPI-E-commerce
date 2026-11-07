@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, File, Response, UploadFile, status
 from app.core.cache import PRODUCTS, cache_headers, get_cache
 from app.core.config import get_settings
 from app.modules.audit.dependencies.audit_deps import AuditServiceDep
-from app.modules.auth.dependencies.auth import AdminUser, OptionalUser
+from app.modules.auth.dependencies.auth import OptionalUser
 from app.modules.products.dependencies.product_deps import ProductServiceDep
 from app.modules.products.models.product import Product
 from app.modules.products.schemas.product import (
@@ -14,13 +14,16 @@ from app.modules.products.schemas.product import (
 )
 from app.modules.products.services.product_service import UNSET, ProductService
 from app.modules.products.services.product_view import view_fields
-from app.shared.enums.roles import UserRole
+from app.modules.roles.dependencies.permission_deps import AccessServiceDep, CatalogueWrite
+from app.modules.roles.permissions import Permission
+from app.modules.roles.services.access_service import AccessService
 from app.shared.enums.tax import product_tax_state
 from app.shared.pagination.schemas import PaginatedResponse
 
 
-def _is_admin(current_user) -> bool:
-    return current_user is not None and current_user.role == UserRole.ADMIN
+async def _is_admin(current_user, access: AccessService) -> bool:
+    """Drafts, archived products and exact stock: staff whose role can see the catalogue (catalogue.read)."""
+    return current_user is not None and await access.has(current_user, Permission.CATALOGUE_READ)
 
 product_router = APIRouter(prefix="/products", tags=["products"])
 
@@ -48,7 +51,7 @@ def _to_product_read(
 async def create_product(
     payload: ProductCreate,
     service: ProductServiceDep,
-    admin: AdminUser,
+    admin: CatalogueWrite,
     audit_service: AuditServiceDep,
 ) -> ProductRead:
     product = await service.create_product(
@@ -82,9 +85,10 @@ async def create_product(
 async def list_products(
     service: ProductServiceDep,
     current_user: OptionalUser,
+    access: AccessServiceDep,
     params: ProductQueryParams = Depends(),
 ) -> Response:
-    is_admin = _is_admin(current_user)
+    is_admin = await _is_admin(current_user, access)
 
     async def load() -> str:
         products, total = await service.list_products(
@@ -134,9 +138,9 @@ async def list_products(
 
 @product_router.get("/{product_id}", response_model=ProductRead)
 async def get_product(
-    product_id: int, service: ProductServiceDep, current_user: OptionalUser
+    product_id: int, service: ProductServiceDep, current_user: OptionalUser, access: AccessServiceDep
 ) -> ProductRead:
-    is_admin = _is_admin(current_user)
+    is_admin = await _is_admin(current_user, access)
     product = await service.get_product(product_id, is_admin=is_admin)
     await service.attach_variant_views([product], with_options=True)
     return _to_product_read(product, service, include_tax=is_admin, detail=True)
@@ -147,7 +151,7 @@ async def update_product(
     product_id: int,
     payload: ProductUpdate,
     service: ProductServiceDep,
-    admin: AdminUser,
+    admin: CatalogueWrite,
     audit_service: AuditServiceDep,
 ) -> ProductRead:
     product = await service.update_product(
@@ -194,7 +198,7 @@ async def update_product(
 async def archive_product(
     product_id: int,
     service: ProductServiceDep,
-    admin: AdminUser,
+    admin: CatalogueWrite,
     audit_service: AuditServiceDep,
 ) -> None:
     await service.archive_product(product_id)
@@ -211,7 +215,7 @@ async def archive_product(
 async def upload_product_image(
     product_id: int,
     service: ProductServiceDep,
-    _admin: AdminUser,
+    _admin: CatalogueWrite,
     image: UploadFile = File(...),
 ) -> ProductRead:
     product = await service.upload_product_image(product_id=product_id, image=image)
@@ -221,7 +225,7 @@ async def upload_product_image(
 
 @product_router.delete("/{product_id}/image", response_model=ProductRead)
 async def delete_product_image(
-    product_id: int, service: ProductServiceDep, _admin: AdminUser
+    product_id: int, service: ProductServiceDep, _admin: CatalogueWrite
 ) -> ProductRead:
     product = await service.delete_product_image(product_id=product_id)
     await service.attach_variant_views([product], with_options=True)

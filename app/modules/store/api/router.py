@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.modules.auth.dependencies.auth import AdminUser
+from app.modules.roles.dependencies.permission_deps import StoreConfigure
 from app.modules.store.dependencies.store_deps import StoreServiceDep
 from app.modules.store.schemas.store import (
     PaymentConfigRead,
@@ -43,7 +43,7 @@ async def list_states() -> list[StateRead]:
 
 @store_router.put("/currency", response_model=StoreCurrencyRead)
 async def set_store_currency(
-    payload: StoreCurrencyUpdate, admin: AdminUser, service: StoreServiceDep
+    payload: StoreCurrencyUpdate, admin: StoreConfigure, service: StoreServiceDep
 ) -> StoreCurrencyRead:
     """Administrator: choose the store currency during initial setup. It can be set ONCE; afterwards it is fixed for the
     lifetime of the store (repeating the same value is accepted, any other value is refused)."""

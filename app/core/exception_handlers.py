@@ -63,7 +63,9 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(ForbiddenError)
     async def handle_forbidden(request: Request, exc: ForbiddenError) -> JSONResponse:
-        return _error(request, status.HTTP_403_FORBIDDEN, exc.message, code=getattr(exc, "code", None))
+        return _error(
+            request, status.HTTP_403_FORBIDDEN, exc.message, code=getattr(exc, "code", None), extra=getattr(exc, "extra", None)
+        )
 
     @app.exception_handler(UnauthorizedError)
     async def handle_unauthorized(request: Request, exc: UnauthorizedError) -> JSONResponse:

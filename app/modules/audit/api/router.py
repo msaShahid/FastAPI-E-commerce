@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.modules.audit.dependencies.audit_deps import AuditServiceDep
 from app.modules.audit.schemas.audit import AuditLogRead
-from app.modules.auth.dependencies.auth import AdminUser
+from app.modules.roles.dependencies.permission_deps import AuditRead
 from app.shared.pagination.schemas import PageParams, PaginatedResponse
 
 audit_router = APIRouter(prefix="/audit-logs", tags=["audit"])
@@ -12,7 +12,7 @@ audit_router = APIRouter(prefix="/audit-logs", tags=["audit"])
 
 @audit_router.get("", response_model=PaginatedResponse[AuditLogRead])
 async def list_audit_logs(
-    _admin: AdminUser,
+    _admin: AuditRead,
     service: AuditServiceDep,
     params: PageParams = Depends(),
     action: str | None = Query(default=None, max_length=100),

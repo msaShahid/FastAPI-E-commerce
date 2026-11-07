@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 from app.core.config import HARDENED_ENVIRONMENTS, get_settings
 from app.core.rate_limit import checkout_limit, limiter
 from app.core.request_context import get_request_id
-from app.modules.auth.dependencies.auth import AdminUser, CurrentUser, OptionalUser
+from app.modules.auth.dependencies.auth import CurrentUser, OptionalUser
 from app.modules.cart.dependencies.cart_identity import (
     GUEST_CART_COOKIE,
     CartOwnerDep,
@@ -38,8 +38,13 @@ from app.modules.orders.schemas.order import (
 )
 from app.modules.orders.services.shipping import ShippingAddressInput
 from app.modules.payments.dependencies.lifecycle_deps import LifecycleServiceDep
+from app.modules.roles.dependencies.permission_deps import (
+    AccessServiceDep,
+    OrdersManage,
+    OrdersRead,
+)
+from app.modules.roles.permissions import Permission
 from app.shared.enums.order_status import OrderStatus
-from app.shared.enums.roles import UserRole
 from app.shared.pagination.schemas import PageParams, PaginatedResponse
 
 order_router = APIRouter(prefix="/orders", tags=["orders"])
@@ -139,7 +144,7 @@ async def list_my_orders(
 
 @order_router.get("/admin", response_model=PaginatedResponse[OrderRead])
 async def list_all_orders(
-    admin: AdminUser,
+    admin: OrdersRead,
     service: OrderServiceDep,
     params: PageParams = Depends(),
     status_filter: OrderStatus | None = Query(default=None, alias="status"),
@@ -172,12 +177,12 @@ async def get_guest_order(
 
 @order_router.get("/{order_id}", response_model=OrderRead)
 async def get_order(
-    order_id: UUID, current_user: CurrentUser, service: OrderServiceDep
+    order_id: UUID, current_user: CurrentUser, service: OrderServiceDep, access: AccessServiceDep
 ) -> OrderRead:
     order = await service.get_order(
         order_id=order_id,
         user_id=current_user.id,
-        is_admin=current_user.role == UserRole.ADMIN,
+        is_admin=await access.has(current_user, Permission.ORDERS_READ),  # staff without it see only their own orders
     )
     return OrderRead.model_validate(order)
 
@@ -188,6 +193,7 @@ async def cancel_order(
     current_user: CurrentUser,
     service: OrderServiceDep,
     lifecycle: LifecycleServiceDep,
+    access: AccessServiceDep,
     payload: OrderCancelRequest | None = None,
 ) -> OrderRead:
     """
@@ -198,7 +204,7 @@ async def cancel_order(
     If the provider cannot confirm the payment state the order is NOT cancelled (409 cancellation_unconfirmed)
     and the attempt is reconciled. Cancelling twice is safe.
     """
-    is_admin = current_user.role == UserRole.ADMIN
+    is_admin = await access.has(current_user, Permission.ORDERS_MANAGE)  # staff without it can cancel only their own orders
     order = await service.get_order(order_id=order_id, user_id=current_user.id, is_admin=is_admin)  # access check
     reason = (payload.reason if payload and payload.reason else
               ("cancelled by an administrator" if is_admin else "cancelled by the customer"))
@@ -217,7 +223,7 @@ async def cancel_order(
 async def update_order_status(
     order_id: UUID,
     payload: OrderStatusUpdate,
-    admin: AdminUser,
+    admin: OrdersManage,
     lifecycle: LifecycleServiceDep,
     service: OrderServiceDep,
 ) -> OrderRead:

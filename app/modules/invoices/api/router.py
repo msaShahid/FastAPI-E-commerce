@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 
 from app.core.database import DbSession
 from app.modules.audit.dependencies.audit_deps import AuditServiceDep
-from app.modules.auth.dependencies.auth import AdminUser, CurrentUser
+from app.modules.auth.dependencies.auth import CurrentUser
 from app.modules.cart.dependencies.cart_identity import GUEST_CART_COOKIE
 from app.modules.invoices.exceptions.invoice_exceptions import InvoiceNotFoundError
 from app.modules.invoices.models.business_profile import BusinessProfile
@@ -25,7 +25,14 @@ from app.modules.invoices.services.invoice_service import get_profile, invoice_f
 from app.modules.invoices.services.render import render_invoice_html
 from app.modules.orders.dependencies.order_deps import OrderServiceDep
 from app.modules.orders.exceptions.order_exceptions import OrderNotFoundError
-from app.shared.enums.roles import UserRole
+from app.modules.roles.dependencies.permission_deps import (
+    AccessServiceDep,
+    OrdersManage,
+    OrdersRead,
+    TaxConfigure,
+    TaxRead,
+)
+from app.modules.roles.permissions import Permission
 from app.shared.pagination.schemas import PageParams, PaginatedResponse
 
 invoices_router = APIRouter(tags=["invoices"])
@@ -50,14 +57,14 @@ def _register_document_routes(path_name: str, label: str) -> None:
     """The four read routes of one document type, each with its own fixed path (no catch-all segment that could shadow other order routes)."""
 
     @invoices_router.get(f"/orders/{{order_id}}/{path_name}", response_model=InvoiceRead, name=f"get_order_{path_name}", description=f"The {label} of one of your orders (an administrator may read any).")
-    async def read_document(order_id: uuid.UUID, user: CurrentUser, orders: OrderServiceDep, db: DbSession):
-        order = await orders.get_order(order_id=order_id, user_id=user.id, is_admin=user.role == UserRole.ADMIN)
+    async def read_document(order_id: uuid.UUID, user: CurrentUser, orders: OrderServiceDep, db: DbSession, access: AccessServiceDep):
+        order = await orders.get_order(order_id=order_id, user_id=user.id, is_admin=await access.has(user, Permission.ORDERS_READ))
         return await _document(db, order.id, path_name)
 
     @invoices_router.get(f"/orders/{{order_id}}/{path_name}/print", response_class=HTMLResponse, name=f"print_order_{path_name}",
                          description=f"The {label} as a printable page (fetch it with your token, then open or print it).")
-    async def print_document(order_id: uuid.UUID, user: CurrentUser, orders: OrderServiceDep, db: DbSession):
-        order = await orders.get_order(order_id=order_id, user_id=user.id, is_admin=user.role == UserRole.ADMIN)
+    async def print_document(order_id: uuid.UUID, user: CurrentUser, orders: OrderServiceDep, db: DbSession, access: AccessServiceDep):
+        order = await orders.get_order(order_id=order_id, user_id=user.id, is_admin=await access.has(user, Permission.ORDERS_READ))
         document = await _document(db, order.id, path_name)
         return HTMLResponse(render_invoice_html(document.document), headers=_PRINT_HEADERS)
 
@@ -89,7 +96,7 @@ _register_document_routes("credit-note", "credit note")
 
 # ---------------------------------------------------------------------------------------------- administrators
 @invoices_router.post("/orders/{order_id}/invoice", response_model=InvoiceRead, status_code=status.HTTP_201_CREATED)
-async def issue_order_invoice(order_id: uuid.UUID, admin: AdminUser, orders: OrderServiceDep, db: DbSession, audit: AuditServiceDep, response: Response):
+async def issue_order_invoice(order_id: uuid.UUID, admin: OrdersManage, orders: OrderServiceDep, db: DbSession, audit: AuditServiceDep, response: Response):
     """Issue the tax invoice of a paid or shipped GST order that has none (for example an order shipped before the business profile
     was set). Idempotent: an order that already has one returns it (200). A GST order is invoiced automatically when it is shipped."""
     order = await orders.get_order(order_id=order_id, user_id=admin.id, is_admin=True)
@@ -104,7 +111,7 @@ async def issue_order_invoice(order_id: uuid.UUID, admin: AdminUser, orders: Ord
 
 @invoices_router.get("/admin/invoices", response_model=PaginatedResponse[InvoiceSummary])
 async def list_invoices(
-    _admin: AdminUser, db: DbSession, params: PageParams = Depends(),
+    _admin: OrdersRead, db: DbSession, params: PageParams = Depends(),
     doc_type: Annotated[Literal["invoice", "credit_note"] | None, Query()] = None,
     from_date: date | None = None, to_date: date | None = None, order_id: uuid.UUID | None = None, number: str | None = None,
     fiscal_year: Annotated[str | None, Query(pattern=r"^\d{4}-\d{2}$")] = None,
@@ -129,13 +136,13 @@ async def list_invoices(
 
 
 @invoices_router.get("/admin/business-profile", response_model=BusinessProfileRead | None)
-async def read_business_profile(_admin: AdminUser, db: DbSession):
+async def read_business_profile(_admin: TaxRead, db: DbSession):
     """The seller details printed on invoices (null until set). Required before a GST order can be shipped."""
     return await get_profile(db)
 
 
 @invoices_router.put("/admin/business-profile", response_model=BusinessProfileRead)
-async def write_business_profile(payload: BusinessProfileWrite, admin: AdminUser, db: DbSession, audit: AuditServiceDep):
+async def write_business_profile(payload: BusinessProfileWrite, admin: TaxConfigure, db: DbSession, audit: AuditServiceDep):
     """Set or replace the seller details. Invoices already issued keep the details they were issued with."""
     profile = await db.get(BusinessProfile, 1)
     values = payload.model_dump()

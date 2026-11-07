@@ -7,7 +7,6 @@ from fastapi import APIRouter, Depends, Query, Request, status
 from app.core.database import DbSession
 from app.core.rate_limit import limiter
 from app.modules.audit.dependencies.audit_deps import AuditServiceDep
-from app.modules.auth.dependencies.auth import AdminUser
 from app.modules.cart.dependencies.cart_deps import CartServiceDep
 from app.modules.cart.dependencies.cart_identity import CartOwnerDep
 from app.modules.cart.services.cart_view import line_state
@@ -29,6 +28,7 @@ from app.modules.coupons.services.coupon_service import (
 )
 from app.modules.orders.dependencies.order_deps import OrderServiceDep
 from app.modules.orders.exceptions.order_exceptions import CheckoutNotConfiguredError
+from app.modules.roles.dependencies.permission_deps import CouponsManage
 from app.shared.pagination.schemas import PageParams, PaginatedResponse
 
 coupons_router = APIRouter(tags=["coupons"])
@@ -76,13 +76,13 @@ async def preview_coupon(request: Request, payload: CouponCheck, owner: CartOwne
 
 # ---------------------------------------------------------------------------------------------- administrators
 @coupons_router.post("/admin/coupons", response_model=CouponRead, status_code=status.HTTP_201_CREATED)
-async def create_coupon(payload: CouponCreate, admin: AdminUser, service: AdminServiceDep):
+async def create_coupon(payload: CouponCreate, admin: CouponsManage, service: AdminServiceDep):
     return _read(await service.create(payload, admin), 0)
 
 
 @coupons_router.get("/admin/coupons", response_model=PaginatedResponse[CouponRead])
 async def list_coupons(
-    _admin: AdminUser, service: AdminServiceDep, params: PageParams = Depends(), search: Annotated[str | None, Query(max_length=50)] = None,
+    _admin: CouponsManage, service: AdminServiceDep, params: PageParams = Depends(), search: Annotated[str | None, Query(max_length=50)] = None,
     state: Literal["active", "disabled", "scheduled", "expired", "exhausted"] | None = None,
 ):
     total, rows = await service.list(search=search, state=state, offset=params.offset, limit=params.page_size)
@@ -90,13 +90,13 @@ async def list_coupons(
 
 
 @coupons_router.get("/admin/coupons/{coupon_id}", response_model=CouponRead)
-async def get_coupon(coupon_id: int, _admin: AdminUser, service: AdminServiceDep):
+async def get_coupon(coupon_id: int, _admin: CouponsManage, service: AdminServiceDep):
     coupon, used = await service.get(coupon_id)
     return _read(coupon, used)
 
 
 @coupons_router.patch("/admin/coupons/{coupon_id}", response_model=CouponRead)
-async def update_coupon(coupon_id: int, payload: CouponUpdate, admin: AdminUser, service: AdminServiceDep):
+async def update_coupon(coupon_id: int, payload: CouponUpdate, admin: CouponsManage, service: AdminServiceDep):
     """Change a coupon. Its code and what it gives (kind, percentage, amount, cap) cannot change once an order has used it: switch it off
     (`active: false`) and create a new one instead."""
     coupon = await service.update(coupon_id, payload, admin)
@@ -104,13 +104,13 @@ async def update_coupon(coupon_id: int, payload: CouponUpdate, admin: AdminUser,
 
 
 @coupons_router.delete("/admin/coupons/{coupon_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_coupon(coupon_id: int, admin: AdminUser, service: AdminServiceDep) -> None:
+async def delete_coupon(coupon_id: int, admin: CouponsManage, service: AdminServiceDep) -> None:
     """Only a coupon no order has ever used."""
     await service.delete(coupon_id, admin)
 
 
 @coupons_router.get("/admin/coupons/{coupon_id}/redemptions", response_model=PaginatedResponse[RedemptionRead])
-async def list_redemptions(coupon_id: int, _admin: AdminUser, service: AdminServiceDep, params: PageParams = Depends()):
+async def list_redemptions(coupon_id: int, _admin: CouponsManage, service: AdminServiceDep, params: PageParams = Depends()):
     """The orders that used this coupon, newest first (whatever their status)."""
     total, orders = await service.redemptions(coupon_id, offset=params.offset, limit=params.page_size)
     items = [RedemptionRead(order_id=o.id, status=o.status.value, discount_cents=o.discount_cents, total_cents=o.total_cents, user_id=o.user_id,

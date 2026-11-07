@@ -3,7 +3,6 @@ from fastapi import APIRouter, Depends, File, Response, UploadFile, status
 from app.core.cache import CATEGORIES, cache_headers, get_cache
 from app.core.config import get_settings
 from app.modules.audit.dependencies.audit_deps import AuditServiceDep
-from app.modules.auth.dependencies.auth import AdminUser
 from app.modules.categories.dependencies.category_deps import CategoryServiceDep
 from app.modules.categories.models.category import Category
 from app.modules.categories.schemas.category import (
@@ -12,6 +11,7 @@ from app.modules.categories.schemas.category import (
     CategoryUpdate,
 )
 from app.modules.categories.services.category_service import CategoryService
+from app.modules.roles.dependencies.permission_deps import CatalogueWrite
 from app.shared.pagination.schemas import PageParams, PaginatedResponse
 
 category_router = APIRouter(prefix="/categories", tags=["categories"])
@@ -34,7 +34,7 @@ def _to_category_read(category: Category, service: CategoryService) -> CategoryR
 async def create_category(
     payload: CategoryCreate,
     service: CategoryServiceDep,
-    admin: AdminUser,
+    admin: CatalogueWrite,
     audit_service: AuditServiceDep,
 ) -> CategoryRead:
     category = await service.create_category(
@@ -92,7 +92,7 @@ async def update_category(
     category_id: int,
     payload: CategoryUpdate,
     service: CategoryServiceDep,
-    admin: AdminUser,
+    admin: CatalogueWrite,
     audit_service: AuditServiceDep,
 ) -> CategoryRead:
     category = await service.update_category(
@@ -117,7 +117,7 @@ async def update_category(
 async def deactivate_category(
     category_id: int,
     service: CategoryServiceDep,
-    admin: AdminUser,
+    admin: CatalogueWrite,
     audit_service: AuditServiceDep,
 ) -> None:
     await service.deactivate_category(category_id)
@@ -134,7 +134,7 @@ async def deactivate_category(
 async def upload_category_image(
     category_id: int,
     service: CategoryServiceDep,
-    _admin: AdminUser,
+    _admin: CatalogueWrite,
     image: UploadFile = File(...),
 ) -> CategoryRead:
     category = await service.upload_category_image(category_id=category_id, image=image)
@@ -143,7 +143,7 @@ async def upload_category_image(
 
 @category_router.delete("/{category_id}/image", response_model=CategoryRead)
 async def delete_category_image(
-    category_id: int, service: CategoryServiceDep, _admin: AdminUser
+    category_id: int, service: CategoryServiceDep, _admin: CatalogueWrite
 ) -> CategoryRead:
     category = await service.delete_category_image(category_id=category_id)
     return _to_category_read(category, service)

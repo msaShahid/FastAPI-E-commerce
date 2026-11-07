@@ -9,7 +9,6 @@ from app.core.config import get_settings
 from app.core.database import DbSession
 from app.core.jobs.models import BackgroundJob
 from app.modules.audit.dependencies.audit_deps import AuditServiceDep
-from app.modules.auth.dependencies.auth import AdminUser
 from app.modules.orders.models.order import Order
 from app.modules.orders.repositories.order_repository import OrderRepository
 from app.modules.orders.services.currency_remediation import OrderCurrencyRemediationService
@@ -29,6 +28,11 @@ from app.modules.payments.schemas.payment import (
     UnknownCurrencyOrderRead,
     WebhookEventRead,
 )
+from app.modules.roles.dependencies.permission_deps import (
+    PaymentsManage,
+    PaymentsRead,
+    RefundsIssue,
+)
 from app.shared.enums.order_status import OrderStatus
 from app.shared.pagination.schemas import PageParams, PaginatedResponse
 
@@ -37,7 +41,7 @@ lifecycle_router = APIRouter(prefix="/admin", tags=["order-payment-lifecycle"])
 
 @lifecycle_router.get("/refunds", response_model=PaginatedResponse[RefundRead])
 async def list_refunds(
-    _admin: AdminUser, lifecycle: LifecycleServiceDep, params: PageParams = Depends(), status_filter: str | None = None
+    _admin: PaymentsRead, lifecycle: LifecycleServiceDep, params: PageParams = Depends(), status_filter: str | None = None
 ):
     items, total = await lifecycle.refunds.list(status=status_filter, offset=params.offset, limit=params.page_size)
     return PaginatedResponse(items=[RefundRead.model_validate(i) for i in items], total=total,
@@ -46,7 +50,7 @@ async def list_refunds(
 
 @lifecycle_router.get("/reconciliations", response_model=PaginatedResponse[ReconciliationRead])
 async def list_reconciliations(
-    _admin: AdminUser, lifecycle: LifecycleServiceDep, params: PageParams = Depends(),
+    _admin: PaymentsRead, lifecycle: LifecycleServiceDep, params: PageParams = Depends(),
     status_filter: str | None = "open", kind: str | None = None,
 ):
     """Things about money that need a human: late or unmatched payments, mismatches, unconfirmed cancellations
@@ -60,7 +64,7 @@ async def list_reconciliations(
 
 @lifecycle_router.post("/reconciliations/{record_id}/resolve", response_model=ReconciliationRead)
 async def resolve_reconciliation(
-    record_id: UUID, payload: ReconciliationResolve, admin: AdminUser, lifecycle: LifecycleServiceDep
+    record_id: UUID, payload: ReconciliationResolve, admin: PaymentsManage, lifecycle: LifecycleServiceDep
 ):
     """Closes a record with a written note (e.g. "refunded in the Stripe dashboard"). Changes no order or money."""
     record = await lifecycle.resolve_reconciliation(record_id, admin.id, payload.resolution, payload.note)
@@ -70,14 +74,14 @@ async def resolve_reconciliation(
 @lifecycle_router.post(
     "/reconciliations/{record_id}/refund", response_model=RefundRead, status_code=status.HTTP_202_ACCEPTED
 )
-async def refund_from_reconciliation(record_id: UUID, admin: AdminUser, lifecycle: LifecycleServiceDep):
+async def refund_from_reconciliation(record_id: UUID, admin: RefundsIssue, lifecycle: LifecycleServiceDep):
     """The explicit, administrator-initiated way to refund a late payment. Nothing is ever refunded automatically."""
     _record, refund = await lifecycle.refund_from_reconciliation(record_id, admin.id)
     return RefundRead.model_validate(refund)
 
 
 @lifecycle_router.get("/lifecycle/health", response_model=LifecycleHealth)
-async def lifecycle_health(_admin: AdminUser, lifecycle: LifecycleServiceDep, db: DbSession) -> LifecycleHealth:
+async def lifecycle_health(_admin: PaymentsRead, lifecycle: LifecycleServiceDep, db: DbSession) -> LifecycleHealth:
     """Monitoring for order expiry and refunds: is the worker sweeping, is anything stuck?"""
     settings = get_settings()
     interval = settings.order_expiry_sweep_interval_seconds
@@ -111,7 +115,7 @@ async def lifecycle_health(_admin: AdminUser, lifecycle: LifecycleServiceDep, db
 
 
 @lifecycle_router.get("/health/dependencies")
-async def dependency_health(_admin: AdminUser, db: DbSession) -> dict:
+async def dependency_health(_admin: PaymentsRead, db: DbSession) -> dict:
     """For operators and monitoring (admin only; the public /health says nothing about internals): is the database reachable, is
     Redis, and has the background worker finished any job recently? `status` is "ok" only when all three are fine."""
     import time
@@ -150,7 +154,7 @@ async def dependency_health(_admin: AdminUser, db: DbSession) -> dict:
 
 @lifecycle_router.get("/webhook-events", response_model=PaginatedResponse[WebhookEventRead])
 async def list_webhook_events(
-    _admin: AdminUser, db: DbSession, params: PageParams = Depends(), status_filter: str | None = None
+    _admin: PaymentsRead, db: DbSession, params: PageParams = Depends(), status_filter: str | None = None
 ):
     """Every accepted webhook and its outcome: `processed`, `ignored` (a type we do not act on, kept for
     investigation) or `failed` (will be retried by the provider; `attempts` and `last_error` say why)."""
@@ -163,7 +167,7 @@ async def list_webhook_events(
 
 @lifecycle_router.get("/disputes", response_model=PaginatedResponse[DisputeRead])
 async def list_disputes(
-    _admin: AdminUser, db: DbSession, params: PageParams = Depends(), status_filter: str | None = None
+    _admin: PaymentsRead, db: DbSession, params: PageParams = Depends(), status_filter: str | None = None
 ):
     items, total = await DisputeRepository(db).list(status=status_filter, offset=params.offset, limit=params.page_size)
     return PaginatedResponse(items=[DisputeRead.model_validate(i) for i in items], total=total,
@@ -178,7 +182,7 @@ def _remediation(db, audit) -> OrderCurrencyRemediationService:
 
 @lifecycle_router.get("/orders/unknown-currency", response_model=PaginatedResponse[UnknownCurrencyOrderRead])
 async def list_orders_with_unknown_currency(
-    _admin: AdminUser, db: DbSession, audit: AuditServiceDep, params: PageParams = Depends()
+    _admin: PaymentsRead, db: DbSession, audit: AuditServiceDep, params: PageParams = Depends()
 ):
     """Legacy orders created before currencies were recorded. Nothing is assumed: payments and refunds on them are
     blocked until an administrator establishes the currency from reliable records."""
@@ -189,7 +193,7 @@ async def list_orders_with_unknown_currency(
 
 @lifecycle_router.post("/orders/{order_id}/establish-currency", response_model=EstablishCurrencyResult)
 async def establish_order_currency(
-    order_id: UUID, payload: EstablishCurrencyRequest, admin: AdminUser, db: DbSession, audit: AuditServiceDep
+    order_id: UUID, payload: EstablishCurrencyRequest, admin: PaymentsManage, db: DbSession, audit: AuditServiceDep
 ):
     """A reviewer's decision on a legacy order, recorded with the evidence, reviewer, time and remediation (audited).
     Evidence that conflicts, is not specific to the order, or is ambiguous leaves the currency UNRESOLVED (the attempt
@@ -207,7 +211,7 @@ async def establish_order_currency(
 
 
 @lifecycle_router.post("/orders/{order_id}/cancel-and-refund", response_model=RefundRead, status_code=status.HTTP_202_ACCEPTED)
-async def cancel_paid_order_with_refund(order_id: UUID, admin: AdminUser, payments: PaymentServiceDep):
+async def cancel_paid_order_with_refund(order_id: UUID, admin: RefundsIssue, payments: PaymentServiceDep):
     """The dedicated workflow for cancelling a PAID (not yet fulfilled) order. It REQUESTS a full refund; the order is
     only marked refunded, and its stock released exactly once, after the provider CONFIRMS the refund. Until then
     nothing changes. A fulfilled order is refunded with POST /payments/{order_id}/refund (no automatic restock)."""
@@ -217,7 +221,7 @@ async def cancel_paid_order_with_refund(order_id: UUID, admin: AdminUser, paymen
 
 @lifecycle_router.get("/webhook-events/deferred", response_model=PaginatedResponse[DeferredEventRead])
 async def list_deferred_webhook_events(
-    _admin: AdminUser, db: DbSession, params: PageParams = Depends(), status_filter: str | None = None
+    _admin: PaymentsRead, db: DbSession, params: PageParams = Depends(), status_filter: str | None = None
 ):
     """Events that arrived before their payment record and are being retried within bounds (`pending`), were applied
     when it appeared (`recovered`), or gave up (`expired`: its reconciliation record is for a human)."""

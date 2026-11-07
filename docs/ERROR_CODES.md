@@ -8,6 +8,7 @@ Generated from the code by `python -m scripts.export_api_docs` (do not edit by h
 | 400 | `invalid_or_expired_token` | This link is invalid or has expired. Request a new one. | `auth.exceptions.auth_exceptions.InvalidAccountTokenError` |
 | 400 | `password_unchanged` | The new password must be different from the current one | `auth.exceptions.auth_exceptions.SamePasswordError` |
 | 403 | `approval_requires_distinct_approver` | A record cannot be approved by the administrator who created it | `tax.exceptions.tax_exceptions.ApprovalRequiresDistinctApproverError` |
+| 403 | `permission_denied` |  | `roles.exceptions.role_exceptions.PermissionDeniedError` |
 | 403 | `review_hidden` | This review was hidden by the store and can no longer be edited | `reviews.exceptions.review_exceptions.ReviewHiddenError` |
 | 403 | `review_requires_purchase` | Only customers who bought this product (a paid or shipped order) can review it | `reviews.exceptions.review_exceptions.ReviewRequiresPurchaseError` |
 | 404 | `coupon_not_found` | Coupon not found | `coupons.exceptions.coupon_exceptions.CouponNotFoundError` |
@@ -18,7 +19,9 @@ Generated from the code by `python -m scripts.export_api_docs` (do not edit by h
 | 404 | `provider_config_not_found` | Payment provider configuration not found | `payments.exceptions.provider_exceptions.ProviderConfigNotFoundError` |
 | 404 | `return_not_found` | Return not found | `returns.exceptions.return_exceptions.ReturnNotFoundError` |
 | 404 | `review_not_found` | Review not found | `reviews.exceptions.review_exceptions.ReviewNotFoundError` |
+| 404 | `role_not_found` | That role does not exist | `roles.exceptions.role_exceptions.RoleNotFoundError` |
 | 404 | `shipment_not_found` | Shipment not found | `shipments.exceptions.shipment_exceptions.ShipmentNotFoundError` |
+| 404 | `staff_member_not_found` | No active administrator with that id | `roles.exceptions.role_exceptions.StaffMemberNotFoundError` |
 | 404 | `tax_record_not_found` |  | `tax.exceptions.tax_exceptions.TaxRecordNotFoundError` |
 | 404 | `variant_not_found` | Variant not found | `variants.exceptions.variant_exceptions.VariantNotFoundError` |
 | 409 | `already_has_variants` | This product already has options | `variants.exceptions.variant_exceptions.AlreadyHasVariantsError` |
@@ -39,6 +42,7 @@ Generated from the code by `python -m scripts.export_api_docs` (do not edit by h
 | 409 | `idempotency_key_reused` | This Idempotency-Key was already used with a different request. Use a new key for a different checkout. | `orders.exceptions.order_exceptions.IdempotencyKeyConflictError` |
 | 409 | `invalid_shipment_status_change` |  | `shipments.exceptions.shipment_exceptions.InvalidShipmentStatusChangeError` |
 | 409 | `last_admin` | This is the last active administrator: demoting or deactivating it would leave nobody able to administer the store. Promote or create another administrator first. | `users.exceptions.user_exceptions.LastAdminError` |
+| 409 | `last_role_manager` | At least one active administrator must keep the permission to manage roles | `roles.exceptions.role_exceptions.LastRoleManagerError` |
 | 409 | `live_activation_blocked` | Live payments were NOT activated: lists the safe reasons (never secrets). Nothing changed. | `payments.exceptions.provider_exceptions.LiveActivationBlockedError` |
 | 409 | `live_payments_active` | Live payments are active, so you cannot do that. Deactivate live payments first (an explicit step). | `payments.exceptions.provider_exceptions.LivePaymentsActiveError` |
 | 409 | `not_a_demo_payment` | This order's payment was not started with the demo gateway | `payments.exceptions.demo_exceptions.NotADemoPaymentError` |
@@ -57,6 +61,8 @@ Generated from the code by `python -m scripts.export_api_docs` (do not edit by h
 | 409 | `registration_in_use` | This registration is used by a tax configuration that is not retired | `tax.exceptions.tax_exceptions.RegistrationInUseError` |
 | 409 | `return_invalid_state` |  | `returns.exceptions.return_exceptions.ReturnStateError` |
 | 409 | `return_not_full` | NovaCart refunds a whole order at a time, and this return does not bring back every unit of it. Close the return with the resolution 'refunded_outside' once you have refunded the customer at your payment provider, or 'replacement_sent' / 'no_refund'. | `returns.exceptions.return_exceptions.ReturnNotFullError` |
+| 409 | `role_in_use` |  | `roles.exceptions.role_exceptions.RoleInUseError` |
+| 409 | `role_name_taken` | A role with that name already exists | `roles.exceptions.role_exceptions.RoleNameTakenError` |
 | 409 | `rule_overlap` | An approved rule already applies to this classification in that period | `tax.exceptions.tax_exceptions.RuleOverlapError` |
 | 409 | `settings_overlap` | An approved tax configuration already applies in that period. Retire it first, then approve the new one. | `tax.exceptions.tax_exceptions.SettingsOverlapError` |
 | 409 | `site_config_changed` | The published configuration changed since you loaded it: reload and review before publishing | `site_config.exceptions.site_config_exceptions.PublishedElsewhereError` |
@@ -108,6 +114,7 @@ Generated from the code by `python -m scripts.export_api_docs` (do not edit by h
 | 422 | `return_receipt_invalid` | Invalid request | `returns.exceptions.return_exceptions.ReturnReceiptInvalidError` |
 | 422 | `return_window_closed` |  | `returns.exceptions.return_exceptions.ReturnWindowClosedError` |
 | 422 | `returns_disabled` | This store does not accept online return requests. Please contact the store. | `returns.exceptions.return_exceptions.ReturnsDisabledError` |
+| 422 | `role_is_system` | System roles (Owner, No access) cannot be changed or deleted | `roles.exceptions.role_exceptions.SystemRoleError` |
 | 422 | `self_approval_note_required` | Self-approval requires a written note | `tax.exceptions.tax_exceptions.SelfApprovalNoteRequiredError` |
 | 422 | `site_config_no_draft` | There is no draft to publish: save one first | `site_config.exceptions.site_config_exceptions.NoDraftError` |
 | 422 | `site_config_unchanged` | That is already the published configuration | `site_config.exceptions.site_config_exceptions.NothingToChangeError` |
@@ -130,4 +137,4 @@ Generated from the code by `python -m scripts.export_api_docs` (do not edit by h
 | 503 | `tax_engine_not_implemented` | GST calculation is not available yet | `tax.engine.TaxEngineUnavailableError` |
 | 503 | `tax_not_configured` | Tax calculation is not configured | `tax.engine.TaxNotConfiguredError` |
 
-125 codes.
+132 codes.

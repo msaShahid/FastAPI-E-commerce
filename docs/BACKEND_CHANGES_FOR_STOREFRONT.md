@@ -16,3 +16,7 @@ Additive and backwards compatible. Deploy order: run `alembic upgrade head` (two
 Existing tests changed: `tests/auth/conftest.py` (fake repository gained the new methods; `strict_refresh` fixture) and three reuse tests in `tests/auth/test_auth_service.py` that now run with the grace window off.
 Not announced to the storefront on purpose: bulk stock decrements at checkout (the storefront shows availability states and its cache lifetime covers them).
 Not covered by a test: the GST engine's `requires_address` path of the quote (the flat-rate engine is covered).
+
+## M6 admin: staff roles and permissions (BE-P1)
+
+Migration `c5e1a7f3b964` (after `e7b2c5a9d041`): tables `staff_roles`, `staff_role_assignments`, system roles Owner and No access; every existing administrator gets Owner. All 126 administrator routes, the staff paths of `/users`, admin reads of orders and invoices, and draft-product visibility now check a permission (403 `permission_denied` + `permission`). New: `GET /access/me`, `/admin/permissions`, `/admin/roles*`, `/admin/staff*`. Full rules and the permission-to-endpoint table: `docs/STAFF_PERMISSIONS.md`. The 403 handler now passes error extras through. Tests: `tests/roles/test_permission_coverage.py` (every admin route declares a permission), `tests/integration/test_staff_roles.py`.
